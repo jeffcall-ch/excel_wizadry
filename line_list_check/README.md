@@ -33,3 +33,20 @@ python line_list_check\line_list_check_pipe_class.py
 ```
 
 This script reads the 'Query' tab from the Excel file `Export 17.06.2025_LS.xlsx` and displays basic information about the data.
+
+### Refactored Script
+
+A refactored version of the script is also available with improved readability and organization:
+
+```powershell
+python line_list_check\line_list_check_pipe_class_refactored.py
+```
+
+The refactored script performs the same operations but with:
+
+- Better function organization
+- Clearer error handling
+- Improved code readability
+- Simplified logic and structure
+
+Use the refactored version for better maintainability and easier understanding of the code.
