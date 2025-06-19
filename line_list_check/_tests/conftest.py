@@ -28,7 +28,8 @@ def sample_dirs_files():
     files = {
         'line_list_file': os.path.join(dirs['input_dir'], "Export 17.06.2025_LS.xlsx"),
         'pipe_class_file': os.path.join(dirs['pipe_class_dir'], "PIPE CLASS SUMMARY_LS_06.06.2025_updated_column_names.xlsx"),
-        'output_file': os.path.join(dirs['output_dir'], "Line_List_with_Matches.xlsx")
+        'output_file': os.path.join(dirs['output_dir'], "Line_List_with_Matches.xlsx"),
+        'summary_file': os.path.join(dirs['output_dir'], "Pipe_Class_Summary.xlsx")
     }
     
     return dirs, files
@@ -78,3 +79,57 @@ def sample_pipe_class_dict(sample_pipe_class_df):
         }
     
     return pipe_class_dict
+
+@pytest.fixture
+def sample_validated_df():
+    """Fixture for sample validated dataframe with check columns."""
+    data = {
+        "Row Number": [1, 2, 3, 4, 5],
+        "Line No.": ["L-001", "L-002", "L-003", "L-004", "L-005"],
+        "KKS": ["ABC123", "DEF456", "GHI789", "JKL012", "MNO345"],
+        "Medium": ["Water", "Water", "Steam", "Gas", "Oil"],
+        "Medium_check": ["OK", "OK", "OK", "OK", "Medium is missing from the pipe class"],
+        "PS [bar(g)]": [10, 10, 20, 30, 5],
+        "PS [bar(g)]_check": ["OK", "OK", "NOK", "NOK", "OK"],
+        "TS [°C]": [50, 50, 150, 200, 25],
+        "TS [°C]_check": ["OK", "OK", "OK", "NOK", "OK"],
+        "DN": ["DN 25", "DN 25", "DN 50", "DN 80", "DN 15"],
+        "DN_check": ["OK", "OK", "OK", "OK", "OK"],
+        "PN": ["PN 16", "PN 16", "PN 25", "PN 40", "PN 10"],
+        "PN_check": ["OK", "OK", "OK", "OK", "OK"],
+        "EN No. Material": ["1.0425", "1.0425", "1.0460", "1.4571", "1.0425"],
+        "EN No. Material_check": ["OK", "OK", "OK", "OK", "OK"],
+        "Pipe Class": ["A1", "A1", "B2", "C3", "X1"],
+        "Pipe Class_check": ["OK", "OK", "OK", "OK", "Pipe class not found in summary"],
+        "Pipe Class status check": [
+            "OK", 
+            "OK", 
+            "PS [bar(g)]_check: NOK", 
+            "PS [bar(g)]_check: NOK, TS [°C]_check: NOK", 
+            "Pipe Class_check: Pipe class not found in summary, Medium_check: Medium is missing from the pipe class"
+        ]
+    }
+    
+    return pd.DataFrame(data)
+
+@pytest.fixture
+def mock_formats():
+    """Fixture for mock Excel formats."""
+    formats = {
+        'center_align': MagicMock(),
+        'ok': MagicMock(),
+        'nok': MagicMock(),
+        'nan': MagicMock(),
+        'header_red': MagicMock(),
+        'header_yellow': MagicMock(),
+        'row_number_red': MagicMock(),
+        'row_number_yellow': MagicMock(),
+        'header_default': MagicMock(),
+        'header_default_wrap': MagicMock(),
+        'header_red_wrap': MagicMock(), 
+        'header_yellow_wrap': MagicMock(),
+        'ok_wrap': MagicMock(),
+        'nok_wrap': MagicMock(),
+        'nan_wrap': MagicMock()
+    }
+    return formats
