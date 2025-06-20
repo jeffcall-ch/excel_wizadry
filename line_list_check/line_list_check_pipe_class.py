@@ -12,13 +12,13 @@ def setup_paths():
         'input_dir': os.path.join(current_dir, "input_file"),
         'pipe_class_dir': os.path.join(current_dir, "pipe_class_summary_file"),
         'output_dir': os.path.join(current_dir, "output")
-    }
-      # Define file paths
+    }    # Define file paths
     files = {
         'line_list_file': os.path.join(dirs['input_dir'], "Export 17.06.2025_LS.xlsx"),
         'pipe_class_file': os.path.join(dirs['pipe_class_dir'], "PIPE CLASS SUMMARY_LS_06.06.2025_updated_column_names.xlsx"),
         'output_file': os.path.join(dirs['output_dir'], "Line_List_with_Matches.xlsx"),
-        'summary_file': os.path.join(dirs['output_dir'], "Pipe_Class_Summary.xlsx")
+        'summary_file': os.path.join(dirs['output_dir'], "Pipe_Class_Summary.xlsx"),
+        'process_section_file': os.path.join(dirs['output_dir'], "Process_Section_Summary.xlsx")
     }
     return dirs, files
 
@@ -883,6 +883,283 @@ def generate_pipe_class_summary(query_df, pipe_class_dict, output_file):
         return False
 
 
+def generate_process_section_summary(query_df, output_file, pipe_class_dict=None):
+    """
+    Generate a summary of pipe classes and media used in each process section.
+    Also generates a summary with pipe classes as the main column showing which process sections use each pipe class.
+    Includes pipe class details from the reference data if available.
+    
+    Args:
+        query_df: DataFrame containing the line list data with process section information
+        output_file: Path to save the process section summary Excel file
+        pipe_class_dict: Dictionary containing the reference pipe class data with detailed specifications
+    
+    Returns:
+        True if successful, False otherwise
+    """
+    print(f"Generating process section summary to '{output_file}'...")
+    
+    # Create output directory if it doesn't exist
+    output_dir = os.path.dirname(output_file)
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # Check if the required columns exist
+    if "Description Process Section" not in query_df.columns:
+        print("Error: 'Description Process Section' column not found in the dataframe")
+        return False
+    if "Pipe Class" not in query_df.columns:
+        print("Error: 'Pipe Class' column not found in the dataframe")
+        return False
+    if "Medium" not in query_df.columns:
+        print("Error: 'Medium' column not found in the dataframe")
+        return False
+      # -----------------------------
+    # Sheet 1: Process Section View
+    # -----------------------------
+    # Group data by process section
+    process_sections = query_df["Description Process Section"].dropna().unique()
+    
+    # Create a new dataframe to store the summary
+    summary_data = []
+    
+    for section in process_sections:
+        # Filter data for this process section
+        section_data = query_df[query_df["Description Process Section"] == section]
+        
+        # Get unique pipe classes and media for this section
+        section_pipe_classes = section_data["Pipe Class"].dropna().unique()
+        media = section_data["Medium"].dropna().unique()
+        
+        # Initialize the row data
+        row_data = {
+            "Process Section": section,
+            "Pipe Classes": ", ".join(map(str, sorted(section_pipe_classes))),
+            "Number of Pipe Classes": len(section_pipe_classes),
+            "Media": ", ".join(map(str, sorted(media))),
+            "Number of Media": len(media),
+            "Line Count": len(section_data)
+        }
+        
+        # For each pipe class in this section, add its reference data details
+        if pipe_class_dict:
+            pipe_class_details = []
+            for pc in sorted(section_pipe_classes):
+                if pc in pipe_class_dict:
+                    pipe_spec = pipe_class_dict[pc]
+                    detail = f"{pc} [PN: {pipe_spec.get('PN', 'N/A')}, " \
+                            f"Temp: {pipe_spec.get('Min temperature (°C)', 'N/A')}-{pipe_spec.get('Max temperature (°C)', 'N/A')}°C, " \
+                            f"DN: {pipe_spec.get('Diameter from [DN, NPS]', 'N/A')}-{pipe_spec.get('Diameter to [DN, NPS]', 'N/A')}, " \
+                            f"Material: {pipe_spec.get('EN No. Material', 'N/A')}]"
+                    pipe_class_details.append(detail)
+                else:
+                    pipe_class_details.append(f"{pc} [Not in reference]")
+            
+            row_data["Pipe Class Details"] = "\n".join(pipe_class_details)
+        else:
+            row_data["Pipe Class Details"] = "Reference data not available"
+        
+        # Add to summary data
+        summary_data.append(row_data)
+    
+    # Create dataframe from summary data
+    summary_df = pd.DataFrame(summary_data)
+    
+    # Sort by process section name
+    summary_df = summary_df.sort_values("Process Section").reset_index(drop=True)
+      # -----------------------------
+    # Sheet 2: Pipe Class View
+    # -----------------------------
+    # Group data by pipe class
+    pipe_classes = query_df["Pipe Class"].dropna().unique()
+    
+    # Create a new dataframe to store the pipe class summary
+    pipe_class_summary_data = []
+    
+    for pipe_class in pipe_classes:
+        # Filter data for this pipe class
+        pipe_class_data = query_df[query_df["Pipe Class"] == pipe_class]
+        
+        # Get unique process sections and media for this pipe class
+        sections = pipe_class_data["Description Process Section"].dropna().unique()
+        media = pipe_class_data["Medium"].dropna().unique()
+        
+        # Initialize the row data
+        row_data = {
+            "Pipe Class": pipe_class,
+            "Process Sections": ", ".join(map(str, sorted(sections))),
+            "Number of Process Sections": len(sections),
+            "Media": ", ".join(map(str, sorted(media))),
+            "Number of Media": len(media),
+            "Line Count": len(pipe_class_data)
+        }
+        
+        # Add pipe class details from reference data if available
+        if pipe_class_dict and pipe_class in pipe_class_dict:
+            pipe_spec = pipe_class_dict[pipe_class]
+            
+            # Add reference data columns
+            row_data.update({
+                "Ref: Medium": str(pipe_spec.get('Medium', '')),
+                "Ref: PN": str(pipe_spec.get('PN', '')),
+                "Ref: Min Temperature (°C)": str(pipe_spec.get('Min temperature (°C)', '')),
+                "Ref: Max Temperature (°C)": str(pipe_spec.get('Max temperature (°C)', '')),
+                "Ref: DN From": str(pipe_spec.get('Diameter from [DN, NPS]', '')),
+                "Ref: DN To": str(pipe_spec.get('Diameter to [DN, NPS]', '')),
+                "Ref: Material": str(pipe_spec.get('EN No. Material', ''))
+            })
+        else:
+            # Add empty columns if reference data not available
+            row_data.update({
+                "Ref: Medium": "Not in reference",
+                "Ref: PN": "Not in reference",
+                "Ref: Min Temperature (°C)": "Not in reference",
+                "Ref: Max Temperature (°C)": "Not in reference",
+                "Ref: DN From": "Not in reference",
+                "Ref: DN To": "Not in reference",
+                "Ref: Material": "Not in reference"
+            })
+        
+        # Add to pipe class summary data
+        pipe_class_summary_data.append(row_data)
+    
+    # Create dataframe from pipe class summary data
+    pipe_class_summary_df = pd.DataFrame(pipe_class_summary_data)
+      # Sort by pipe class name
+    pipe_class_summary_df = pipe_class_summary_df.sort_values("Pipe Class").reset_index(drop=True)
+    
+    try:
+        # Create Excel file
+        with pd.ExcelWriter(output_file, engine='xlsxwriter') as writer:
+            # Get workbook object
+            workbook = writer.book
+            
+            # Create common formats
+            header_format = workbook.add_format({
+                'bold': True,
+                'text_wrap': True,
+                'valign': 'vcenter',
+                'align': 'center',
+                'bg_color': '#D9D9D9',  # Light grey background
+                'border': 1
+            })
+            
+            cell_format = workbook.add_format({
+                'text_wrap': True,
+                'valign': 'vcenter',
+                'align': 'left',
+                'border': 1
+            })
+            
+            count_format = workbook.add_format({
+                'align': 'center',
+                'valign': 'vcenter',
+                'border': 1
+            })
+            
+            # -----------------------------
+            # Sheet 1: Process Section View
+            # -----------------------------
+            summary_df.to_excel(writer, sheet_name='Process Section View', index=False)
+            worksheet = writer.sheets['Process Section View']
+            
+            # Write headers with appropriate format
+            for col_num, col_name in enumerate(summary_df.columns):
+                worksheet.write(0, col_num, col_name, header_format)
+            
+            # Format data cells
+            for row_num in range(len(summary_df)):
+                for col_num, col_name in enumerate(summary_df.columns):
+                    cell_value = summary_df.iloc[row_num, col_num]
+                    
+                    # Apply appropriate formatting based on column type
+                    if col_name in ["Number of Pipe Classes", "Number of Media", "Line Count"]:
+                        worksheet.write(row_num + 1, col_num, cell_value, count_format)
+                    else:
+                        worksheet.write(row_num + 1, col_num, cell_value, cell_format)
+              # Set column widths based on content
+            column_widths = {
+                "Process Section": 30,
+                "Pipe Classes": 40,
+                "Number of Pipe Classes": 15,
+                "Media": 40,
+                "Number of Media": 15,
+                "Line Count": 15,
+                "Pipe Class Details": 60
+            }
+            
+            for col_num, col_name in enumerate(summary_df.columns):
+                width = column_widths.get(col_name, 20)
+                worksheet.set_column(col_num, col_num, width)
+            
+            # Set row heights to accommodate wrapped text
+            for row_num in range(len(summary_df) + 1):
+                worksheet.set_row(row_num, 30)
+            
+            # Add table with filter
+            worksheet.add_table(0, 0, len(summary_df), len(summary_df.columns) - 1, {
+                'columns': [{'header': col} for col in summary_df.columns],
+                'style': 'Table Style Medium 2'
+            })
+            
+            # -----------------------------
+            # Sheet 2: Pipe Class View
+            # -----------------------------
+            pipe_class_summary_df.to_excel(writer, sheet_name='Pipe Class View', index=False)
+            pipe_class_worksheet = writer.sheets['Pipe Class View']
+            
+            # Write headers with appropriate format
+            for col_num, col_name in enumerate(pipe_class_summary_df.columns):
+                pipe_class_worksheet.write(0, col_num, col_name, header_format)
+            
+            # Format data cells
+            for row_num in range(len(pipe_class_summary_df)):
+                for col_num, col_name in enumerate(pipe_class_summary_df.columns):
+                    cell_value = pipe_class_summary_df.iloc[row_num, col_num]
+                    
+                    # Apply appropriate formatting based on column type
+                    if col_name in ["Number of Process Sections", "Number of Media", "Line Count"]:
+                        pipe_class_worksheet.write(row_num + 1, col_num, cell_value, count_format)
+                    else:
+                        pipe_class_worksheet.write(row_num + 1, col_num, cell_value, cell_format)
+              # Set column widths based on content
+            pipe_class_column_widths = {
+                "Pipe Class": 15,
+                "Process Sections": 40,
+                "Number of Process Sections": 20,
+                "Media": 40,
+                "Number of Media": 15,
+                "Line Count": 15,
+                "Ref: Medium": 20,
+                "Ref: PN": 15,
+                "Ref: Min Temperature (°C)": 20,
+                "Ref: Max Temperature (°C)": 20,
+                "Ref: DN From": 15,
+                "Ref: DN To": 15,
+                "Ref: Material": 20
+            }
+            
+            for col_num, col_name in enumerate(pipe_class_summary_df.columns):
+                width = pipe_class_column_widths.get(col_name, 20)
+                pipe_class_worksheet.set_column(col_num, col_num, width)
+            
+            # Set row heights to accommodate wrapped text
+            for row_num in range(len(pipe_class_summary_df) + 1):
+                pipe_class_worksheet.set_row(row_num, 30)
+            
+            # Add table with filter
+            pipe_class_worksheet.add_table(0, 0, len(pipe_class_summary_df), len(pipe_class_summary_df.columns) - 1, {
+                'columns': [{'header': col} for col in pipe_class_summary_df.columns],
+                'style': 'Table Style Medium 2'
+            })
+        
+        print(f"Process section and pipe class summary saved successfully to '{output_file}'")
+        return True
+    
+    except Exception as e:
+        print(f"Error saving process section summary: {e}")
+        return False
+
+
 def main():
     """Main function to orchestrate the pipe class validation process."""
     try:
@@ -901,12 +1178,14 @@ def main():
         success = save_to_excel(query_df, files['output_file'])
         
         # Generate and save pipe class summary
-        summary_success = generate_pipe_class_summary(query_df, pipe_class_dict, files['summary_file'])
+        summary_success = generate_pipe_class_summary(query_df, pipe_class_dict, files['summary_file'])        # Generate and save process section summary with pipe class details
+        process_section_success = generate_process_section_summary(query_df, files['process_section_file'], pipe_class_dict)
         
-        if success and summary_success:
+        if success and summary_success and process_section_success:
             print("\nProcess completed successfully")
             print(f"Results saved to '{files['output_file']}'")
             print(f"Pipe class summary saved to '{files['summary_file']}'")
+            print(f"Process section summary saved to '{files['process_section_file']}'")
         else:
             print("\nProcess completed with errors")
     
