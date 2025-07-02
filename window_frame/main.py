@@ -24,7 +24,7 @@ COLORS = {
 target_hwnd = None
 frame_windows = []
 tracking_active = False
-selected_color = tk.StringVar(value="#FF0000")
+selected_color = None
 root = None
 
 
@@ -172,10 +172,12 @@ def stop_tracking():
 
 def create_gui():
     """Creates the main control GUI."""
-    global root
+    global root, selected_color
     root = tk.Tk()
     root.title("Window Framer")
     root.geometry("300x150")
+
+    selected_color = tk.StringVar(value="#FF0000")
 
     main_frame = ttk.Frame(root, padding="10")
     main_frame.pack(fill="both", expand=True)
