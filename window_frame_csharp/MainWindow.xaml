@@ -1,0 +1,12 @@
+<Window x:Class="WindowFramer.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Window Framer" Height="180" Width="300" ResizeMode="CanMinimize">
+    <Grid>
+        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+            <Button Content="Select Window to Frame" Click="SelectWindow_Click" Margin="5"/>
+            <ComboBox x:Name="ColorComboBox" Margin="5" SelectionChanged="ColorComboBox_SelectionChanged"/>
+            <Button Content="Stop Framing" Click="StopFraming_Click" Margin="5"/>
+        </StackPanel>
+    </Grid>
+</Window>
