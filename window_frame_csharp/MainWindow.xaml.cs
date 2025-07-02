@@ -118,8 +118,6 @@ namespace WindowFramer
                 };
                 var helper = new WindowInteropHelper(frame);
                 helper.EnsureHandle();
-                // Make the frame window always on top
-                NativeMethods.SetWindowPos(helper.Handle, NativeMethods.HWND_TOPMOST, 0, 0, 0, 0, NativeMethods.SWP_NOMOVE | NativeMethods.SWP_NOSIZE | NativeMethods.SWP_NOACTIVATE);
                 frame.Show();
                 _frameWindows.Add(frame);
             }
@@ -146,42 +144,52 @@ namespace WindowFramer
                     break;
                 }
 
-                // Use DwmGetWindowAttribute to get the actual window bounds, excluding shadow.
-                // Fall back to GetWindowRect on failure.
                 var result = NativeMethods.DwmGetWindowAttribute(_targetHwnd, NativeMethods.DWMWA_EXTENDED_FRAME_BOUNDS, out var rect, Marshal.SizeOf(typeof(NativeMethods.RECT)));
-                if (result != 0) // 0 is S_OK. On failure, use the old method.
+                if (result != 0)
                 {
                     NativeMethods.GetWindowRect(_targetHwnd, out rect);
                 }
 
                 Dispatcher.Invoke(() =>
                 {
+                    // Get the window that is immediately above the target window in the Z-order.
+                    IntPtr windowAbove = NativeMethods.GetWindow(_targetHwnd, NativeMethods.GW_HWNDPREV);
+                    if (windowAbove == IntPtr.Zero)
+                    {
+                        // If there is no window above, it's the topmost, so our frame can be too.
+                        windowAbove = NativeMethods.HWND_TOPMOST;
+                    }
+
                     // Top
                     _frameWindows[0].Left = rect.Left;
                     _frameWindows[0].Top = rect.Top;
                     _frameWindows[0].Width = rect.Right - rect.Left;
                     _frameWindows[0].Height = FRAME_THICKNESS;
+                    NativeMethods.SetWindowPos(new WindowInteropHelper(_frameWindows[0]).Handle, windowAbove, 0, 0, 0, 0, NativeMethods.SWP_NOMOVE | NativeMethods.SWP_NOSIZE | NativeMethods.SWP_NOACTIVATE);
 
                     // Bottom
                     _frameWindows[1].Left = rect.Left;
                     _frameWindows[1].Top = rect.Bottom - FRAME_THICKNESS;
                     _frameWindows[1].Width = rect.Right - rect.Left;
                     _frameWindows[1].Height = FRAME_THICKNESS;
+                    NativeMethods.SetWindowPos(new WindowInteropHelper(_frameWindows[1]).Handle, windowAbove, 0, 0, 0, 0, NativeMethods.SWP_NOMOVE | NativeMethods.SWP_NOSIZE | NativeMethods.SWP_NOACTIVATE);
 
                     // Left
                     _frameWindows[2].Left = rect.Left;
                     _frameWindows[2].Top = rect.Top;
                     _frameWindows[2].Width = FRAME_THICKNESS;
                     _frameWindows[2].Height = rect.Bottom - rect.Top;
+                    NativeMethods.SetWindowPos(new WindowInteropHelper(_frameWindows[2]).Handle, windowAbove, 0, 0, 0, 0, NativeMethods.SWP_NOMOVE | NativeMethods.SWP_NOSIZE | NativeMethods.SWP_NOACTIVATE);
 
                     // Right
                     _frameWindows[3].Left = rect.Right - FRAME_THICKNESS;
                     _frameWindows[3].Top = rect.Top;
                     _frameWindows[3].Width = FRAME_THICKNESS;
                     _frameWindows[3].Height = rect.Bottom - rect.Top;
+                    NativeMethods.SetWindowPos(new WindowInteropHelper(_frameWindows[3]).Handle, windowAbove, 0, 0, 0, 0, NativeMethods.SWP_NOMOVE | NativeMethods.SWP_NOSIZE | NativeMethods.SWP_NOACTIVATE);
                 });
 
-                Thread.Sleep(16); // ~60 FPS
+                Thread.Sleep(16);
             }
         }
 
