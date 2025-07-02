@@ -153,7 +153,7 @@ namespace WindowFramer
                     var monitorInfo = new NativeMethods.MONITORINFO();
                     monitorInfo.cbSize = Marshal.SizeOf(monitorInfo);
                     NativeMethods.GetMonitorInfo(monitor, ref monitorInfo);
-                    rect = monitorInfo.rcMonitor;
+                    rect = monitorInfo.rcWork;
                 }
                 else
                 {
