@@ -1,6 +1,5 @@
 import tkinter as tk
 from tkinter import ttk
-import ctypes
 import win32gui
 import win32con
 import win32api
@@ -10,7 +9,7 @@ import time
 class WindowFramer:
     """
     An application to create a colored, resizable frame around a selected window.
-    It uses tkinter for the GUI and pywin32 for Windows API interaction.
+    This version uses a robust recreation strategy to avoid fragile API calls.
     """
     FRAME_THICKNESS = 4
     COLORS = {
@@ -18,7 +17,7 @@ class WindowFramer:
         "Yellow": "#FFFF00", "Cyan": "#00FFFF", "Magenta": "#FF00FF",
         "Black": "#000000", "White": "#FFFFFF",
     }
-    FRAME_CLASS_NAME = "HighlightFrameWindow"
+    FRAME_CLASS_NAME = "WindowFramerHighlightFrame"
 
     def __init__(self):
         # --- Core App State ---
@@ -29,6 +28,7 @@ class WindowFramer:
         # --- Threading and Synchronization ---
         self.tracking_thread = None
         self.stop_event = threading.Event()
+        self.recreate_event = threading.Event()
         self.frame_lock = threading.Lock()
 
         # --- GUI Variables ---
@@ -48,7 +48,7 @@ class WindowFramer:
         main_frame = ttk.Frame(self.root, padding="10")
         main_frame.pack(fill="both", expand=True)
 
-        select_button = ttk.Button(main_frame, text="Select Window to Frame", command=self._select_window_thread)
+        select_button = ttk.Button(main_frame, text="Select Window to Frame", command=self._start_window_selection)
         select_button.pack(pady=10)
 
         color_label = ttk.Label(main_frame, text="Frame Color:")
@@ -62,8 +62,7 @@ class WindowFramer:
         stop_button.pack(pady=10)
 
     def run(self):
-        """Registers resources and starts the main application loop."""
-        self._register_frame_class()
+        """Starts the main application loop."""
         self.root.mainloop()
 
     def _get_toplevel_window(self, hwnd):
@@ -74,16 +73,14 @@ class WindowFramer:
             parent = win32gui.GetParent(hwnd)
         return hwnd
 
-    def _select_window_thread(self):
-        """
-        Starts a non-blocking thread to handle window selection to avoid freezing the GUI.
-        """
-        threading.Thread(target=self._select_window, daemon=True).start()
+    def _start_window_selection(self):
+        """Starts a non-blocking thread to handle window selection."""
+        threading.Thread(target=self._select_window_and_track, daemon=True).start()
 
-    def _select_window(self):
-        """Waits for a mouse click and captures the window handle."""
+    def _select_window_and_track(self):
+        """Waits for a mouse click, captures the window, and starts tracking."""
         self.root.withdraw()
-        time.sleep(0.5)  # Allow time for the window to disappear
+        time.sleep(0.5)
 
         print("Click on the window you want to frame...")
         while True:
@@ -95,7 +92,7 @@ class WindowFramer:
         hwnd = win32gui.WindowFromPoint(pos)
         target_hwnd = self._get_toplevel_window(hwnd)
 
-        self.root.deiconify() # Bring the control window back immediately
+        self.root.deiconify()
 
         if target_hwnd == self.root.winfo_id() or target_hwnd == win32gui.GetDesktopWindow():
             print("Cannot frame this window. Please select another.")
@@ -105,55 +102,50 @@ class WindowFramer:
         window_text = win32gui.GetWindowText(self.target_hwnd)
         print(f"Selected window: '{window_text}' (HWND: {self.target_hwnd})")
 
-        self.start_tracking()
+        self._start_tracking_thread()
 
-    def _create_frame_windows(self):
-        """Creates the four top-level windows that form the frame."""
+    def _recreate_frame_windows(self):
+        """Atomically destroys, unregisters, registers, and creates frame windows."""
         with self.frame_lock:
-            # Clean up any existing frame windows
             for fw in self.frame_windows:
                 if win32gui.IsWindow(fw):
                     win32gui.DestroyWindow(fw)
-            self.frame_windows = []
+            self.frame_windows.clear()
 
-            # Create 4 new borderless, top-most windows
+            try:
+                win32gui.UnregisterClass(self.FRAME_CLASS_NAME, None)
+            except win32gui.error:
+                pass
+
+            color_hex = self.COLORS[self.selected_color_name.get()]
+            color_ref = int(color_hex[1:], 16)
+            bgr_color = ((color_ref & 0xFF) << 16) | (color_ref & 0xFF00) | ((color_ref & 0xFF0000) >> 16)
+            brush = win32gui.CreateSolidBrush(bgr_color)
+
+            wc = win32gui.WNDCLASS()
+            wc.lpszClassName = self.FRAME_CLASS_NAME
+            wc.hbrBackground = brush
+            wc.lpfnWndProc = lambda h, m, w, l: win32gui.DefWindowProc(h, m, w, l)
+            win32gui.RegisterClass(wc)
+
             for _ in range(4):
                 hwnd = win32gui.CreateWindowEx(
                     win32con.WS_EX_TOOLWINDOW | win32con.WS_EX_LAYERED,
-                    self.FRAME_CLASS_NAME,
-                    None,
+                    self.FRAME_CLASS_NAME, None,
                     win32con.WS_POPUP | win32con.WS_VISIBLE,
-                    0, 0, 1, 1,
-                    None, None, win32api.GetModuleHandle(None), None
+                    0, 0, 1, 1, None, None, win32api.GetModuleHandle(None), None
                 )
                 win32gui.SetLayeredWindowAttributes(hwnd, 0, 255, win32con.LWA_ALPHA)
                 self.frame_windows.append(hwnd)
-        self._update_frame_color()
-
-    def _update_frame_color(self):
-        """Updates the background color of the frame windows."""
-        color_hex = self.COLORS[self.selected_color_name.get()]
-        color_ref = int(color_hex[1:], 16)
-        bgr_color = ((color_ref & 0xFF) << 16) | (color_ref & 0xFF00) | ((color_ref & 0xFF0000) >> 16)
-        
-        try:
-            brush = win32gui.CreateSolidBrush(bgr_color)
-            with self.frame_lock:
-                for fw in self.frame_windows:
-                    if win32gui.IsWindow(fw):
-                        win32gui.SetClassLongPtr(fw, win32con.GCL_HBRBACKGROUND, brush)
-                        win32gui.InvalidateRect(fw, None, True) # Force redraw
-        except win32gui.error as e:
-            print(f"Error updating frame color: {e}")
-
 
     def _track_window_loop(self):
         """Main loop to update the frame's position and size."""
-        self._create_frame_windows()
-
         while not self.stop_event.is_set():
+            if self.recreate_event.is_set():
+                self._recreate_frame_windows()
+                self.recreate_event.clear()
+
             if not self.target_hwnd or not win32gui.IsWindow(self.target_hwnd):
-                print("Target window closed or lost. Stopping.")
                 self.root.after(0, self.stop_tracking)
                 break
 
@@ -163,40 +155,39 @@ class WindowFramer:
 
                 with self.frame_lock:
                     if not all(win32gui.IsWindow(fw) for fw in self.frame_windows):
-                        print("Frame windows were destroyed. Stopping.")
                         break
                     
-                    # Set Z-order to be just above the target window
-                    target_z = win32gui.GetWindow(self.target_hwnd, win32con.GW_HWNDPREV)
-
-                    # Top, Bottom, Left, Right
-                    win32gui.SetWindowPos(self.frame_windows[0], target_z, x, y, w, self.FRAME_THICKNESS, win32con.SWP_NOACTIVATE)
-                    win32gui.SetWindowPos(self.frame_windows[1], target_z, x, y + h - self.FRAME_THICKNESS, w, self.FRAME_THICKNESS, win32con.SWP_NOACTIVATE)
-                    win32gui.SetWindowPos(self.frame_windows[2], target_z, x, y, self.FRAME_THICKNESS, h, win32con.SWP_NOACTIVATE)
-                    win32gui.SetWindowPos(self.frame_windows[3], target_z, x + w - self.FRAME_THICKNESS, y, self.FRAME_THICKNESS, h, win32con.SWP_NOACTIVATE)
-
+                    z_order = win32gui.GetWindow(self.target_hwnd, win32con.GW_HWNDPREV)
+                    
+                    win32gui.SetWindowPos(self.frame_windows[0], z_order, x, y, w, self.FRAME_THICKNESS, win32con.SWP_NOACTIVATE)
+                    win32gui.SetWindowPos(self.frame_windows[1], z_order, x, y + h - self.FRAME_THICKNESS, w, self.FRAME_THICKNESS, win32con.SWP_NOACTIVATE)
+                    win32gui.SetWindowPos(self.frame_windows[2], z_order, x, y, self.FRAME_THICKNESS, h, win32con.SWP_NOACTIVATE)
+                    win32gui.SetWindowPos(self.frame_windows[3], z_order, x + w - self.FRAME_THICKNESS, y, self.FRAME_THICKNESS, h, win32con.SWP_NOACTIVATE)
             except win32gui.error:
-                print("Error getting window rect. Target likely closed.")
                 self.root.after(0, self.stop_tracking)
                 break
             
-            time.sleep(0.016) # ~60 FPS
+            time.sleep(0.016)
 
-    def start_tracking(self):
-        """Starts the window tracking thread."""
+    def _start_tracking_thread(self):
+        """Starts or restarts the window tracking thread."""
         if self.tracking_thread and self.tracking_thread.is_alive():
             self.stop_event.set()
             self.tracking_thread.join()
 
         self.stop_event.clear()
+        self.recreate_event.set()
         self.tracking_thread = threading.Thread(target=self._track_window_loop, daemon=True)
         self.tracking_thread.start()
 
     def stop_tracking(self):
         """Stops the tracking loop and destroys the frame windows."""
+        if self.stop_event.is_set():
+            return
         print("Stopping tracking...")
         self.stop_event.set()
         self.target_hwnd = None
+        
         with self.frame_lock:
             for fw in self.frame_windows:
                 if win32gui.IsWindow(fw):
@@ -204,36 +195,18 @@ class WindowFramer:
             self.frame_windows.clear()
 
     def _on_color_select(self, event=None):
-        """Callback for when a new color is selected from the dropdown."""
-        print(f"Color changed to {self.selected_color_name.get()}")
+        """Signals the tracking thread to recreate the frames with a new color."""
         if self.tracking_thread and self.tracking_thread.is_alive():
-            self._update_frame_color()
-
-    def _register_frame_class(self):
-        """Registers the window class for the frames."""
-        wc = win32gui.WNDCLASS()
-        wc.lpszClassName = self.FRAME_CLASS_NAME
-        wc.style = win32con.CS_HREDRAW | win32con.CS_VREDRAW
-        wc.hbrBackground = win32gui.GetStockObject(win32con.BLACK_BRUSH)
-        wc.lpfnWndProc = lambda hwnd, msg, wparam, lparam: win32gui.DefWindowProc(hwnd, msg, wparam, lparam)
-        try:
-            win32gui.RegisterClass(wc)
-        except win32gui.error as e:
-            if e.winerror != 1410: # 1410: Class already exists
-                raise
-
-    def _unregister_frame_class(self):
-        """Unregisters the window class."""
-        try:
-            win32gui.UnregisterClass(self.FRAME_CLASS_NAME, None)
-        except win32gui.error:
-            pass # Ignore if not registered
+            self.recreate_event.set()
 
     def _on_closing(self):
         """Handles cleanup when the main window is closed."""
         print("Application closing...")
         self.stop_tracking()
-        self._unregister_frame_class()
+        try:
+            win32gui.UnregisterClass(self.FRAME_CLASS_NAME, None)
+        except win32gui.error:
+            pass
         self.root.destroy()
 
 if __name__ == "__main__":
