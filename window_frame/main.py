@@ -87,19 +87,14 @@ def create_frame_windows():
     global frame_windows
     # Destroy old frames if they exist
     for fw in frame_windows:
-        win32gui.DestroyWindow(fw)
+        if win32gui.IsWindow(fw):
+            win32gui.DestroyWindow(fw)
     frame_windows = []
-
-    # Unregister the class first to handle color changes
-    try:
-        win32gui.UnregisterClass("FrameWindow", None)
-    except win32gui.error:
-        pass  # Ignore if the class is not registered yet
 
     # Create 4 borderless, transparent, top-most windows
     for i in range(4):
         wc = win32gui.WNDCLASS()
-        wc.lpszClassName = "FrameWindow"
+        wc.lpszClassName = f"FrameWindow{i}"
         wc.style = win32con.CS_HREDRAW | win32con.CS_VREDRAW
         # Create a solid brush for the frame color
         color_ref = int(selected_color.get()[1:], 16)
@@ -107,11 +102,18 @@ def create_frame_windows():
         bgr_color = ((color_ref & 0xFF) << 16) | (color_ref & 0xFF00) | ((color_ref & 0xFF0000) >> 16)
         wc.hbrBackground = win32gui.CreateSolidBrush(bgr_color)
         wc.lpfnWndProc = lambda hwnd, msg, wparam, lparam: win32gui.DefWindowProc(hwnd, msg, wparam, lparam)
-        class_atom = win32gui.RegisterClass(wc)
+        
+        try:
+            class_atom = win32gui.RegisterClass(wc)
+        except win32gui.error as e:
+            if e.winerror == 1410: # Class already exists
+                pass
+            else:
+                raise e
 
         hwnd = win32gui.CreateWindowEx(
             win32con.WS_EX_TOOLWINDOW | win32con.WS_EX_LAYERED | win32con.WS_EX_TOPMOST,
-            class_atom,
+            wc.lpszClassName,
             None,  # No window title
             win32con.WS_POPUP | win32con.WS_VISIBLE,
             0, 0, 1, 1,  # Initial position and size
@@ -172,7 +174,8 @@ def stop_tracking():
     global tracking_active
     tracking_active = False
     for fw in frame_windows:
-        win32gui.DestroyWindow(fw)
+        if win32gui.IsWindow(fw):
+            win32gui.DestroyWindow(fw)
     frame_windows.clear()
 
 
@@ -204,6 +207,8 @@ def create_gui():
     def on_color_select(event):
         color_name = color_menu.get()
         selected_color.set(COLORS[color_name])
+        if tracking_active:
+            create_frame_windows()
 
     color_menu.bind("<<ComboboxSelected>>", on_color_select)
 
