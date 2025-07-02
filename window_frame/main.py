@@ -214,7 +214,7 @@ class WindowFramer:
         wc = win32gui.WNDCLASS()
         wc.lpszClassName = self.FRAME_CLASS_NAME
         wc.style = win32con.CS_HREDRAW | win32con.CS_VREDRAW
-        wc.hbrBackground = win32api.GetStockObject(win32con.BLACK_BRUSH)
+        wc.hbrBackground = win32gui.GetStockObject(win32con.BLACK_BRUSH)
         wc.lpfnWndProc = lambda hwnd, msg, wparam, lparam: win32gui.DefWindowProc(hwnd, msg, wparam, lparam)
         try:
             win32gui.RegisterClass(wc)
