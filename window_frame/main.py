@@ -90,10 +90,16 @@ def create_frame_windows():
         win32gui.DestroyWindow(fw)
     frame_windows = []
 
+    # Unregister the class first to handle color changes
+    try:
+        win32gui.UnregisterClass("FrameWindow", None)
+    except win32gui.error:
+        pass  # Ignore if the class is not registered yet
+
     # Create 4 borderless, transparent, top-most windows
     for i in range(4):
         wc = win32gui.WNDCLASS()
-        wc.lpszClassName = f"FrameWindow{i}"
+        wc.lpszClassName = "FrameWindow"
         wc.style = win32con.CS_HREDRAW | win32con.CS_VREDRAW
         # Create a solid brush for the frame color
         color_ref = int(selected_color.get()[1:], 16)
