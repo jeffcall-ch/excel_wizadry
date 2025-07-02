@@ -39,8 +39,7 @@ namespace WindowFramer
             this.Visibility = Visibility.Collapsed;
             await Task.Delay(500); // Give time for window to hide
 
-            MessageBox.Show("Click on the window you want to frame.", "Select Window", MessageBoxButton.OK);
-
+            // Wait for user to click on the target window
             while (true)
             {
                 if ((NativeMethods.GetAsyncKeyState(0x01) & 0x8000) != 0) // VK_LBUTTON
@@ -114,6 +113,10 @@ namespace WindowFramer
                     ShowInTaskbar = false,
                     Content = new Rectangle { Fill = _selectedBrush }
                 };
+                var helper = new WindowInteropHelper(frame);
+                helper.EnsureHandle();
+                // Make the frame window always on top
+                NativeMethods.SetWindowPos(helper.Handle, -1, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0040); // HWND_TOPMOST, SWP_NOMOVE, SWP_NOSIZE, SWP_NOACTIVATE
                 frame.Show();
                 _frameWindows.Add(frame);
             }
@@ -140,7 +143,13 @@ namespace WindowFramer
                     break;
                 }
 
-                NativeMethods.GetWindowRect(_targetHwnd, out var rect);
+                // Use DwmGetWindowAttribute to get the actual window bounds, excluding shadow.
+                // Fall back to GetWindowRect on failure.
+                var result = NativeMethods.DwmGetWindowAttribute(_targetHwnd, NativeMethods.DWMWA_EXTENDED_FRAME_BOUNDS, out var rect, Marshal.SizeOf(typeof(NativeMethods.RECT)));
+                if (result != 0) // 0 is S_OK. On failure, use the old method.
+                {
+                    NativeMethods.GetWindowRect(_targetHwnd, out rect);
+                }
 
                 Dispatcher.Invoke(() =>
                 {
