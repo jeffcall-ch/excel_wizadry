@@ -141,7 +141,7 @@ class WindowFramer:
             with self.frame_lock:
                 for fw in self.frame_windows:
                     if win32gui.IsWindow(fw):
-                        win32gui.SetClassLong(fw, win32con.GCL_HBRBACKGROUND, brush)
+                        win32gui.SetClassLongPtr(fw, win32con.GCL_HBRBACKGROUND, brush)
                         win32gui.InvalidateRect(fw, None, True) # Force redraw
         except win32gui.error as e:
             print(f"Error updating frame color: {e}")
