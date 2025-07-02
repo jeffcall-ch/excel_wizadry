@@ -6,6 +6,9 @@ __pycache__/
 # C extensions
 *.so
 
+env file
+.env
+
 # excel, docx, pptx, etc.
 *.xlsx
 *.xls
