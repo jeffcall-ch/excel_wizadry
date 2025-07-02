@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
@@ -54,7 +55,9 @@ namespace WindowFramer
             
             this.Visibility = Visibility.Visible;
 
-            var windowTitle = NativeMethods.GetWindowText(_targetHwnd);
+            var sb = new StringBuilder(256);
+            NativeMethods.GetWindowText(_targetHwnd, sb, sb.Capacity);
+            var windowTitle = sb.ToString();
             Debug.WriteLine($"Selected window: '{windowTitle}' (HWND: {_targetHwnd})");
 
             StartTracking();
@@ -116,7 +119,7 @@ namespace WindowFramer
                 var helper = new WindowInteropHelper(frame);
                 helper.EnsureHandle();
                 // Make the frame window always on top
-                NativeMethods.SetWindowPos(helper.Handle, -1, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0040); // HWND_TOPMOST, SWP_NOMOVE, SWP_NOSIZE, SWP_NOACTIVATE
+                NativeMethods.SetWindowPos(helper.Handle, NativeMethods.HWND_TOPMOST, 0, 0, 0, 0, NativeMethods.SWP_NOMOVE | NativeMethods.SWP_NOSIZE | NativeMethods.SWP_NOACTIVATE);
                 frame.Show();
                 _frameWindows.Add(frame);
             }

@@ -26,6 +26,10 @@ public static class NativeMethods
     [DllImport("user32.dll")]
     public static extern bool IsWindow(IntPtr hWnd);
 
+    // For setting window position
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
+
     // For mouse/keyboard input
     [DllImport("user32.dll")]
     public static extern short GetAsyncKeyState(int vKey);
@@ -35,8 +39,13 @@ public static class NativeMethods
     public static extern bool GetCursorPos(out POINT lpPoint);
 
     // --- Constants ---
+    public static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
     public const uint GA_ROOT = 2;
     public const int DWMWA_EXTENDED_FRAME_BOUNDS = 9;
+    public const uint SWP_NOMOVE = 0x0002;
+    public const uint SWP_NOSIZE = 0x0001;
+    public const uint SWP_NOACTIVATE = 0x0010;
+
 
     // --- Structs ---
     [StructLayout(LayoutKind.Sequential)]
