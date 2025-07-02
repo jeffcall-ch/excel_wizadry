@@ -82,6 +82,25 @@ def select_window():
         root.deiconify()
 
 
+def register_frame_class():
+    """Registers the window class for the frames."""
+    wc = win32gui.WNDCLASS()
+    wc.lpszClassName = "FrameWindow"
+    wc.style = win32con.CS_HREDRAW | win32con.CS_VREDRAW
+    wc.lpfnWndProc = lambda hwnd, msg, wparam, lparam: win32gui.DefWindowProc(hwnd, msg, wparam, lparam)
+    try:
+        win32gui.RegisterClass(wc)
+    except win32gui.error as e:
+        if e.winerror != 1410: # Class already exists
+            raise
+
+def unregister_frame_class():
+    """Unregisters the window class for the frames."""
+    try:
+        win32gui.UnregisterClass("FrameWindow", None)
+    except win32gui.error:
+        pass
+
 def create_frame_windows():
     """Creates the four top-level windows that form the frame."""
     global frame_windows
@@ -93,27 +112,9 @@ def create_frame_windows():
 
     # Create 4 borderless, transparent, top-most windows
     for i in range(4):
-        wc = win32gui.WNDCLASS()
-        wc.lpszClassName = f"FrameWindow{i}"
-        wc.style = win32con.CS_HREDRAW | win32con.CS_VREDRAW
-        # Create a solid brush for the frame color
-        color_ref = int(selected_color.get()[1:], 16)
-        # BGR format for CreateSolidBrush
-        bgr_color = ((color_ref & 0xFF) << 16) | (color_ref & 0xFF00) | ((color_ref & 0xFF0000) >> 16)
-        wc.hbrBackground = win32gui.CreateSolidBrush(bgr_color)
-        wc.lpfnWndProc = lambda hwnd, msg, wparam, lparam: win32gui.DefWindowProc(hwnd, msg, wparam, lparam)
-        
-        try:
-            class_atom = win32gui.RegisterClass(wc)
-        except win32gui.error as e:
-            if e.winerror == 1410: # Class already exists
-                pass
-            else:
-                raise e
-
         hwnd = win32gui.CreateWindowEx(
             win32con.WS_EX_TOOLWINDOW | win32con.WS_EX_LAYERED | win32con.WS_EX_TOPMOST,
-            wc.lpszClassName,
+            "FrameWindow",
             None,  # No window title
             win32con.WS_POPUP | win32con.WS_VISIBLE,
             0, 0, 1, 1,  # Initial position and size
@@ -125,6 +126,9 @@ def create_frame_windows():
         # Set transparency (255 is fully opaque)
         win32gui.SetLayeredWindowAttributes(hwnd, 0, 255, win32con.LWA_ALPHA)
         frame_windows.append(hwnd)
+    
+    update_frame_color()
+
 
 
 def track_window():
@@ -161,12 +165,15 @@ def track_window():
         # Right
         win32gui.SetWindowPos(frame_windows[3], win32con.HWND_TOPMOST, x + w - FRAME_THICKNESS, y, FRAME_THICKNESS, h, win32con.SWP_NOACTIVATE)
 
-        # Set the owner of the frame windows to the target window
-        for fw in frame_windows:
-            win32gui.SetWindowLong(fw, win32con.GWL_HWNDPARENT, target_hwnd)
-
-
-        time.sleep(0.01)
+        def update_frame_color():
+    """Updates the color of the frame windows."""
+    color_ref = int(selected_color.get()[1:], 16)
+    bgr_color = ((color_ref & 0xFF) << 16) | (color_ref & 0xFF00) | ((color_ref & 0xFF0000) >> 16)
+    brush = win32gui.CreateSolidBrush(bgr_color)
+    for fw in frame_windows:
+        if win32gui.IsWindow(fw):
+            win32gui.SetClassLong(fw, win32con.GCL_HBRBACKGROUND, brush)
+            win32gui.InvalidateRect(fw, None, True) # Redraw the window
 
 
 def stop_tracking():
@@ -177,6 +184,13 @@ def stop_tracking():
         if win32gui.IsWindow(fw):
             win32gui.DestroyWindow(fw)
     frame_windows.clear()
+    
+def on_closing():
+    """Handles the closing of the root window."""
+    stop_tracking()
+    unregister_frame_class()
+    root.destroy()
+
 
 
 def create_gui():
@@ -208,7 +222,7 @@ def create_gui():
         color_name = color_menu.get()
         selected_color.set(COLORS[color_name])
         if tracking_active:
-            create_frame_windows()
+            update_frame_color()
 
     color_menu.bind("<<ComboboxSelected>>", on_color_select)
 
@@ -217,7 +231,8 @@ def create_gui():
     stop_button.pack(pady=10)
 
 
-    root.protocol("WM_DELETE_WINDOW", root.quit)
+    root.protocol("WM_DELETE_WINDOW", on_closing)
+    register_frame_class()
     root.mainloop()
 
 if __name__ == "__main__":
