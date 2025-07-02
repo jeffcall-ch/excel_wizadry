@@ -95,12 +95,16 @@ def create_frame_windows():
         wc = win32gui.WNDCLASS()
         wc.lpszClassName = f"FrameWindow{i}"
         wc.style = win32con.CS_HREDRAW | win32con.CS_VREDRAW
-        wc.hbrBackground = win32api.GetStockObject(win32con.BLACK_BRUSH)
+        # Create a solid brush for the frame color
+        color_ref = int(selected_color.get()[1:], 16)
+        # BGR format for CreateSolidBrush
+        bgr_color = ((color_ref & 0xFF) << 16) | (color_ref & 0xFF00) | ((color_ref & 0xFF0000) >> 16)
+        wc.hbrBackground = win32gui.CreateSolidBrush(bgr_color)
         wc.lpfnWndProc = lambda hwnd, msg, wparam, lparam: win32gui.DefWindowProc(hwnd, msg, wparam, lparam)
         class_atom = win32gui.RegisterClass(wc)
 
         hwnd = win32gui.CreateWindowEx(
-            win32con.WS_EX_TOOLWINDOW | win32con.WS_EX_LAYERED,
+            win32con.WS_EX_TOOLWINDOW | win32con.WS_EX_LAYERED | win32con.WS_EX_TOPMOST,
             class_atom,
             None,  # No window title
             win32con.WS_POPUP | win32con.WS_VISIBLE,
@@ -120,8 +124,88 @@ def track_window():
     global tracking_active
 
     create_frame_windows()
-    last_color = None
 
     while tracking_active:
         if not win32gui.IsWindow(target_hwnd):
-            print
+            print("Target window closed. Exiting.")
+            stop_tracking()
+            root.quit()
+            return
+
+        # Get the window rect of the target
+        try:
+            rect = win32gui.GetWindowRect(target_hwnd)
+        except win32gui.error:
+            print("Target window not found. Exiting.")
+            stop_tracking()
+            root.quit()
+            return
+
+        x, y, w, h = rect[0], rect[1], rect[2] - rect[0], rect[3] - rect[1]
+
+        # --- Position the 4 frame windows ---
+        # Top
+        win32gui.SetWindowPos(frame_windows[0], win32con.HWND_TOPMOST, x, y, w, FRAME_THICKNESS, win32con.SWP_NOACTIVATE)
+        # Bottom
+        win32gui.SetWindowPos(frame_windows[1], win32con.HWND_TOPMOST, x, y + h - FRAME_THICKNESS, w, FRAME_THICKNESS, win32con.SWP_NOACTIVATE)
+        # Left
+        win32gui.SetWindowPos(frame_windows[2], win32con.HWND_TOPMOST, x, y, FRAME_THICKNESS, h, win32con.SWP_NOACTIVATE)
+        # Right
+        win32gui.SetWindowPos(frame_windows[3], win32con.HWND_TOPMOST, x + w - FRAME_THICKNESS, y, FRAME_THICKNESS, h, win32con.SWP_NOACTIVATE)
+
+        # Set the owner of the frame windows to the target window
+        for fw in frame_windows:
+            win32gui.SetWindowLong(fw, win32con.GWL_HWNDPARENT, target_hwnd)
+
+
+        time.sleep(0.01)
+
+
+def stop_tracking():
+    """Stops the tracking loop and destroys the frame windows."""
+    global tracking_active
+    tracking_active = False
+    for fw in frame_windows:
+        win32gui.DestroyWindow(fw)
+    frame_windows.clear()
+
+
+def create_gui():
+    """Creates the main control GUI."""
+    global root
+    root = tk.Tk()
+    root.title("Window Framer")
+    root.geometry("300x150")
+
+    main_frame = ttk.Frame(root, padding="10")
+    main_frame.pack(fill="both", expand=True)
+
+    # --- Widgets ---
+    select_button = ttk.Button(main_frame, text="Select Window to Frame", command=select_window)
+    select_button.pack(pady=10)
+
+    color_label = ttk.Label(main_frame, text="Frame Color:")
+    color_label.pack()
+
+    color_menu = ttk.Combobox(main_frame, textvariable=selected_color, values=list(COLORS.keys()))
+    color_menu.pack()
+    # Set the default value
+    color_menu.set(list(COLORS.keys())[0])
+
+
+    def on_color_select(event):
+        color_name = color_menu.get()
+        selected_color.set(COLORS[color_name])
+
+    color_menu.bind("<<ComboboxSelected>>", on_color_select)
+
+
+    stop_button = ttk.Button(main_frame, text="Stop Framing", command=stop_tracking)
+    stop_button.pack(pady=10)
+
+
+    root.protocol("WM_DELETE_WINDOW", root.quit)
+    root.mainloop()
+
+if __name__ == "__main__":
+    create_gui()
