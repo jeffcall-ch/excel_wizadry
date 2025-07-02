@@ -6,7 +6,7 @@
 cd /d "%~dp0"
 
 :: Define the paths to the local dotnet executable and the project
-set DOTNET_EXE=.\.dotnet\dotnet.exe
+set DOTNET_EXE=C:\Users\szil\AppData\Local\Microsoft\dotnet\dotnet.exe
 set PROJECT_PATH=.\window_frame_csharp
 
 :: Check if the local .NET SDK exists

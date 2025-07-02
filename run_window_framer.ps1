@@ -5,7 +5,7 @@
 $scriptDir = $PSScriptRoot
 
 # Define the full paths for the local .NET executable and the C# project.
-$dotnetExe = Join-Path -Path $scriptDir -ChildPath ".dotnet/dotnet.exe"
+$dotnetExe = "C:\Users\szil\AppData\Local\Microsoft\dotnet\dotnet.exe"
 $projectPath = Join-Path -Path $scriptDir -ChildPath "window_frame_csharp"
 
 # Check if the local .NET SDK exists. If not, guide the user.
