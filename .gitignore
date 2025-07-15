@@ -17,6 +17,16 @@ env file
 *.pptx
 *.ppt
 
+# C# build artifacts
+bin/
+obj/
+*.user
+*.suo
+*.cache
+*.dll
+*.pdb
+*.exe
+
 # Distribution / packaging
 .Python
 build/
