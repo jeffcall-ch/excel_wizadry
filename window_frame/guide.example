@@ -1,0 +1,717 @@
+Python Async Web Stack – Deep Reference Guide (Expanded & Detailed) FastAPI Conceptual Overview Modern, async-first web framework for Python 3.7+.
+
+Key features: Automatic data validation, dependency injection, async support, OpenAPI docs from type hints.
+
+Foundation: Built on Starlette (ASGI) and Pydantic.
+
+Philosophy: Type-driven, explicit, async-native, minimal boilerplate.
+
+Project Structure & Environment Setup Recommended Structure:
+
+text app/ main.py api/ routes.py dependencies.py models/ user.py schemas/ user.py db/ session.py base.py core/ config.py alembic/ tests/ .env Use environment variables for secrets, DB URLs, etc.
+
+Use python-dotenv or os.environ for config loading.
+
+Example config loader:
+
+python import os
+
+DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite+aiosqlite:///./test.db") SECRET_KEY = os.environ.get("SECRET_KEY", "unsafe-dev-key") Basic Usage with Commentary python from fastapi import FastAPI, Query
+
+app = FastAPI()
+
+@app.get("/items/") async def read_items(q: str = Query(None, min_length=3)): # 'q' is automatically validated and documented as a query parameter. return {"q": q} More Examples Path and Body Parameters:
+
+python from fastapi import Path, Body
+
+@app.get("/users/{user_id}") async def get_user(user_id: int = Path(..., gt=0)): return {"user_id": user_id}
+
+@app.post("/users/") async def create_user(user: dict = Body(...)): return user Pydantic Models for Validation:
+
+python from pydantic import BaseModel
+
+class User(BaseModel): name: str age: int
+
+@app.post("/users/") async def create_user(user: User): # user is validated and parsed automatically return user Response Models and Field Filtering:
+
+python from fastapi import Response from pydantic import BaseModel
+
+class UserOut(BaseModel): id: int name: str
+
+@app.get("/users/{user_id}", response_model=UserOut) async def get_user(user_id: int): # Only id and name will be returned in response ... Advanced Usage Dependency Injection Patterns python from fastapi import Depends
+
+def common_parameters(q: str = None): return {"q": q}
+
+@app.get("/search/") async def search(params: dict = Depends(common_parameters)): return params Database Session Dependency (Async):
+
+python from sqlalchemy.ext.asyncio import AsyncSession
+
+async def get_db(): async with async_session() as session: yield session Security & Authentication OAuth2 Password Flow:
+
+python from fastapi.security import OAuth2PasswordBearer
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+
+@app.get("/users/me") async def read_users_me(token: str = Depends(oauth2_scheme)): return {"token": token} Password Hashing (recommended):
+
+python from passlib.context import CryptContext
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+def hash_password(password: str): return pwd_context.hash(password) Middleware, CORS, and Background Tasks python from fastapi.middleware.cors import CORSMiddleware
+
+app.add_middleware( CORSMiddleware, allow_origins=[""], allow_credentials=True, allow_methods=[""], allow_headers=["*"], ) Custom Exception Handling python from fastapi.responses import JSONResponse from fastapi import Request, HTTPException
+
+@app.exception_handler(HTTPException) async def custom_http_exception_handler(request: Request, exc: HTTPException): return JSONResponse( status_code=exc.status_code, content={"message": f"Oops! {exc.detail}"} ) Routers for Modular Structure python from fastapi import APIRouter
+
+router = APIRouter()
+
+@router.get("/ping") async def ping(): return {"ping": "pong"}
+
+app.include_router(router, prefix="/api") Background Tasks python from fastapi import BackgroundTasks
+
+def write_log(message: str): with open("log.txt", "a") as f: f.write(message)
+
+@app.post("/send-notification/") async def send_notification(email: str, background_tasks: BackgroundTasks): background_tasks.add_task(write_log, f"Notification sent to {email}\n") return {"message": "Notification sent"} Edge Cases & Advanced Patterns Streaming responses: Use StreamingResponse for large files.
+
+WebSockets: FastAPI supports async WebSocket endpoints.
+
+Background tasks: Use BackgroundTasks for non-blocking side effects.
+
+Dependency overrides for testing:
+
+python app.dependency_overrides[get_db] = override_get_db Common Pitfalls & Error Handling Blocking code in async endpoints will block the event loop.
+
+Session leaks: Always use dependency injection/context managers.
+
+Missing type hints: Breaks validation and docs.
+
+Not using async DB drivers in async endpoints.
+
+Returning ORM models directly: Use Pydantic schemas for response models.
+
+Debugging Use FastAPI's built-in error responses and Starlette's debug middleware.
+
+Use custom exception handlers for unified error formatting.
+
+Best Practices Use routers for modular APIs.
+
+Use Pydantic models for all input/output.
+
+Use dependency injection for all resources (DB, config, security).
+
+Handle all exceptions at the API boundary.
+
+Use environment variables for config/secrets.
+
+Always validate and sanitize external input.
+
+Use CORS middleware for cross-origin APIs.
+
+Use background tasks for side effects.
+
+Use response_model to control output fields and prevent leaking sensitive data.
+
+Deployment Production server: Use Uvicorn or Hypercorn with --workers for multiple processes.
+
+Example:
+
+text uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4 Behind a reverse proxy: Use Nginx or Traefik for SSL, load balancing, and static file serving.
+
+Environment variables: Use .env files or Docker secrets for production secrets.
+
+Health checks: Implement a /health endpoint for readiness/liveness probes.
+
+SQLAlchemy Conceptual Overview Primary Python ORM and SQL toolkit.
+
+Key features: Safe, composable SQL, DB-agnostic models, session/transaction management.
+
+Philosophy: Explicit session management, clear separation of Core and ORM.
+
+Project Setup & Engine Configuration Async Engine Creation:
+
+python from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+
+engine = create_async_engine( DATABASE_URL, echo=True, # Set to False in production pool_size=10, # For production max_overflow=20 ) async_session = async_sessionmaker(engine, expire_on_commit=False) Connection Pooling:
+
+For SQLite, use check_same_thread=False and be aware that SQLite is not designed for high concurrency.
+
+For Postgres/MySQL, configure pool size and overflow for your workload.
+
+Basic Usage with Commentary python from sqlalchemy import Column, Integer, String from sqlalchemy.orm import declarative_base
+
+Base = declarative_base()
+
+class User(Base): tablename = "users" id = Column(Integer, primary_key=True) name = Column(String) CRUD Operations:
+
+python from sqlalchemy import select
+
+async with async_session() as session: async with session.begin(): user = User(name="Alice") session.add(user) result = await session.execute(select(User)) users = result.scalars().all() More Examples Querying Data:
+
+python async with async_session() as session: result = await session.execute(select(User).where(User.name == "Alice")) users = result.scalars().all() for user in users: print(user.id, user.name) Updating Data:
+
+python async with async_session() as session: result = await session.execute(select(User).where(User.name == "Alice")) user = result.scalar_one_or_none() if user: user.name = "Alicia" await session.commit() Deleting Data:
+
+python async with async_session() as session: result = await session.execute(select(User).where(User.name == "Alicia")) user = result.scalar_one_or_none() if user: await session.delete(user) await session.commit() Advanced Usage Hybrid Properties python from sqlalchemy.ext.hybrid import hybrid_property
+
+class User(Base): tablename = "users" id = Column(Integer, primary_key=True) first_name = Column(String) last_name = Column(String)
+
+@hybrid_property
+def full_name(self):
+    return f"{self.first_name} {self.last_name}"
+Custom Types and Events python from sqlalchemy.types import TypeDecorator, VARCHAR
+
+class LowerCaseString(TypeDecorator): impl = VARCHAR
+
+def process_bind_param(self, value, dialect):
+    return value.lower() if value else value
+class User(Base): tablename = "users" id = Column(Integer, primary_key=True) email = Column(LowerCaseString(255), unique=True) Event Listeners python from sqlalchemy import event
+
+@event.listens_for(User, "before_insert") def receive_before_insert(mapper, connection, target): print("Inserting:", target) Bulk Operations python async with async_session() as session: users = [User(name="Bulk1"), User(name="Bulk2")] session.add_all(users) await session.commit() Edge Cases & Advanced Patterns Async caveats: All DB operations must be awaited. Never use sync engine/session in async code.
+
+Bulk operations: Use session.bulk_save_objects() for high-volume inserts.
+
+Optimistic concurrency: Use version columns for safe concurrent updates.
+
+Common Pitfalls & Error Handling Using sync API in async code.
+
+Not awaiting async methods.
+
+Leaking sessions by not using context managers.
+
+Using session.query (old style) instead of select() (2.0+).
+
+Not handling transaction boundaries (committing/rolling back).
+
+Forgetting to flush or commit changes.
+
+Debugging Use echo=True in create_async_engine for SQL logs.
+
+Always check session/transaction boundaries.
+
+Best Practices Use context managers for session and transaction scope.
+
+Prefer SQLAlchemy 2.0+ style (select(), Session(engine)).
+
+Isolate DB logic in repositories/services.
+
+Use expire_on_commit=False to avoid object expiration after commit.
+
+Use Alembic for migrations, not manual schema changes.
+
+Handle exceptions and roll back transactions on errors.
+
+Use async engine and session for async frameworks (FastAPI).
+
+Use indexes for frequently queried columns.
+
+Performance & Production Use connection pooling for production DBs.
+
+Enable SQL logging (echo=True) only in development.
+
+Index frequently queried columns.
+
+Use batch/bulk operations for performance.
+
+Alembic Conceptual Overview Official migration tool for SQLAlchemy.
+
+Key features: Versioned, repeatable schema migrations, branching/merging, autogenerate.
+
+Setup & Configuration Initialization:
+
+bash alembic init alembic Edit alembic/env.py:
+
+python from app.db.base import Base target_metadata = Base.metadata
+
+For async DBs, use a synchronous engine for migrations:
+from sqlalchemy import create_engine engine = create_engine(DATABASE_URL.replace("+aiosqlite", "")) Migration Workflow Update models.
+
+Autogenerate migration:
+
+bash alembic revision --autogenerate -m "add user table" Review migration script for correctness.
+
+Apply migration:
+
+bash alembic upgrade head More Examples Manual Migration Script Example:
+
+python def upgrade(): op.create_table( 'address', sa.Column('id', sa.Integer, primary_key=True), sa.Column('user_id', sa.Integer, sa.ForeignKey('users.id')), sa.Column('email', sa.String(255), nullable=False) )
+
+def downgrade(): op.drop_table('address') Advanced Usage Custom operations: Use op.execute() for data migrations.
+
+Batch mode (for SQLite):
+
+python with op.batch_alter_table("users") as batch_op: batch_op.add_column(sa.Column("nickname", sa.String(50))) Branching/merging: Use alembic merge to resolve divergent heads.
+
+Edge Cases & Best Practices Always review autogenerated scripts—autogenerate can miss or misinterpret changes.
+
+Use batch mode for SQLite when altering tables.
+
+Never edit applied migration scripts; always create new revisions.
+
+Keep the alembic_version table in sync.
+
+Use one head per branch, resolve forks promptly.
+
+Common Pitfalls & Error Handling Running Alembic with async engine (should use sync).
+
+Not updating models before autogenerate.
+
+Merge conflicts.
+
+Skipping revision history.
+
+Debugging Use alembic history and alembic current to inspect state.
+
+Use alembic downgrade to revert migrations if needed.
+
+pytest & pytest-asyncio Conceptual Overview pytest: Python’s most popular test runner.
+
+pytest-asyncio: Plugin for async test support.
+
+Key features: Fixtures, parameterization, async/await support, powerful assertions.
+
+Project Setup Name test files test_.py and functions test_.
+
+Use conftest.py for shared fixtures.
+
+Basic Usage python def inc(x): return x + 1
+
+def test_answer(): assert inc(3) == 4 Async test:
+
+python import pytest
+
+@pytest.mark.asyncio async def test_async_func(): await asyncio.sleep(0.1) assert True More Examples Setup/Teardown with Fixtures:
+
+python import pytest
+
+@pytest.fixture def resource(): print("Setup") yield "resource" print("Teardown")
+
+def test_resource(resource): assert resource == "resource" Parameterized Tests:
+
+python @pytest.mark.parametrize("a,b,expected", [(1,2,3), (2,3,5)]) def test_add(a, b, expected): assert a + b == expected Testing Exceptions:
+
+python import pytest
+
+def raise_error(): raise ValueError("error")
+
+def test_raises(): with pytest.raises(ValueError): raise_error() Advanced Usage Async fixtures:
+
+python import pytest_asyncio
+
+@pytest_asyncio.fixture async def async_resource(): await asyncio.sleep(0.1) yield "async_resource" Parameterized tests:
+
+python @pytest.mark.parametrize("a,b,expected", [(1,2,3), (2,3,5)]) def test_add(a, b, expected): assert a + b == expected Testing exceptions:
+
+python import pytest
+
+def raise_error(): raise ValueError("error")
+
+def test_raises(): with pytest.raises(ValueError): raise_error() Edge Cases & Best Practices Use yield in fixtures for teardown/cleanup.
+
+Use session-scoped fixtures for expensive setup.
+
+Use pytest --asyncio-mode=auto for best compatibility.
+
+Avoid global state in tests.
+
+Use factories or fixtures to generate test data.
+
+Use pytest.mark.usefixtures for class/module-wide fixtures.
+
+Common Pitfalls & Error Handling Forgetting @pytest.mark.asyncio on async tests.
+
+Using sync fixtures in async tests.
+
+Not cleaning up async resources.
+
+Not following naming conventions (tests not discovered).
+
+Debugging Use -v, --maxfail, --pdb for verbose output and debugging.
+
+Use pytest --setup-show to debug fixture setup.
+
+aiosqlite Conceptual Overview aiosqlite: Async wrapper for SQLite.
+
+Key features: Non-blocking SQLite operations, async context managers, coroutine-based API.
+
+Basic Usage python import aiosqlite import asyncio
+
+async def main(): async with aiosqlite.connect("test.db") as db: await db.execute( "CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, name TEXT)" ) await db.commit() await db.execute("INSERT INTO users (name) VALUES (?)", ("Alice",)) await db.commit() async with db.execute("SELECT * FROM users") as cursor: async for row in cursor: print(row)
+
+asyncio.run(main()) More Examples Using Row Factory:
+
+python async with aiosqlite.connect("test.db") as db: db.row_factory = aiosqlite.Row async with db.execute("SELECT * FROM users") as cursor: async for row in cursor: print(row["name"]) Transaction Example:
+
+python async with aiosqlite.connect("test.db") as db: await db.execute("BEGIN") try: await db.execute("INSERT INTO users (name) VALUES (?)", ("Bob",)) await db.commit() except Exception: await db.rollback() Bulk Insert:
+
+python users = [("Alice",), ("Bob",)] async with aiosqlite.connect("test.db") as db: await db.executemany("INSERT INTO users (name) VALUES (?)", users) await db.commit() Advanced Usage Row factory:
+
+python async with aiosqlite.connect("test.db") as db: db.row_factory = aiosqlite.Row async with db.execute("SELECT * FROM users") as cursor: async for row in cursor: print(row["name"]) Connection pooling: Not supported natively; open/close connections as needed.
+
+Edge Cases & Best Practices Use async context managers for connections and cursors.
+
+Always commit or rollback transactions.
+
+Use row factories for dict-like access to columns.
+
+For production, prefer a more robust DB (Postgres/MySQL) for concurrency.
+
+Common Pitfalls & Error Handling Forgetting to await.
+
+Using sync code.
+
+Connection leaks.
+
+Not committing transactions.
+
+PostgreSQL & asyncpg Conceptual Overview PostgreSQL is a powerful, open-source relational database system with excellent support for concurrent operations and advanced features.
+
+asyncpg is a fast PostgreSQL Database Client Library for Python/asyncio.
+
+Key features: High performance, pure async, native support for PostgreSQL features, connection pooling, prepared statements.
+
+Foundation: Built specifically for asyncio, not a wrapper around psycopg2.
+
+Philosophy: Performance-first, PostgreSQL-native, fully async, minimal overhead.
+
+Project Setup & Engine Configuration Async Engine Creation with asyncpg:
+
+python from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+
+PostgreSQL with asyncpg driver
+DATABASE_URL = "postgresql+asyncpg://user:password@localhost/dbname" engine = create_async_engine( DATABASE_URL, echo=True, # Set to False in production pool_size=20, # Increase for production max_overflow=30, pool_pre_ping=True, # Verify connections before use pool_recycle=3600, # Recycle connections every hour ) async_session = async_sessionmaker(engine, expire_on_commit=False)
+
+Connection Pooling: PostgreSQL is designed for high concurrency; configure pool size for your workload.
+
+asyncpg provides excellent connection pooling built-in.
+
+Basic Usage with Commentary Direct asyncpg usage (without SQLAlchemy):
+
+python import asyncpg import asyncio
+
+async def main(): # Connect to PostgreSQL conn = await asyncpg.connect( "postgresql://user:password@localhost/database" )
+
+# Execute a query
+rows = await conn.fetch("SELECT * FROM users WHERE age > $1", 25)
+for row in rows:
+    print(row['name'], row['age'])
+
+# Insert data
+await conn.execute(
+    "INSERT INTO users (name, age) VALUES ($1, $2)",
+    "Alice", 30
+)
+
+# Close the connection
+await conn.close()
+asyncio.run(main())
+
+With SQLAlchemy (recommended for ORMs):
+
+python from sqlalchemy import Column, Integer, String, text from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine from sqlalchemy.orm import declarative_base
+
+Base = declarative_base()
+
+class User(Base): tablename = "users" id = Column(Integer, primary_key=True) name = Column(String) age = Column(Integer)
+
+async def main(): engine = create_async_engine( "postgresql+asyncpg://user:password@localhost/dbname" )
+
+async with engine.begin() as conn:
+    await conn.run_sync(Base.metadata.create_all)
+
+async with async_session() as session:
+    # Raw SQL
+    result = await session.execute(text("SELECT version()"))
+    print(result.scalar())
+    
+    # ORM operations
+    user = User(name="Bob", age=35)
+    session.add(user)
+    await session.commit()
+More Examples Connection Pool Management:
+
+python import asyncpg
+
+async def create_pool(): pool = await asyncpg.create_pool( "postgresql://user:password@localhost/database", min_size=10, max_size=20, command_timeout=60 ) return pool
+
+async def main(): pool = await create_pool()
+
+async with pool.acquire() as conn:
+    result = await conn.fetchrow("SELECT * FROM users WHERE id = $1", 1)
+    print(result)
+
+await pool.close()
+Prepared Statements (asyncpg):
+
+python async with pool.acquire() as conn: # Prepare statement once, use multiple times stmt = await conn.prepare("SELECT * FROM users WHERE age > $1")
+
+young_users = await stmt.fetch(18)
+adults = await stmt.fetch(25)
+Transactions:
+
+python async with pool.acquire() as conn: async with conn.transaction(): await conn.execute( "INSERT INTO users (name) VALUES ($1)", "Charlie" ) await conn.execute( "UPDATE users SET age = $1 WHERE name = $2", 28, "Charlie" ) # Transaction commits automatically, or rolls back on exception
+
+Advanced Usage JSON/JSONB Support PostgreSQL's JSON support with asyncpg:
+
+python import json
+
+async with pool.acquire() as conn: # Insert JSON data data = {"name": "Alice", "preferences": {"theme": "dark", "lang": "en"}} await conn.execute( "INSERT INTO users (id, data) VALUES ($1, $2)", 1, json.dumps(data) )
+
+# Query JSON data
+row = await conn.fetchrow(
+    "SELECT data FROM users WHERE data->>'name' = $1", "Alice"
+)
+user_data = json.loads(row['data'])
+Array Support:
+
+python
+
+PostgreSQL arrays
+await conn.execute( "INSERT INTO users (tags) VALUES ($1)", ["python", "fastapi", "postgresql"] )
+
+Query arrays
+rows = await conn.fetch( "SELECT * FROM users WHERE $1 = ANY(tags)", "python" )
+
+Custom Types and Codecs:
+
+python import asyncpg import uuid
+
+async def init_connection(conn): # Register UUID codec await conn.set_type_codec( 'uuid', encoder=str, decoder=uuid.UUID, schema='pg_catalog' )
+
+pool = await asyncpg.create_pool( "postgresql://user:password@localhost/database", init=init_connection )
+
+Bulk Operations:
+
+python
+
+Fast bulk insert
+data = [("Alice", 25), ("Bob", 30), ("Charlie", 35)] await conn.executemany( "INSERT INTO users (name, age) VALUES ($1, $2)", data )
+
+COPY for very large datasets
+await conn.copy_records_to_table( 'users', records=data, columns=['name', 'age'] )
+
+Listen/Notify:
+
+python async def listener(): conn = await asyncpg.connect("postgresql://user:password@localhost/db")
+
+async def notification_handler(connection, pid, channel, payload):
+    print(f"Received notification: {payload}")
+
+await conn.add_listener('chat_updates', notification_handler)
+
+# Keep listening
+await asyncio.sleep(3600)  # Listen for 1 hour
+In another part of your application
+async with pool.acquire() as conn: await conn.execute("NOTIFY chat_updates, 'New message'")
+
+Edge Cases & Advanced Patterns SSL/TLS connections:
+
+python import ssl
+
+ssl_context = ssl.create_default_context() ssl_context.check_hostname = False ssl_context.verify_mode = ssl.CERT_NONE
+
+conn = await asyncpg.connect( "postgresql://user:password@localhost/database", ssl=ssl_context )
+
+Large object handling:
+
+python
+
+For large binary data
+async with conn.transaction(): # Create large object loid = await conn.fetchval("SELECT lo_create(0)")
+
+# Write data
+async with conn.open_large_object(loid, 'wb') as lo:
+    await lo.write(b'large binary data...')
+Database-specific optimizations:
+
+python
+
+Use PostgreSQL's RETURNING clause
+new_id = await conn.fetchval( "INSERT INTO users (name) VALUES ($1) RETURNING id", "David" )
+
+Use UPSERT (ON CONFLICT)
+await conn.execute(""" INSERT INTO users (email, name) VALUES ($1, $2) ON CONFLICT (email) DO UPDATE SET name = $2 """, "user@example.com", "Updated Name")
+
+Common Pitfalls & Error Handling Connection pool exhaustion:
+
+python try: async with pool.acquire() as conn: # Your database operations pass except asyncpg.exceptions.InterfaceError as e: # Handle connection issues print(f"Connection error: {e}")
+
+Always use connection pools in production
+Don't create new connections for each request
+Transaction management:
+
+python async with pool.acquire() as conn: try: async with conn.transaction(): await conn.execute("INSERT INTO users (name) VALUES ($1)", "Test") # Simulate error raise ValueError("Something went wrong") except ValueError: # Transaction is automatically rolled back print("Transaction rolled back")
+
+Parameter binding (SQL injection prevention):
+
+python
+
+Good: Use parameterized queries
+user_id = 123 await conn.fetchrow("SELECT * FROM users WHERE id = $1", user_id)
+
+Bad: String formatting (SQL injection risk)
+await conn.fetchrow(f"SELECT * FROM users WHERE id = {user_id}")
+Debugging Enable SQL logging:
+
+python import logging logging.basicConfig(level=logging.DEBUG) logger = logging.getLogger('asyncpg')
+
+Connection monitoring:
+
+python async def monitor_pool(pool): while True: print(f"Pool size: {pool.get_size()}") print(f"Pool idle: {pool.get_idle_size()}") await asyncio.sleep(60)
+
+Best Practices Use connection pools for production applications.
+
+Always use parameterized queries to prevent SQL injection.
+
+Use transactions for related operations that must succeed together.
+
+Leverage PostgreSQL-specific features like JSON, arrays, and custom types.
+
+Use prepared statements for frequently executed queries.
+
+Monitor connection pool metrics in production.
+
+Use SSL/TLS for connections in production environments.
+
+Handle connection failures gracefully with retries and circuit breakers.
+
+Use bulk operations (executemany, COPY) for large datasets.
+
+Performance & Production Connection pool sizing:
+
+python
+
+For web applications
+pool_size = min(32, (os.cpu_count() or 1) + 4) # Conservative max_overflow = pool_size * 2
+
+engine = create_async_engine( DATABASE_URL, pool_size=pool_size, max_overflow=max_overflow, pool_pre_ping=True, pool_recycle=3600 )
+
+Monitoring and metrics:
+
+python import time import asyncpg
+
+class TimingConnection: def init(self, conn): self._conn = conn
+
+async def execute(self, query, *args):
+    start = time.time()
+    try:
+        result = await self._conn.execute(query, *args)
+        return result
+    finally:
+        duration = time.time() - start
+        print(f"Query took {duration:.3f}s: {query[:50]}...")
+Use with connection pool
+async with pool.acquire() as raw_conn: conn = TimingConnection(raw_conn) await conn.execute("SELECT * FROM users")
+
+psycopg2-binary Conceptual Overview psycopg2-binary is a popular PostgreSQL adapter for Python, providing synchronous database operations.
+
+Problem it solves: Stable, mature PostgreSQL connectivity for non-async applications.
+
+Key features: Full PostgreSQL feature support, mature ecosystem, extensive documentation.
+
+Note: For async applications, prefer asyncpg. Use psycopg2-binary for legacy/sync code or when specific psycopg2 features are needed.
+
+Basic Usage with Commentary Direct usage:
+
+python import psycopg2 from psycopg2.extras import RealDictCursor
+
+Connect to PostgreSQL
+conn = psycopg2.connect( host="localhost", database="mydb", user="user", password="password" )
+
+Use dictionary cursor for dict-like access
+cur = conn.cursor(cursor_factory=RealDictCursor)
+
+Execute query
+cur.execute("SELECT * FROM users WHERE age > %s", (25,)) rows = cur.fetchall()
+
+for row in rows: print(row['name'], row['age'])
+
+Insert data
+cur.execute( "INSERT INTO users (name, age) VALUES (%s, %s)", ("Alice", 30) ) conn.commit()
+
+Close connections
+cur.close() conn.close()
+
+With SQLAlchemy (sync):
+
+python from sqlalchemy import create_engine, Column, Integer, String from sqlalchemy.ext.declarative import declarative_base from sqlalchemy.orm import sessionmaker
+
+Base = declarative_base()
+
+class User(Base): tablename = "users" id = Column(Integer, primary_key=True) name = Column(String) age = Column(Integer)
+
+Create engine
+engine = create_engine("postgresql://user:password@localhost/dbname") Session = sessionmaker(bind=engine)
+
+Use session
+session = Session() user = User(name="Bob", age=35) session.add(user) session.commit() session.close()
+
+Advanced Usage Connection pooling:
+
+python from psycopg2 import pool
+
+Create connection pool
+connection_pool = psycopg2.pool.ThreadedConnectionPool( 1, 20, # min and max connections host="localhost", database="mydb", user="user", password="password" )
+
+Get connection from pool
+conn = connection_pool.getconn() try: cur = conn.cursor() cur.execute("SELECT * FROM users") rows = cur.fetchall() finally: connection_pool.putconn(conn)
+
+JSON support:
+
+python import json import psycopg2.extras
+
+Register JSON adapter
+psycopg2.extras.register_uuid()
+
+cur.execute( "INSERT INTO users (data) VALUES (%s)", (json.dumps({"name": "Alice", "age": 30}),) )
+
+Query JSON
+cur.execute("SELECT data FROM users WHERE data->>'name' = %s", ("Alice",)) row = cur.fetchone() data = json.loads(row[0])
+
+Edge Cases & Best Practices Always use connection pools in production.
+
+Use context managers for automatic cleanup:
+
+python from contextlib import contextmanager
+
+@contextmanager def get_db_connection(): conn = psycopg2.connect(DATABASE_URL) try: yield conn finally: conn.close()
+
+Usage
+with get_db_connection() as conn: cur = conn.cursor() cur.execute("SELECT * FROM users") rows = cur.fetchall()
+
+Common Pitfalls & Error Handling Connection leaks:
+
+python
+
+Good: Always close connections
+try: conn = psycopg2.connect(DATABASE_URL) # database operations finally: conn.close()
+
+Better: Use context manager
+with psycopg2.connect(DATABASE_URL) as conn: # database operations pass # connection closes automatically
+
+SQL injection prevention:
+
+python
+
+Good: Use parameterized queries
+cur.execute("SELECT * FROM users WHERE name = %s", (name,))
+
+Bad: String formatting
+cur.execute(f"SELECT * FROM users WHERE name = '{name}'")
+Best Practices Use connection pools for multi-threaded applications.
+
+Always use parameterized queries.
+
+Use context managers for automatic resource cleanup.
+
+Prefer asyncpg for new async applications.
+
+Handle PostgreSQL-specific exceptions appropriately.
+
+Use appropriate isolation levels for your use case.
+
+Ecosystem Context Alternatives: asyncpg (async), psycopg3 (newer version), SQLAlchemy (ORM abstraction).
+
+Integration: Works with all major Python web frameworks and ORMs.
+
+Usage: Prefer for legacy applications or when specific psycopg2 features are required.
