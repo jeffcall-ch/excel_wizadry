@@ -17,21 +17,42 @@ except Exception as e:
 # Convert all columns to numeric, preserving decimal places as in the original text
 def preserve_decimals(val):
     if isinstance(val, str):
-        # Only extract number for 'DN <number>' or 'PN <number>' patterns
-        match = re.match(r'^(DN|PN)\s*([-+]?\d*\.\d+|[-+]?\d+)$', val.strip(), re.IGNORECASE)
-        if match:
-            num_str = match.group(2)
+        val_stripped = val.strip()
+        
+        # Case 1: Handle cells with 'DN' or 'PN' - extract only the number
+        if 'DN' in val_stripped.upper() or 'PN' in val_stripped.upper():
+            # Extract number from DN/PN patterns
+            number_match = re.search(r'([-+]?\d*\.?\d+)', val_stripped)
+            if number_match:
+                num_str = number_match.group(1)
+                try:
+                    if '.' in num_str:
+                        decimals = len(num_str.split('.')[-1])
+                        num = float(num_str)
+                        return float(f"{num:.{decimals}f}")
+                    else:
+                        return int(num_str)
+                except Exception:
+                    return val
+            return val
+        
+        # Case 2: Check if content is purely a number
+        elif re.match(r'^[-+]?\d*\.?\d+$', val_stripped):
             try:
-                if '.' in num_str:
-                    decimals = len(num_str.split('.')[-1])
-                    num = float(num_str)
+                if '.' in val_stripped:
+                    decimals = len(val_stripped.split('.')[-1])
+                    num = float(val_stripped)
                     return float(f"{num:.{decimals}f}")
                 else:
-                    return int(num_str)
+                    return int(val_stripped)
             except Exception:
                 return val
-        # Otherwise, keep original text
-        return val
+        
+        # Case 3: Mixed content or just text - do nothing
+        else:
+            return val
+    
+    # If not a string, return as is
     return val
 
 for col in df.columns:
