@@ -1,0 +1,3 @@
+test_num,description,medium,fluid_group,ps,dn,expected,actual,details
+38,"DN > 250, PS*DN <= 5000",Gases,2,1,300,Category II,Category 0,"(PS>0.5 AND DN<=32) OR (PS>0.5 AND PS*DN<=1000) (PS=1.0, DN=300.0, PS*DN=300.0)"
+86,Complex boundary case,Gases,1,2,1750,Category II,Category III,"(PS>0.5 AND DN>350) OR (PS>0.5 AND DN>100 AND PS*DN>3500) (PS=2.0, DN=1750.0, PS*DN=3500.0)"

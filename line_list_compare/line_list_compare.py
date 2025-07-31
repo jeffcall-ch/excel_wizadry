@@ -93,16 +93,22 @@ def compare_pipeline_lists(
     check_kks_unique(old_df, 'old')
     check_kks_unique(new_df, 'new')
 
-    # All columns (union)
+    # All columns (union), without 'Changes' (we'll add it at the end)
     all_columns = list(dict.fromkeys(list(new_df.columns) + list(old_df.columns)))
+    if 'Changes' in all_columns:
+        all_columns.remove('Changes')
 
     # Index by KKS
     old_df = old_df.set_index('KKS', drop=False)
     new_df = new_df.set_index('KKS', drop=False)
 
-    # Prepare output rows and color map
+    # Prepare output rows, color map, and changes column
     output_rows = []
     color_map = []
+    changes_col = []
+
+    # Helper: columns to check for changes/deletes (exclude KKS)
+    check_columns = [col for col in all_columns if col != 'KKS']
 
     # Rows in new (existing or new)
     for kks, new_row in new_df.iterrows():
@@ -110,10 +116,13 @@ def compare_pipeline_lists(
             # Entirely new row
             output_rows.append([new_row.get(col, '') for col in all_columns])
             color_map.append([BLUE] * len(all_columns))
+            changes_col.append('N')
         else:
             old_row = old_df.loc[kks]
             row_vals = []
             row_colors = []
+            has_ch = False
+            has_del = False
             for col in all_columns:
                 new_val = new_row.get(col, '')
                 old_val = old_row.get(col, '')
@@ -124,23 +133,39 @@ def compare_pipeline_lists(
                     # Was empty, now filled: yellow (change)
                     row_vals.append(new_val)
                     row_colors.append(YELLOW)
+                    if col in check_columns:
+                        has_ch = True
                 elif new_val == '':
                     # Was filled, now empty: red (deleted cell)
                     row_vals.append(new_val)
                     row_colors.append(RED)
+                    if col in check_columns:
+                        has_del = True
                 else:
                     # Changed value: yellow
                     row_vals.append(new_val)
                     row_colors.append(YELLOW)
+                    if col in check_columns:
+                        has_ch = True
             output_rows.append(row_vals)
             color_map.append(row_colors)
+            # Determine Changes column value
+            if has_ch and has_del:
+                changes_col.append('D,Ch')
+            elif has_del:
+                changes_col.append('D')
+            elif has_ch:
+                changes_col.append('Ch')
+            else:
+                changes_col.append('')
 
-    # Rows deleted (in old, not in new): append at end, all red
+    # Rows deleted (in old, not in new): append at end, all red, Changes = 'D'
     deleted_kks = [kks for kks in old_df.index if kks not in new_df.index]
     for kks in deleted_kks:
         old_row = old_df.loc[kks]
         output_rows.append([old_row.get(col, '') for col in all_columns])
         color_map.append([RED] * len(all_columns))
+        changes_col.append('D')
 
     # Write to Excel with openpyxl
     wb = openpyxl.Workbook()
@@ -150,18 +175,27 @@ def compare_pipeline_lists(
     ws.freeze_panes = 'C2'
     ws.sheet_view.splitTop = 1
     ws.sheet_view.splitLeft = 2
-    # Write header
+    # Write header (add 'Changes' as last column)
     for j, col in enumerate(all_columns, 1):
         ws.cell(row=1, column=j, value=col)
+    ws.cell(row=1, column=len(all_columns) + 1, value='Changes')
     # Write data and apply colors
-    for i, (row, colors) in enumerate(zip(output_rows, color_map), 2):
+    for i, (row, colors, changes) in enumerate(zip(output_rows, color_map, changes_col), 2):
         for j, (val, fill) in enumerate(zip(row, colors), 1):
             cell = ws.cell(row=i, column=j, value=val)
             if fill is not None:
                 cell.fill = fill
+        # Write Changes column with color coding
+        changes_cell = ws.cell(row=i, column=len(all_columns) + 1, value=changes)
+        if changes == 'Ch':
+            changes_cell.fill = YELLOW
+        elif changes == 'N':
+            changes_cell.fill = BLUE
+        elif changes == 'D' or changes == 'D,Ch':
+            changes_cell.fill = RED
 
-    # Auto-fit column widths
-    for j, col in enumerate(all_columns, 1):
+    # Auto-fit column widths (including Changes)
+    for j, col in enumerate(all_columns + ['Changes'], 1):
         max_length = len(str(col))
         for i in range(2, len(output_rows) + 2):
             val = ws.cell(row=i, column=j).value

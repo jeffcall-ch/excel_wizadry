@@ -173,3 +173,57 @@ def test_column_value_changes_colored_correctly(test_files):
     if b1_row:
         b1_cells = list(ws.iter_rows(min_row=b1_row, max_row=b1_row))[0]
         assert any(cell.fill.start_color.rgb == yellow for cell in b1_cells)
+
+
+def test_changes_column_values_and_colors(test_files):
+    """Test that the 'Changes' column has correct values and color coding."""
+    import openpyxl
+
+    compare_pipeline_lists(
+        old_file=test_files['old_file'],
+        new_file=test_files['new_file'],
+        output_file=test_files['output_file']
+    )
+    wb = openpyxl.load_workbook(test_files['output_file'])
+    ws = wb.active
+
+    # Find the index of the 'Changes' column
+    header = [cell.value for cell in ws[1]]
+    changes_idx = header.index('Changes') + 1  # 1-based
+
+    # Color codes
+    yellow = 'FFFFFF00'
+    blue = 'FF00B0F0'
+    red = 'FFFF0000'
+
+    # Build expected values for the test data
+    # Test data: old KKS: A1, B1, C1, D1; new KKS: A1, B1, C1, E1
+    # - A1: unchanged
+    # - B1: changed (Description and Value)
+    # - C1: unchanged
+    # - E1: new
+    # - D1: deleted
+    expected = {
+        'A1': ('', None),
+        'B1': ('Ch', yellow),
+        'C1': ('', None),
+        'E1': ('N', blue),
+        'D1': ('D', red),
+    }
+
+    # Map KKS to row index
+    kks_col_idx = header.index('KKS') + 1
+    kks_to_row = {}
+    for i, row in enumerate(ws.iter_rows(min_row=2), 2):
+        kks = ws.cell(row=i, column=kks_col_idx).value
+        kks_to_row[kks] = i
+
+    for kks, (exp_val, exp_color) in expected.items():
+        row_idx = kks_to_row[kks]
+        cell = ws.cell(row=row_idx, column=changes_idx)
+        assert cell.value == exp_val, f"KKS {kks}: expected '{exp_val}', got '{cell.value}'"
+        if exp_color:
+            assert cell.fill.start_color.rgb == exp_color, f"KKS {kks}: expected color {exp_color}, got {cell.fill.start_color.rgb}"
+        else:
+            # No fill means fill_type is None or start_color is not set
+            assert cell.fill is not None and (cell.fill.fill_type is None or cell.fill.start_color.rgb in (None, '00000000', '000000'))

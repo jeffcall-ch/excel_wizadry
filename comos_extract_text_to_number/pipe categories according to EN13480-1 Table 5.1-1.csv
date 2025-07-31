@@ -1,0 +1,18 @@
+﻿Medium,Fluid group,Criteria,Category
+Gases,1, (PS>0.5 AND DN>350) OR (PS>0.5 AND DN>100 AND PS*DN>3500), Category III
+Gases,1, (PS>0.5 AND 100<DN<=350 AND PS*DN<=3500) OR (25<DN<=100 AND PS*DN>1000) OR (25<DN<=350 AND 1000<PS*DN<3500), Category II
+Gases,1, (PS>0.5 AND 25<DN<=100 AND PS*DN<=1000), Category I
+Gases,1, (PS>0.5 AND DN<=25), Category 0
+Gases,2, (PS>0.5 AND DN>250 AND PS*DN>5000), Category III
+Gases,2, (PS>0.5 AND DN>250 AND 3500<PS*DN<=5000) OR(100<DN<=250 AND PS*DN>3500), Category II
+Gases,2, (PS>0.5 AND DN>32 AND 1000<PS*DN<=3500) OR(32<DN<=100 AND PS*DN>1000), Category I
+Gases,2, (PS>0.5 AND DN<=32) OR (PS>0.5 AND PS*DN<=1000), Category 0
+Gases,any, PS<=0.5, See 5.3
+Liquids,1, PS>500 AND DN>25, Category III
+Liquids,1, 10<PS<=500 AND DN>25 AND PS*DN>2000, Category II
+Liquids,1, 0.5<PS<=10 AND PS*DN>2000, Category I
+Liquids,1, (PS>0.5 AND DN<=25) OR (PS>0.5 AND PS*DN<=2000), Category 0
+Liquids,2, PS>500 AND DN>200, Category II
+Liquids,2, 10<PS<=500 AND DN>200 AND PS*DN>5000, Category I
+Liquids,2, (0.5<PS<=10) OR (PS>0.5 AND DN<=200) OR (PS>0.5 AND PS*DN<=5000) , Category 0
+Liquids,any, PS<=0.5, See 5.3

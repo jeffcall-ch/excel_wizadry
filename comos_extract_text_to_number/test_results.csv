@@ -1,0 +1,128 @@
+Test_ID,Medium,Fluid_Group,PS,DN,PS_DN,Expected_Category,Actual_Category,Status,Details,Matching_Rule
+1,Gases,1,1.0,400,400.0,Category III,Category III,PASS,"(PS>0.5 AND DN>350) OR (PS>0.5 AND DN>100 AND PS*DN>3500) (PS=1.0, DN=400.0, PS*DN=400.0)",Excel categorize_pipe function
+2,Gases,1,2.0,450,900.0,Category III,Category III,PASS,"(PS>0.5 AND DN>350) OR (PS>0.5 AND DN>100 AND PS*DN>3500) (PS=2.0, DN=450.0, PS*DN=900.0)",Excel categorize_pipe function
+3,Gases,1,1.0,500,500.0,Category III,Category III,PASS,"(PS>0.5 AND DN>350) OR (PS>0.5 AND DN>100 AND PS*DN>3500) (PS=1.0, DN=500.0, PS*DN=500.0)",Excel categorize_pipe function
+4,Gases,1,3.0,600,1800.0,Category III,Category III,PASS,"(PS>0.5 AND DN>350) OR (PS>0.5 AND DN>100 AND PS*DN>3500) (PS=3.0, DN=600.0, PS*DN=1800.0)",Excel categorize_pipe function
+5,Gases,1,2.0,700,1400.0,Category III,Category III,PASS,"(PS>0.5 AND DN>350) OR (PS>0.5 AND DN>100 AND PS*DN>3500) (PS=2.0, DN=700.0, PS*DN=1400.0)",Excel categorize_pipe function
+6,Gases,1,4.0,750,3000.0,Category III,Category III,PASS,"(PS>0.5 AND DN>350) OR (PS>0.5 AND DN>100 AND PS*DN>3500) (PS=4.0, DN=750.0, PS*DN=3000.0)",Excel categorize_pipe function
+7,Gases,1,2.0,800,1600.0,Category III,Category III,PASS,"(PS>0.5 AND DN>350) OR (PS>0.5 AND DN>100 AND PS*DN>3500) (PS=2.0, DN=800.0, PS*DN=1600.0)",Excel categorize_pipe function
+8,Gases,1,3.0,900,2700.0,Category III,Category III,PASS,"(PS>0.5 AND DN>350) OR (PS>0.5 AND DN>100 AND PS*DN>3500) (PS=3.0, DN=900.0, PS*DN=2700.0)",Excel categorize_pipe function
+9,Gases,1,1.0,1000,1000.0,Category III,Category III,PASS,"(PS>0.5 AND DN>350) OR (PS>0.5 AND DN>100 AND PS*DN>3500) (PS=1.0, DN=1000.0, PS*DN=1000.0)",Excel categorize_pipe function
+10,Gases,1,5.0,400,2000.0,Category III,Category III,PASS,"(PS>0.5 AND DN>350) OR (PS>0.5 AND DN>100 AND PS*DN>3500) (PS=5.0, DN=400.0, PS*DN=2000.0)",Excel categorize_pipe function
+11,Gases,1,20.0,200,4000.0,Category III,Category III,PASS,"(PS>0.5 AND DN>350) OR (PS>0.5 AND DN>100 AND PS*DN>3500) (PS=20.0, DN=200.0, PS*DN=4000.0)",Excel categorize_pipe function
+12,Gases,1,15.0,250,3750.0,Category III,Category III,PASS,"(PS>0.5 AND DN>350) OR (PS>0.5 AND DN>100 AND PS*DN>3500) (PS=15.0, DN=250.0, PS*DN=3750.0)",Excel categorize_pipe function
+13,Gases,1,12.0,300,3600.0,Category III,Category III,PASS,"(PS>0.5 AND DN>350) OR (PS>0.5 AND DN>100 AND PS*DN>3500) (PS=12.0, DN=300.0, PS*DN=3600.0)",Excel categorize_pipe function
+14,Gases,1,11.0,350,3850.0,Category III,Category III,PASS,"(PS>0.5 AND DN>350) OR (PS>0.5 AND DN>100 AND PS*DN>3500) (PS=11.0, DN=350.0, PS*DN=3850.0)",Excel categorize_pipe function
+15,Gases,1,25.0,150,3750.0,Category III,Category III,PASS,"(PS>0.5 AND DN>350) OR (PS>0.5 AND DN>100 AND PS*DN>3500) (PS=25.0, DN=150.0, PS*DN=3750.0)",Excel categorize_pipe function
+16,Gases,1,30.0,125,3750.0,Category III,Category III,PASS,"(PS>0.5 AND DN>350) OR (PS>0.5 AND DN>100 AND PS*DN>3500) (PS=30.0, DN=125.0, PS*DN=3750.0)",Excel categorize_pipe function
+17,Gases,1,18.0,200,3600.0,Category III,Category III,PASS,"(PS>0.5 AND DN>350) OR (PS>0.5 AND DN>100 AND PS*DN>3500) (PS=18.0, DN=200.0, PS*DN=3600.0)",Excel categorize_pipe function
+18,Gases,1,16.0,250,4000.0,Category III,Category III,PASS,"(PS>0.5 AND DN>350) OR (PS>0.5 AND DN>100 AND PS*DN>3500) (PS=16.0, DN=250.0, PS*DN=4000.0)",Excel categorize_pipe function
+19,Gases,1,13.0,300,3900.0,Category III,Category III,PASS,"(PS>0.5 AND DN>350) OR (PS>0.5 AND DN>100 AND PS*DN>3500) (PS=13.0, DN=300.0, PS*DN=3900.0)",Excel categorize_pipe function
+20,Gases,1,32.0,115,3680.0,Category III,Category III,PASS,"(PS>0.5 AND DN>350) OR (PS>0.5 AND DN>100 AND PS*DN>3500) (PS=32.0, DN=115.0, PS*DN=3680.0)",Excel categorize_pipe function
+21,Gases,1,10.0,115,1150.0,Category II,Category II,PASS,"(PS>0.5 AND 100<DN<=350 AND PS*DN<=3500) OR (25<DN<=100 AND PS*DN>1000) OR (25<DN<=350 AND 1000<PS*DN<3500) (PS=10.0, DN=115.0, PS*DN=1150.0)",Excel categorize_pipe function
+22,Gases,1,8.0,125,1000.0,Category II,Category II,PASS,"(PS>0.5 AND 100<DN<=350 AND PS*DN<=3500) OR (25<DN<=100 AND PS*DN>1000) OR (25<DN<=350 AND 1000<PS*DN<3500) (PS=8.0, DN=125.0, PS*DN=1000.0)",Excel categorize_pipe function
+23,Gases,1,6.0,150,900.0,Category II,Category II,PASS,"(PS>0.5 AND 100<DN<=350 AND PS*DN<=3500) OR (25<DN<=100 AND PS*DN>1000) OR (25<DN<=350 AND 1000<PS*DN<3500) (PS=6.0, DN=150.0, PS*DN=900.0)",Excel categorize_pipe function
+24,Gases,1,4.0,200,800.0,Category II,Category II,PASS,"(PS>0.5 AND 100<DN<=350 AND PS*DN<=3500) OR (25<DN<=100 AND PS*DN>1000) OR (25<DN<=350 AND 1000<PS*DN<3500) (PS=4.0, DN=200.0, PS*DN=800.0)",Excel categorize_pipe function
+25,Gases,1,3.0,250,750.0,Category II,Category II,PASS,"(PS>0.5 AND 100<DN<=350 AND PS*DN<=3500) OR (25<DN<=100 AND PS*DN>1000) OR (25<DN<=350 AND 1000<PS*DN<3500) (PS=3.0, DN=250.0, PS*DN=750.0)",Excel categorize_pipe function
+26,Gases,1,2.0,300,600.0,Category II,Category II,PASS,"(PS>0.5 AND 100<DN<=350 AND PS*DN<=3500) OR (25<DN<=100 AND PS*DN>1000) OR (25<DN<=350 AND 1000<PS*DN<3500) (PS=2.0, DN=300.0, PS*DN=600.0)",Excel categorize_pipe function
+27,Gases,1,1.0,350,350.0,Category II,Category II,PASS,"(PS>0.5 AND 100<DN<=350 AND PS*DN<=3500) OR (25<DN<=100 AND PS*DN>1000) OR (25<DN<=350 AND 1000<PS*DN<3500) (PS=1.0, DN=350.0, PS*DN=350.0)",Excel categorize_pipe function
+28,Gases,1,8.0,115,920.0,Category II,Category II,PASS,"(PS>0.5 AND 100<DN<=350 AND PS*DN<=3500) OR (25<DN<=100 AND PS*DN>1000) OR (25<DN<=350 AND 1000<PS*DN<3500) (PS=8.0, DN=115.0, PS*DN=920.0)",Excel categorize_pipe function
+29,Gases,1,7.0,125,875.0,Category II,Category II,PASS,"(PS>0.5 AND 100<DN<=350 AND PS*DN<=3500) OR (25<DN<=100 AND PS*DN>1000) OR (25<DN<=350 AND 1000<PS*DN<3500) (PS=7.0, DN=125.0, PS*DN=875.0)",Excel categorize_pipe function
+30,Gases,1,5.0,200,1000.0,Category II,Category II,PASS,"(PS>0.5 AND 100<DN<=350 AND PS*DN<=3500) OR (25<DN<=100 AND PS*DN>1000) OR (25<DN<=350 AND 1000<PS*DN<3500) (PS=5.0, DN=200.0, PS*DN=1000.0)",Excel categorize_pipe function
+31,Gases,1,35.0,32,1120.0,Category II,Category II,PASS,"(PS>0.5 AND 100<DN<=350 AND PS*DN<=3500) OR (25<DN<=100 AND PS*DN>1000) OR (25<DN<=350 AND 1000<PS*DN<3500) (PS=35.0, DN=32.0, PS*DN=1120.0)",Excel categorize_pipe function
+32,Gases,1,30.0,40,1200.0,Category II,Category II,PASS,"(PS>0.5 AND 100<DN<=350 AND PS*DN<=3500) OR (25<DN<=100 AND PS*DN>1000) OR (25<DN<=350 AND 1000<PS*DN<3500) (PS=30.0, DN=40.0, PS*DN=1200.0)",Excel categorize_pipe function
+33,Gases,1,25.0,50,1250.0,Category II,Category II,PASS,"(PS>0.5 AND 100<DN<=350 AND PS*DN<=3500) OR (25<DN<=100 AND PS*DN>1000) OR (25<DN<=350 AND 1000<PS*DN<3500) (PS=25.0, DN=50.0, PS*DN=1250.0)",Excel categorize_pipe function
+34,Gases,1,20.0,65,1300.0,Category II,Category II,PASS,"(PS>0.5 AND 100<DN<=350 AND PS*DN<=3500) OR (25<DN<=100 AND PS*DN>1000) OR (25<DN<=350 AND 1000<PS*DN<3500) (PS=20.0, DN=65.0, PS*DN=1300.0)",Excel categorize_pipe function
+35,Gases,1,15.0,80,1200.0,Category II,Category II,PASS,"(PS>0.5 AND 100<DN<=350 AND PS*DN<=3500) OR (25<DN<=100 AND PS*DN>1000) OR (25<DN<=350 AND 1000<PS*DN<3500) (PS=15.0, DN=80.0, PS*DN=1200.0)",Excel categorize_pipe function
+36,Gases,1,12.0,90,1080.0,Category II,Category II,PASS,"(PS>0.5 AND 100<DN<=350 AND PS*DN<=3500) OR (25<DN<=100 AND PS*DN>1000) OR (25<DN<=350 AND 1000<PS*DN<3500) (PS=12.0, DN=90.0, PS*DN=1080.0)",Excel categorize_pipe function
+37,Gases,1,11.0,100,1100.0,Category II,Category II,PASS,"(PS>0.5 AND 100<DN<=350 AND PS*DN<=3500) OR (25<DN<=100 AND PS*DN>1000) OR (25<DN<=350 AND 1000<PS*DN<3500) (PS=11.0, DN=100.0, PS*DN=1100.0)",Excel categorize_pipe function
+38,Gases,1,22.0,50,1100.0,Category II,Category II,PASS,"(PS>0.5 AND 100<DN<=350 AND PS*DN<=3500) OR (25<DN<=100 AND PS*DN>1000) OR (25<DN<=350 AND 1000<PS*DN<3500) (PS=22.0, DN=50.0, PS*DN=1100.0)",Excel categorize_pipe function
+39,Gases,1,18.0,65,1170.0,Category II,Category II,PASS,"(PS>0.5 AND 100<DN<=350 AND PS*DN<=3500) OR (25<DN<=100 AND PS*DN>1000) OR (25<DN<=350 AND 1000<PS*DN<3500) (PS=18.0, DN=65.0, PS*DN=1170.0)",Excel categorize_pipe function
+40,Gases,1,14.0,80,1120.0,Category II,Category II,PASS,"(PS>0.5 AND 100<DN<=350 AND PS*DN<=3500) OR (25<DN<=100 AND PS*DN>1000) OR (25<DN<=350 AND 1000<PS*DN<3500) (PS=14.0, DN=80.0, PS*DN=1120.0)",Excel categorize_pipe function
+41,Gases,1,32.0,32,1024.0,Category II,Category II,PASS,"(PS>0.5 AND 100<DN<=350 AND PS*DN<=3500) OR (25<DN<=100 AND PS*DN>1000) OR (25<DN<=350 AND 1000<PS*DN<3500) (PS=32.0, DN=32.0, PS*DN=1024.0)",Excel categorize_pipe function
+42,Gases,1,26.0,40,1040.0,Category II,Category II,PASS,"(PS>0.5 AND 100<DN<=350 AND PS*DN<=3500) OR (25<DN<=100 AND PS*DN>1000) OR (25<DN<=350 AND 1000<PS*DN<3500) (PS=26.0, DN=40.0, PS*DN=1040.0)",Excel categorize_pipe function
+43,Gases,1,21.0,50,1050.0,Category II,Category II,PASS,"(PS>0.5 AND 100<DN<=350 AND PS*DN<=3500) OR (25<DN<=100 AND PS*DN>1000) OR (25<DN<=350 AND 1000<PS*DN<3500) (PS=21.0, DN=50.0, PS*DN=1050.0)",Excel categorize_pipe function
+44,Gases,1,16.0,65,1040.0,Category II,Category II,PASS,"(PS>0.5 AND 100<DN<=350 AND PS*DN<=3500) OR (25<DN<=100 AND PS*DN>1000) OR (25<DN<=350 AND 1000<PS*DN<3500) (PS=16.0, DN=65.0, PS*DN=1040.0)",Excel categorize_pipe function
+45,Gases,1,13.0,80,1040.0,Category II,Category II,PASS,"(PS>0.5 AND 100<DN<=350 AND PS*DN<=3500) OR (25<DN<=100 AND PS*DN>1000) OR (25<DN<=350 AND 1000<PS*DN<3500) (PS=13.0, DN=80.0, PS*DN=1040.0)",Excel categorize_pipe function
+46,Gases,1,12.0,90,1080.0,Category II,Category II,PASS,"(PS>0.5 AND 100<DN<=350 AND PS*DN<=3500) OR (25<DN<=100 AND PS*DN>1000) OR (25<DN<=350 AND 1000<PS*DN<3500) (PS=12.0, DN=90.0, PS*DN=1080.0)",Excel categorize_pipe function
+47,Gases,1,11.0,100,1100.0,Category II,Category II,PASS,"(PS>0.5 AND 100<DN<=350 AND PS*DN<=3500) OR (25<DN<=100 AND PS*DN>1000) OR (25<DN<=350 AND 1000<PS*DN<3500) (PS=11.0, DN=100.0, PS*DN=1100.0)",Excel categorize_pipe function
+48,Gases,1,9.0,115,1035.0,Category II,Category II,PASS,"(PS>0.5 AND 100<DN<=350 AND PS*DN<=3500) OR (25<DN<=100 AND PS*DN>1000) OR (25<DN<=350 AND 1000<PS*DN<3500) (PS=9.0, DN=115.0, PS*DN=1035.0)",Excel categorize_pipe function
+49,Gases,1,8.0,125,1000.0,Category II,Category II,PASS,"(PS>0.5 AND 100<DN<=350 AND PS*DN<=3500) OR (25<DN<=100 AND PS*DN>1000) OR (25<DN<=350 AND 1000<PS*DN<3500) (PS=8.0, DN=125.0, PS*DN=1000.0)",Excel categorize_pipe function
+50,Gases,1,7.0,150,1050.0,Category II,Category II,PASS,"(PS>0.5 AND 100<DN<=350 AND PS*DN<=3500) OR (25<DN<=100 AND PS*DN>1000) OR (25<DN<=350 AND 1000<PS*DN<3500) (PS=7.0, DN=150.0, PS*DN=1050.0)",Excel categorize_pipe function
+51,Gases,1,1.0,32,32.0,Category I,Category I,PASS,"(PS>0.5 AND 25<DN<=100 AND PS*DN<=1000) (PS=1.0, DN=32.0, PS*DN=32.0)",Excel categorize_pipe function
+52,Gases,1,2.0,40,80.0,Category I,Category I,PASS,"(PS>0.5 AND 25<DN<=100 AND PS*DN<=1000) (PS=2.0, DN=40.0, PS*DN=80.0)",Excel categorize_pipe function
+53,Gases,1,3.0,50,150.0,Category I,Category I,PASS,"(PS>0.5 AND 25<DN<=100 AND PS*DN<=1000) (PS=3.0, DN=50.0, PS*DN=150.0)",Excel categorize_pipe function
+54,Gases,1,4.0,65,260.0,Category I,Category I,PASS,"(PS>0.5 AND 25<DN<=100 AND PS*DN<=1000) (PS=4.0, DN=65.0, PS*DN=260.0)",Excel categorize_pipe function
+55,Gases,1,5.0,80,400.0,Category I,Category I,PASS,"(PS>0.5 AND 25<DN<=100 AND PS*DN<=1000) (PS=5.0, DN=80.0, PS*DN=400.0)",Excel categorize_pipe function
+56,Gases,1,1.0,25,25.0,Category 0,Category 0,PASS,"(PS>0.5 AND DN<=25) (PS=1.0, DN=25.0, PS*DN=25.0)",Excel categorize_pipe function
+57,Gases,2,21.0,300,6300.0,Category III,Category III,PASS,"(PS>0.5 AND DN>250 AND PS*DN>5000) (PS=21.0, DN=300.0, PS*DN=6300.0)",Excel categorize_pipe function
+58,Gases,2,20.0,350,7000.0,Category III,Category III,PASS,"(PS>0.5 AND DN>250 AND PS*DN>5000) (PS=20.0, DN=350.0, PS*DN=7000.0)",Excel categorize_pipe function
+59,Gases,2,18.0,400,7200.0,Category III,Category III,PASS,"(PS>0.5 AND DN>250 AND PS*DN>5000) (PS=18.0, DN=400.0, PS*DN=7200.0)",Excel categorize_pipe function
+60,Gases,2,15.0,450,6750.0,Category III,Category III,PASS,"(PS>0.5 AND DN>250 AND PS*DN>5000) (PS=15.0, DN=450.0, PS*DN=6750.0)",Excel categorize_pipe function
+61,Gases,2,14.0,500,7000.0,Category III,Category III,PASS,"(PS>0.5 AND DN>250 AND PS*DN>5000) (PS=14.0, DN=500.0, PS*DN=7000.0)",Excel categorize_pipe function
+62,Gases,2,15.0,300,4500.0,Category II,Category II,PASS,"(PS>0.5 AND DN>250 AND 3500<PS*DN<=5000) OR(100<DN<=250 AND PS*DN>3500) (PS=15.0, DN=300.0, PS*DN=4500.0)",Excel categorize_pipe function
+63,Gases,2,16.0,350,5600.0,Category III,Category III,PASS,"(PS>0.5 AND DN>250 AND PS*DN>5000) (PS=16.0, DN=350.0, PS*DN=5600.0)",Excel categorize_pipe function
+64,Gases,2,14.0,400,5600.0,Category III,Category III,PASS,"(PS>0.5 AND DN>250 AND PS*DN>5000) (PS=14.0, DN=400.0, PS*DN=5600.0)",Excel categorize_pipe function
+65,Gases,2,13.0,450,5850.0,Category III,Category III,PASS,"(PS>0.5 AND DN>250 AND PS*DN>5000) (PS=13.0, DN=450.0, PS*DN=5850.0)",Excel categorize_pipe function
+66,Gases,2,12.0,500,6000.0,Category III,Category III,PASS,"(PS>0.5 AND DN>250 AND PS*DN>5000) (PS=12.0, DN=500.0, PS*DN=6000.0)",Excel categorize_pipe function
+67,Gases,2,35.0,115,4025.0,Category II,Category II,PASS,"(PS>0.5 AND DN>250 AND 3500<PS*DN<=5000) OR(100<DN<=250 AND PS*DN>3500) (PS=35.0, DN=115.0, PS*DN=4025.0)",Excel categorize_pipe function
+68,Gases,2,30.0,125,3750.0,Category II,Category II,PASS,"(PS>0.5 AND DN>250 AND 3500<PS*DN<=5000) OR(100<DN<=250 AND PS*DN>3500) (PS=30.0, DN=125.0, PS*DN=3750.0)",Excel categorize_pipe function
+69,Gases,2,25.0,150,3750.0,Category II,Category II,PASS,"(PS>0.5 AND DN>250 AND 3500<PS*DN<=5000) OR(100<DN<=250 AND PS*DN>3500) (PS=25.0, DN=150.0, PS*DN=3750.0)",Excel categorize_pipe function
+70,Gases,2,18.0,200,3600.0,Category II,Category II,PASS,"(PS>0.5 AND DN>250 AND 3500<PS*DN<=5000) OR(100<DN<=250 AND PS*DN>3500) (PS=18.0, DN=200.0, PS*DN=3600.0)",Excel categorize_pipe function
+71,Gases,2,15.0,250,3750.0,Category II,Category II,PASS,"(PS>0.5 AND DN>250 AND 3500<PS*DN<=5000) OR(100<DN<=250 AND PS*DN>3500) (PS=15.0, DN=250.0, PS*DN=3750.0)",Excel categorize_pipe function
+72,Gases,2,8.0,150,1200.0,Category I,Category I,PASS,"(PS>0.5 AND DN>32 AND 1000<PS*DN<=3500) OR(32<DN<=100 AND PS*DN>1000) (PS=8.0, DN=150.0, PS*DN=1200.0)",Excel categorize_pipe function
+73,Gases,2,6.0,200,1200.0,Category I,Category I,PASS,"(PS>0.5 AND DN>32 AND 1000<PS*DN<=3500) OR(32<DN<=100 AND PS*DN>1000) (PS=6.0, DN=200.0, PS*DN=1200.0)",Excel categorize_pipe function
+74,Gases,2,5.0,300,1500.0,Category I,Category I,PASS,"(PS>0.5 AND DN>32 AND 1000<PS*DN<=3500) OR(32<DN<=100 AND PS*DN>1000) (PS=5.0, DN=300.0, PS*DN=1500.0)",Excel categorize_pipe function
+75,Gases,2,4.0,400,1600.0,Category I,Category I,PASS,"(PS>0.5 AND DN>32 AND 1000<PS*DN<=3500) OR(32<DN<=100 AND PS*DN>1000) (PS=4.0, DN=400.0, PS*DN=1600.0)",Excel categorize_pipe function
+76,Gases,2,3.0,500,1500.0,Category I,Category I,PASS,"(PS>0.5 AND DN>32 AND 1000<PS*DN<=3500) OR(32<DN<=100 AND PS*DN>1000) (PS=3.0, DN=500.0, PS*DN=1500.0)",Excel categorize_pipe function
+77,Gases,2,35.0,32,1120.0,Category 0,Category 0,PASS,"(PS>0.5 AND DN<=32) OR (PS>0.5 AND PS*DN<=1000) (PS=35.0, DN=32.0, PS*DN=1120.0)",Excel categorize_pipe function
+78,Gases,2,30.0,40,1200.0,Category I,Category I,PASS,"(PS>0.5 AND DN>32 AND 1000<PS*DN<=3500) OR(32<DN<=100 AND PS*DN>1000) (PS=30.0, DN=40.0, PS*DN=1200.0)",Excel categorize_pipe function
+79,Gases,2,25.0,50,1250.0,Category I,Category I,PASS,"(PS>0.5 AND DN>32 AND 1000<PS*DN<=3500) OR(32<DN<=100 AND PS*DN>1000) (PS=25.0, DN=50.0, PS*DN=1250.0)",Excel categorize_pipe function
+80,Gases,2,20.0,65,1300.0,Category I,Category I,PASS,"(PS>0.5 AND DN>32 AND 1000<PS*DN<=3500) OR(32<DN<=100 AND PS*DN>1000) (PS=20.0, DN=65.0, PS*DN=1300.0)",Excel categorize_pipe function
+81,Gases,2,15.0,80,1200.0,Category I,Category I,PASS,"(PS>0.5 AND DN>32 AND 1000<PS*DN<=3500) OR(32<DN<=100 AND PS*DN>1000) (PS=15.0, DN=80.0, PS*DN=1200.0)",Excel categorize_pipe function
+82,Gases,2,12.0,90,1080.0,Category I,Category I,PASS,"(PS>0.5 AND DN>32 AND 1000<PS*DN<=3500) OR(32<DN<=100 AND PS*DN>1000) (PS=12.0, DN=90.0, PS*DN=1080.0)",Excel categorize_pipe function
+83,Gases,2,11.0,100,1100.0,Category I,Category I,PASS,"(PS>0.5 AND DN>32 AND 1000<PS*DN<=3500) OR(32<DN<=100 AND PS*DN>1000) (PS=11.0, DN=100.0, PS*DN=1100.0)",Excel categorize_pipe function
+84,Gases,2,1.0,25,25.0,Category 0,Category 0,PASS,"(PS>0.5 AND DN<=32) OR (PS>0.5 AND PS*DN<=1000) (PS=1.0, DN=25.0, PS*DN=25.0)",Excel categorize_pipe function
+85,Gases,2,1.0,32,32.0,Category 0,Category 0,PASS,"(PS>0.5 AND DN<=32) OR (PS>0.5 AND PS*DN<=1000) (PS=1.0, DN=32.0, PS*DN=32.0)",Excel categorize_pipe function
+86,Gases,2,2.0,40,80.0,Category 0,Category 0,PASS,"(PS>0.5 AND DN<=32) OR (PS>0.5 AND PS*DN<=1000) (PS=2.0, DN=40.0, PS*DN=80.0)",Excel categorize_pipe function
+87,Gases,2,3.0,50,150.0,Category 0,Category 0,PASS,"(PS>0.5 AND DN<=32) OR (PS>0.5 AND PS*DN<=1000) (PS=3.0, DN=50.0, PS*DN=150.0)",Excel categorize_pipe function
+88,Gases,2,4.0,65,260.0,Category 0,Category 0,PASS,"(PS>0.5 AND DN<=32) OR (PS>0.5 AND PS*DN<=1000) (PS=4.0, DN=65.0, PS*DN=260.0)",Excel categorize_pipe function
+89,Liquids,1,600.0,32,19200.0,Category III,Category III,PASS,"PS>500 AND DN>25 (PS=600.0, DN=32.0, PS*DN=19200.0)",Excel categorize_pipe function
+90,Liquids,1,700.0,40,28000.0,Category III,Category III,PASS,"PS>500 AND DN>25 (PS=700.0, DN=40.0, PS*DN=28000.0)",Excel categorize_pipe function
+91,Liquids,1,800.0,50,40000.0,Category III,Category III,PASS,"PS>500 AND DN>25 (PS=800.0, DN=50.0, PS*DN=40000.0)",Excel categorize_pipe function
+92,Liquids,1,900.0,65,58500.0,Category III,Category III,PASS,"PS>500 AND DN>25 (PS=900.0, DN=65.0, PS*DN=58500.0)",Excel categorize_pipe function
+93,Liquids,1,1000.0,80,80000.0,Category III,Category III,PASS,"PS>500 AND DN>25 (PS=1000.0, DN=80.0, PS*DN=80000.0)",Excel categorize_pipe function
+94,Liquids,1,50.0,50,2500.0,Category II,Category II,PASS,"10<PS<=500 AND DN>25 AND PS*DN>2000 (PS=50.0, DN=50.0, PS*DN=2500.0)",Excel categorize_pipe function
+95,Liquids,1,60.0,65,3900.0,Category II,Category II,PASS,"10<PS<=500 AND DN>25 AND PS*DN>2000 (PS=60.0, DN=65.0, PS*DN=3900.0)",Excel categorize_pipe function
+96,Liquids,1,40.0,80,3200.0,Category II,Category II,PASS,"10<PS<=500 AND DN>25 AND PS*DN>2000 (PS=40.0, DN=80.0, PS*DN=3200.0)",Excel categorize_pipe function
+97,Liquids,1,30.0,90,2700.0,Category II,Category II,PASS,"10<PS<=500 AND DN>25 AND PS*DN>2000 (PS=30.0, DN=90.0, PS*DN=2700.0)",Excel categorize_pipe function
+98,Liquids,1,25.0,100,2500.0,Category II,Category II,PASS,"10<PS<=500 AND DN>25 AND PS*DN>2000 (PS=25.0, DN=100.0, PS*DN=2500.0)",Excel categorize_pipe function
+99,Liquids,1,5.0,500,2500.0,Category I,Category I,PASS,"0.5<PS<=10 AND PS*DN>2000 (PS=5.0, DN=500.0, PS*DN=2500.0)",Excel categorize_pipe function
+100,Liquids,1,6.0,400,2400.0,Category I,Category I,PASS,"0.5<PS<=10 AND PS*DN>2000 (PS=6.0, DN=400.0, PS*DN=2400.0)",Excel categorize_pipe function
+101,Liquids,1,7.0,350,2450.0,Category I,Category I,PASS,"0.5<PS<=10 AND PS*DN>2000 (PS=7.0, DN=350.0, PS*DN=2450.0)",Excel categorize_pipe function
+102,Liquids,1,8.0,300,2400.0,Category I,Category I,PASS,"0.5<PS<=10 AND PS*DN>2000 (PS=8.0, DN=300.0, PS*DN=2400.0)",Excel categorize_pipe function
+103,Liquids,1,9.0,250,2250.0,Category I,Category I,PASS,"0.5<PS<=10 AND PS*DN>2000 (PS=9.0, DN=250.0, PS*DN=2250.0)",Excel categorize_pipe function
+104,Liquids,1,1.0,25,25.0,Category 0,Category 0,PASS,"(PS>0.5 AND DN<=25) OR (PS>0.5 AND PS*DN<=2000) (PS=1.0, DN=25.0, PS*DN=25.0)",Excel categorize_pipe function
+105,Liquids,1,2.0,32,64.0,Category 0,Category 0,PASS,"(PS>0.5 AND DN<=25) OR (PS>0.5 AND PS*DN<=2000) (PS=2.0, DN=32.0, PS*DN=64.0)",Excel categorize_pipe function
+106,Liquids,1,3.0,40,120.0,Category 0,Category 0,PASS,"(PS>0.5 AND DN<=25) OR (PS>0.5 AND PS*DN<=2000) (PS=3.0, DN=40.0, PS*DN=120.0)",Excel categorize_pipe function
+107,Liquids,1,4.0,50,200.0,Category 0,Category 0,PASS,"(PS>0.5 AND DN<=25) OR (PS>0.5 AND PS*DN<=2000) (PS=4.0, DN=50.0, PS*DN=200.0)",Excel categorize_pipe function
+108,Liquids,1,5.0,65,325.0,Category 0,Category 0,PASS,"(PS>0.5 AND DN<=25) OR (PS>0.5 AND PS*DN<=2000) (PS=5.0, DN=65.0, PS*DN=325.0)",Excel categorize_pipe function
+109,Liquids,2,600.0,250,150000.0,Category II,Category II,PASS,"PS>500 AND DN>200 (PS=600.0, DN=250.0, PS*DN=150000.0)",Excel categorize_pipe function
+110,Liquids,2,700.0,300,210000.0,Category II,Category II,PASS,"PS>500 AND DN>200 (PS=700.0, DN=300.0, PS*DN=210000.0)",Excel categorize_pipe function
+111,Liquids,2,500.0,250,125000.0,Category I,Category I,PASS,"10<PS<=500 AND DN>200 AND PS*DN>5000 (PS=500.0, DN=250.0, PS*DN=125000.0)",Excel categorize_pipe function
+112,Liquids,2,400.0,300,120000.0,Category I,Category I,PASS,"10<PS<=500 AND DN>200 AND PS*DN>5000 (PS=400.0, DN=300.0, PS*DN=120000.0)",Excel categorize_pipe function
+113,Liquids,2,5.0,32,160.0,Category 0,Category 0,PASS,"(0.5<PS<=10) OR (PS>0.5 AND DN<=200) OR (PS>0.5 AND PS*DN<=5000) (PS=5.0, DN=32.0, PS*DN=160.0)",Excel categorize_pipe function
+114,Liquids,2,6.0,40,240.0,Category 0,Category 0,PASS,"(0.5<PS<=10) OR (PS>0.5 AND DN<=200) OR (PS>0.5 AND PS*DN<=5000) (PS=6.0, DN=40.0, PS*DN=240.0)",Excel categorize_pipe function
+115,Liquids,2,7.0,50,350.0,Category 0,Category 0,PASS,"(0.5<PS<=10) OR (PS>0.5 AND DN<=200) OR (PS>0.5 AND PS*DN<=5000) (PS=7.0, DN=50.0, PS*DN=350.0)",Excel categorize_pipe function
+116,Liquids,2,8.0,65,520.0,Category 0,Category 0,PASS,"(0.5<PS<=10) OR (PS>0.5 AND DN<=200) OR (PS>0.5 AND PS*DN<=5000) (PS=8.0, DN=65.0, PS*DN=520.0)",Excel categorize_pipe function
+117,Liquids,2,9.0,80,720.0,Category 0,Category 0,PASS,"(0.5<PS<=10) OR (PS>0.5 AND DN<=200) OR (PS>0.5 AND PS*DN<=5000) (PS=9.0, DN=80.0, PS*DN=720.0)",Excel categorize_pipe function
+118,Gases,any,0.5,25,12.5,See 5.3,See 5.3,PASS,"PS<=0.5 (PS=0.5, DN=25.0, PS*DN=12.5)",Excel categorize_pipe function
+119,Gases,any,0.3,32,9.6,See 5.3,See 5.3,PASS,"PS<=0.5 (PS=0.3, DN=32.0, PS*DN=9.6)",Excel categorize_pipe function
+120,Gases,any,0.1,40,4.0,See 5.3,See 5.3,PASS,"PS<=0.5 (PS=0.1, DN=40.0, PS*DN=4.0)",Excel categorize_pipe function
+121,Gases,any,0.2,50,10.0,See 5.3,See 5.3,PASS,"PS<=0.5 (PS=0.2, DN=50.0, PS*DN=10.0)",Excel categorize_pipe function
+122,Gases,any,0.4,65,26.0,See 5.3,See 5.3,PASS,"PS<=0.5 (PS=0.4, DN=65.0, PS*DN=26.0)",Excel categorize_pipe function
+123,Liquids,any,0.5,25,12.5,See 5.3,See 5.3,PASS,"PS<=0.5 (PS=0.5, DN=25.0, PS*DN=12.5)",Excel categorize_pipe function
+124,Liquids,any,0.3,32,9.6,See 5.3,See 5.3,PASS,"PS<=0.5 (PS=0.3, DN=32.0, PS*DN=9.6)",Excel categorize_pipe function
+125,Liquids,any,0.1,40,4.0,See 5.3,See 5.3,PASS,"PS<=0.5 (PS=0.1, DN=40.0, PS*DN=4.0)",Excel categorize_pipe function
+126,Liquids,any,0.2,50,10.0,See 5.3,See 5.3,PASS,"PS<=0.5 (PS=0.2, DN=50.0, PS*DN=10.0)",Excel categorize_pipe function
+127,Liquids,any,0.4,65,26.0,See 5.3,See 5.3,PASS,"PS<=0.5 (PS=0.4, DN=65.0, PS*DN=26.0)",Excel categorize_pipe function

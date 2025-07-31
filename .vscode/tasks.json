@@ -1,0 +1,14 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"type": "shell",
+			"label": "pytest coverage for line_list_compare.py",
+			"command": "pytest --cov=line_list_compare --cov-report=term-missing _tests/test_line_list_compare.py",
+			"group": "test",
+			"problemMatcher": [
+				"$pytest"
+			]
+		}
+	]
+}
