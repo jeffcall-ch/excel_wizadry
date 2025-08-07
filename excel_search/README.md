@@ -39,7 +39,7 @@ Linux/macOS:
 
 ### Example
 ```
-C:/Users/szil/Repos/excel_wizadry/.venv/Scripts/python.exe excel_search/excel_file_search.py "YOURSEARCHTERM" "C:\Users\szil\OneDrive - Kanadevia Inova\Desktop\Projects\03 AbuDhabi\01 Documents\05 BOM Lists\250804\KVI SK-KVI AG-01943" --output "C:\Users\szil\OneDrive - Kanadevia Inova\Desktop\valve_search_results.xlsx"
+C:/Users/szil/Repos/excel_wizadry/.venv/Scripts/python.exe excel_search/excel_file_search.py "YOURSEARCHTERM" "C:\Users\szil\OneDrive - Kanadevia Inova\Desktop\Projects\03 AbuDhabi\01 Documents\05 BOM Lists\250804\KVI SK-KVI AG-01943" --output "C:\Users\szil\OneDrive - Kanadevia Inova\Desktop\excel_search_results.xlsx"
 
 ```
 

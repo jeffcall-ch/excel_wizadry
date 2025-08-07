@@ -35,6 +35,26 @@ def test_search_excel_for_text():
         # Test directory search
         matches_dir = search_directory_for_excels(tmpdir, 'searchPhrase')
         assert len(matches_dir) == 2
+
+        # Test Excel report output
+        output_path = os.path.join(tmpdir, 'excel_search_results.xlsx')
+        from excel_file_search import create_excel_report
+        create_excel_report(matches_dir, output_path, 'searchPhrase')
+        # Check the hyperlink for all files in the report
+        import openpyxl
+        wb = openpyxl.load_workbook(output_path, data_only=False)
+        ws = wb['Search Results']
+        header = [cell.value for cell in next(ws.iter_rows(min_row=1, max_row=1))]
+        file_name_idx = header.index('file_name')
+        file_path_idx = header.index('file_path')
+        found_hyperlink = False
+        for row in ws.iter_rows(min_row=2, max_row=ws.max_row):
+            file_name_cell = row[file_name_idx]
+            file_path_cell = row[file_path_idx]
+            if file_name_cell.hyperlink and str(file_path_cell.value) in str(file_name_cell.hyperlink.target):
+                found_hyperlink = True
+        wb.close()
+        assert found_hyperlink, "File hyperlink not found in report."
         print('All tests passed.')
 
 if __name__ == "__main__":

@@ -99,18 +99,8 @@ def create_excel_report(matches, output_file, search_text):
     output_dir = os.path.dirname(output_file)
     if output_dir and not os.path.exists(output_dir):
         os.makedirs(output_dir)
-    with pd.ExcelWriter(output_file, engine='openpyxl') as writer:
+    with pd.ExcelWriter(output_file, engine='openpyxl', mode='w') as writer:
         df.to_excel(writer, index=False, sheet_name='Search Results')
-        workbook = writer.book
-        worksheet = writer.sheets['Search Results']
-        for row_idx, file_path in enumerate(df['file_path'], start=2):
-            cell = worksheet.cell(row=row_idx, column=df.columns.get_loc('file_name') + 1)
-            cell.hyperlink = file_path
-            cell.style = "Hyperlink"
-        for idx, column in enumerate(df.columns):
-            column_width = max(len(str(column)), df[column].astype(str).str.len().max())
-            column_letter = worksheet.cell(1, idx+1).column_letter
-            worksheet.column_dimensions[column_letter].width = min(column_width + 2, 50)
         summary_data = {
             'Date of Search': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
             'Search Term': search_text,
@@ -120,6 +110,27 @@ def create_excel_report(matches, output_file, search_text):
         }
         summary_df = pd.DataFrame(list(summary_data.items()), columns=['Item', 'Value'])
         summary_df.to_excel(writer, sheet_name='Summary', index=False)
+
+    # Add hyperlinks to file_name column for all files
+    import openpyxl
+    wb = openpyxl.load_workbook(output_file)
+    ws = wb['Search Results']
+    header = [cell.value for cell in next(ws.iter_rows(min_row=1, max_row=1))]
+    file_name_idx = header.index('file_name')
+    file_path_idx = header.index('file_path')
+    for row in ws.iter_rows(min_row=2, max_row=ws.max_row):
+        file_name_cell = row[file_name_idx]
+        file_path_cell = row[file_path_idx]
+        file_name_cell.value = os.path.basename(str(file_path_cell.value))
+        file_name_cell.hyperlink = str(file_path_cell.value)
+        file_name_cell.style = "Hyperlink"
+    # Set column widths
+    for idx, column in enumerate(header):
+        column_letter = ws.cell(1, idx+1).column_letter
+        max_len = max(len(str(column)),
+                      max((len(str(ws.cell(row=r, column=idx+1).value)) for r in range(2, ws.max_row+1)), default=0))
+        ws.column_dimensions[column_letter].width = min(max_len + 2, 50)
+    wb.save(output_file)
 
 def main():
     parser = argparse.ArgumentParser(description='Search Excel/CSV files for specific text and generate Excel report')
