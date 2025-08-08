@@ -21,7 +21,7 @@ def test_dxf_extraction():
     # Start timing
     start_time = time.time()
     
-    main(script_dir)
+    main(script_dir, debug=True)  # Enable debug mode for testing
     
     # End timing
     end_time = time.time()

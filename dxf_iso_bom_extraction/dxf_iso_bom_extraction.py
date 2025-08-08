@@ -3,10 +3,18 @@ import csv
 import ezdxf
 import re
 
+# Global debug flag - set to False to suppress debug output
+DEBUG_MODE = False
+
 # Compile regex patterns once for better performance
 PIECE_NUMBER_PATTERN = re.compile(r'^<\d+>$')
 NUMBER_PATTERN = re.compile(r'^\d+(\.\d+)?$')
 KKS_PATTERN = re.compile(r'\b\d[A-Z]{3}\d{2}BR\d{3}\b')
+
+def debug_print(message):
+    """Print debug message only if DEBUG_MODE is True"""
+    if DEBUG_MODE:
+        print(message)
 
 def is_piece_number(text):
     """Check if text is a piece number like <1>, <2>, etc."""
@@ -46,7 +54,7 @@ def validate_and_correct_cut_length_row(row):
         if is_piece_number(cell_str):
             pieces.append((i, cell_str))
     
-    print(f"[DEBUG] Row validation - Found pieces: {pieces}")
+    debug_print(f"[DEBUG] Row validation - Found pieces: {pieces}")
     
     if len(pieces) == 0:
         # No pieces found, return original row
@@ -79,7 +87,7 @@ def validate_and_correct_cut_length_row(row):
         
         piece_groups.append(group)
     
-    print(f"[DEBUG] Piece groups: {piece_groups}")
+    debug_print(f"[DEBUG] Piece groups: {piece_groups}")
     
     # Fill the corrected row
     for group_idx, group in enumerate(piece_groups[:2]):  # Max 2 pieces per row
@@ -97,7 +105,7 @@ def validate_and_correct_cut_length_row(row):
         if group['remarks']:
             corrected[base_col + 3] = group['remarks'][0]  # First remark only
     
-    print(f"[DEBUG] Corrected row: {corrected}")
+    debug_print(f"[DEBUG] Corrected row: {corrected}")
     return corrected
 
 def extract_text_entities(doc):
@@ -127,7 +135,7 @@ def find_drawing_no(text_entities):
     for text, x, y in text_entities:
         if 'ERECTION MATERIALS' in text.upper():
             erection_x, erection_y = x, y
-            print(f"[DEBUG] Found ERECTION MATERIALS at X={x}, Y={y}")
+            debug_print(f"[DEBUG] Found ERECTION MATERIALS at X={x}, Y={y}")
             break
     
     # Use pre-compiled KKS pattern for better performance
@@ -140,17 +148,17 @@ def find_drawing_no(text_entities):
             if erection_x is not None and erection_y is not None:
                 if x >= erection_x and y <= erection_y:  # Right and below
                     candidates.append((kks_code, x, y, abs(y)))  # Use abs(y) for sorting (lower Y = further down)
-                    print(f"[DEBUG] Found KKS candidate '{kks_code}' at X={x}, Y={y}")
+                    debug_print(f"[DEBUG] Found KKS candidate '{kks_code}' at X={x}, Y={y}")
             else:
                 # If no ERECTION MATERIALS found, consider all KKS codes
                 candidates.append((kks_code, x, y, abs(y)))
-                print(f"[DEBUG] Found KKS candidate '{kks_code}' at X={x}, Y={y} (no ERECTION MATERIALS reference)")
+                debug_print(f"[DEBUG] Found KKS candidate '{kks_code}' at X={x}, Y={y} (no ERECTION MATERIALS reference)")
     
     if candidates:
         # Sort by Y coordinate (lowest Y = bottom of drawing) and pick the first one
         candidates.sort(key=lambda item: item[3])  # Sort by abs(y)
         selected_kks = candidates[0][0]
-        print(f"[DEBUG] Selected KKS code: '{selected_kks}'")
+        debug_print(f"[DEBUG] Selected KKS code: '{selected_kks}'")
         return selected_kks
     
     # Fallback: try to find Drawing-No. field if no KKS found
@@ -159,10 +167,10 @@ def find_drawing_no(text_entities):
             # Look for next text entity to the right or below
             for t, tx, ty in text_entities[i+1:i+5]:
                 if tx > x or ty < y:
-                    print(f"[DEBUG] Fallback: Found Drawing-No. '{t}'")
+                    debug_print(f"[DEBUG] Fallback: Found Drawing-No. '{t}'")
                     return t
     
-    print(f"[DEBUG] No KKS code or Drawing-No. found")
+    debug_print(f"[DEBUG] No KKS code or Drawing-No. found")
     return ''
 
 def convert_cut_length_to_single_row_format(header, rows, drawing_no):
@@ -202,7 +210,7 @@ def convert_cut_length_to_single_row_format(header, rows, drawing_no):
 
 def process_dxf_file(filepath):
     try:
-        print(f"[DEBUG] Opening DXF file: {filepath}")
+        debug_print(f"[DEBUG] Opening DXF file: {filepath}")
         doc = ezdxf.readfile(filepath)
         text_entities = extract_text_entities(doc)
         drawing_no = find_drawing_no(text_entities)
@@ -221,7 +229,7 @@ def process_dxf_file(filepath):
             cut_rows_out = cut_rows_converted
         else:
             cut_header_out, cut_rows_out = [], []
-        print(f"[DEBUG] Extracted {len(mat_rows_out)} material rows and {len(cut_rows_out)} cut length rows from {filepath}")
+        debug_print(f"[DEBUG] Extracted {len(mat_rows_out)} material rows and {len(cut_rows_out)} cut length rows from {filepath}")
         return {
             'drawing_no': drawing_no,
             'mat_header': mat_header_out,
@@ -252,12 +260,12 @@ def extract_table(text_entities, table_title, max_cols=20, max_rows=100):
         if table_title.lower() in text.lower():
             start_x = x  # Use the start of the DXF entity
             title_y = y
-            print(f"[DEBUG] Table title '{table_title}' found at X={x}, Y={y}, text='{text}'")
+            debug_print(f"[DEBUG] Table title '{table_title}' found at X={x}, Y={y}, text='{text}'")
             title_entity = (text, x, y)
             break
     
     if not title_entity or start_x is None:
-        print(f"[DEBUG] Table title '{table_title}' not found.")
+        debug_print(f"[DEBUG] Table title '{table_title}' not found.")
         return [], []
     
     title_text, title_x, title_y = title_entity
@@ -297,15 +305,15 @@ def extract_table(text_entities, table_title, max_cols=20, max_rows=100):
         # Reduced debug output for performance (only show first few rows and special cases)
         if table_title.lower() == 'cut pipe length' and idx == 2:
             xs = [x for x, t in sorted(cells, key=lambda c: c[0])]
-            print(f"[DEBUG] Extracted row {idx+1} at y={y}, x={xs}: {row} <-- 3RD ROW BELOW 'CUT PIPE LENGTH'")
+            debug_print(f"[DEBUG] Extracted row {idx+1} at y={y}, x={xs}: {row} <-- 3RD ROW BELOW 'CUT PIPE LENGTH'")
         elif idx < 3:  # Only show first 3 rows for debugging
             xs = [x for x, t in sorted(cells, key=lambda c: c[0])]
-            print(f"[DEBUG] Extracted row {idx+1} at y={y}, x={xs}: {row}")
+            debug_print(f"[DEBUG] Extracted row {idx+1} at y={y}, x={xs}: {row}")
         
         table_rows.append(row)
     
     if table_title.lower() == 'cut pipe length':
-        print(f"[DEBUG] Total rows extracted for 'CUT PIPE LENGTH': {len(table_rows)}")
+        debug_print(f"[DEBUG] Total rows extracted for 'CUT PIPE LENGTH': {len(table_rows)}")
     # (Removed duplicate/old code using table_entities)
     # Heuristic: first two rows are headers, merge them
     if len(table_rows) >= 2:
@@ -375,7 +383,7 @@ def extract_table(text_entities, table_title, max_cols=20, max_rows=100):
                 # This is likely a category header like "PIPE", "FITTINGS", etc.
                 if row[0] not in ["TOTAL ERECTION WEIGHT", "TOTAL WEIGHT"]:
                     current_category = row[0]
-                    print(f"[DEBUG] Found category: '{current_category}'")
+                    debug_print(f"[DEBUG] Found category: '{current_category}'")
                     continue  # Skip category header rows, don't add to processed_rows
                 else:
                     # For total rows, move the total type to column F and weight value to column E
@@ -409,9 +417,9 @@ def extract_table(text_entities, table_title, max_cols=20, max_rows=100):
         for row in data_rows:
             if '<' in ''.join(row):
                 kept_rows.append(row)
-        print(f"[DEBUG] Kept rows for 'CUT PIPE LENGTH':")
+        debug_print(f"[DEBUG] Kept rows for 'CUT PIPE LENGTH':")
         for r in kept_rows[:2]:  # Only show first 2 rows for performance
-            print(f"[DEBUG] {r}")
+            debug_print(f"[DEBUG] {r}")
         data_rows = kept_rows
         
         # Apply column validation and correction for CUT PIPE LENGTH
@@ -435,7 +443,10 @@ def extract_table(text_entities, table_title, max_cols=20, max_rows=100):
         padded_rows.append(padded)
     return header, padded_rows
 
-def main(directory):
+def main(directory, debug=False):
+    global DEBUG_MODE
+    DEBUG_MODE = debug
+    
     import time
     start_time = time.time()
     
@@ -453,19 +464,21 @@ def main(directory):
                 dxf_files.append(os.path.join(root, file))
     
     total_files = len(dxf_files)
-    print(f"[DEBUG] Found {total_files} DXF files to process")
+    debug_print(f"[DEBUG] Found {total_files} DXF files to process")
+    print(f"Processing {total_files} DXF files...")
     
     # Process each file
     for i, path in enumerate(dxf_files, 1):
         file = os.path.basename(path)
         file_start_time = time.time()
-        print(f"[DEBUG] Processing file {i}/{total_files}: {file}")
+        debug_print(f"[DEBUG] Processing file {i}/{total_files}: {file}")
+        print(f"Processing file {i}/{total_files}: {file}")
         
         result = process_dxf_file(path)
         
         file_end_time = time.time()
         file_time = file_end_time - file_start_time
-        print(f"[DEBUG] File {i}/{total_files} completed in {file_time:.2f}s")
+        debug_print(f"[DEBUG] File {i}/{total_files} completed in {file_time:.2f}s")
         
         summary_row = {
             'file_path': path,
@@ -515,18 +528,31 @@ def main(directory):
     # Final timing summary
     end_time = time.time()
     total_time = end_time - start_time
-    print(f"\n[DEBUG] === PROCESSING COMPLETE ===")
-    print(f"[DEBUG] Total files processed: {total_files}")
-    print(f"[DEBUG] Total processing time: {total_time:.2f} seconds")
+    print(f"\n=== PROCESSING COMPLETE ===")
+    print(f"Total files processed: {total_files}")
+    print(f"Total processing time: {total_time:.2f} seconds")
     if total_files > 0:
-        print(f"[DEBUG] Average time per file: {total_time/total_files:.2f} seconds")
-    print(f"[DEBUG] Total material rows: {len(material_rows)}")
-    print(f"[DEBUG] Total cut length rows: {len(cut_rows)}")
-    print(f"[DEBUG] Output files written to: {directory}")
+        print(f"Average time per file: {total_time/total_files:.2f} seconds")
+    print(f"Total material rows: {len(material_rows)}")
+    print(f"Total cut length rows: {len(cut_rows)}")
+    print(f"Output files written to: {directory}")
+    
+    debug_print(f"[DEBUG] === PROCESSING COMPLETE ===")
+    debug_print(f"[DEBUG] Total files processed: {total_files}")
+    debug_print(f"[DEBUG] Total processing time: {total_time:.2f} seconds")
+    if total_files > 0:
+        debug_print(f"[DEBUG] Average time per file: {total_time/total_files:.2f} seconds")
+    debug_print(f"[DEBUG] Total material rows: {len(material_rows)}")
+    debug_print(f"[DEBUG] Total cut length rows: {len(cut_rows)}")
+    debug_print(f"[DEBUG] Output files written to: {directory}")
 
 if __name__ == '__main__':
     import sys
     if len(sys.argv) < 2:
-        print('Usage: python dxf_iso_bom_extraction.py <directory>')
+        print('Usage: python dxf_iso_bom_extraction.py <directory> [--debug]')
+        print('  <directory>: Root folder containing DXF files (recursively searched)')
+        print('  --debug: Show detailed debug output (optional)')
     else:
-        main(sys.argv[1])
+        directory = sys.argv[1]
+        debug_mode = '--debug' in sys.argv
+        main(directory, debug=debug_mode)
