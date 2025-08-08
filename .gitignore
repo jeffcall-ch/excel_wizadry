@@ -9,6 +9,11 @@ __pycache__/
 env file
 .env
 
+# engineering file
+*.pdf
+*.dxf
+
+
 # excel, docx, pptx, etc.
 *.xlsx
 *.xls
