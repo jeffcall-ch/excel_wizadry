@@ -2,11 +2,15 @@ import os
 import csv
 import ezdxf
 import re
-from collections import defaultdict
+
+# Compile regex patterns once for better performance
+PIECE_NUMBER_PATTERN = re.compile(r'^<\d+>$')
+NUMBER_PATTERN = re.compile(r'^\d+(\.\d+)?$')
+KKS_PATTERN = re.compile(r'\b\d[A-Z]{3}\d{2}BR\d{3}\b')
 
 def is_piece_number(text):
     """Check if text is a piece number like <1>, <2>, etc."""
-    return bool(re.match(r'^<\d+>$', str(text).strip()))
+    return bool(PIECE_NUMBER_PATTERN.match(str(text).strip()))
 
 def is_number(text):
     """Check if text is a number (can include decimal)"""
@@ -108,6 +112,9 @@ def extract_text_entities(doc):
             text = e.dxf.text
             x, y = e.dxf.insert.x, e.dxf.insert.y
             entities.append((text.strip(), x, y))
+    
+    # Sort entities once by Y coordinate (descending) for faster processing
+    entities.sort(key=lambda item: -item[2])
     return entities
 
 def find_drawing_no(text_entities):
@@ -123,12 +130,10 @@ def find_drawing_no(text_entities):
             print(f"[DEBUG] Found ERECTION MATERIALS at X={x}, Y={y}")
             break
     
-    # KKS pattern: digit + 3 capital letters + 2 digits + "BR" + 3 digits
-    kks_pattern = r'\b\d[A-Z]{3}\d{2}BR\d{3}\b'
-    
+    # Use pre-compiled KKS pattern for better performance
     candidates = []
     for text, x, y in text_entities:
-        match = re.search(kks_pattern, text)
+        match = KKS_PATTERN.search(text)
         if match:
             kks_code = match.group()
             # If we found ERECTION MATERIALS, filter by position (below and to the right)
@@ -160,6 +165,41 @@ def find_drawing_no(text_entities):
     print(f"[DEBUG] No KKS code or Drawing-No. found")
     return ''
 
+def convert_cut_length_to_single_row_format(header, rows, drawing_no):
+    """
+    Convert CUT PIPE LENGTH from 8-column format (2 pieces per row) 
+    to 5-column format (1 piece per row)
+    """
+    if not rows:
+        return ['PIECE NO', 'CUT LENGTH', 'N.S. (MM)', 'REMARKS', 'Drawing-No.'], []
+    
+    # New header format
+    new_header = ['PIECE NO', 'CUT LENGTH', 'N.S. (MM)', 'REMARKS', 'Drawing-No.']
+    new_rows = []
+    
+    for row in rows:
+        # Extract first piece (columns 0-3)
+        if len(row) >= 4:
+            piece1_no = row[0] if row[0].strip() else ''
+            piece1_length = row[1] if len(row) > 1 and row[1].strip() else ''
+            piece1_ns = row[2] if len(row) > 2 and row[2].strip() else ''
+            piece1_remarks = row[3] if len(row) > 3 and row[3].strip() else ''
+            
+            if piece1_no:  # Only add if piece number exists
+                new_rows.append([piece1_no, piece1_length, piece1_ns, piece1_remarks, drawing_no])
+        
+        # Extract second piece (columns 4-7)
+        if len(row) >= 8:
+            piece2_no = row[4] if row[4].strip() else ''
+            piece2_length = row[5] if len(row) > 5 and row[5].strip() else ''
+            piece2_ns = row[6] if len(row) > 6 and row[6].strip() else ''
+            piece2_remarks = row[7] if len(row) > 7 and row[7].strip() else ''
+            
+            if piece2_no:  # Only add if piece number exists
+                new_rows.append([piece2_no, piece2_length, piece2_ns, piece2_remarks, drawing_no])
+    
+    return new_header, new_rows
+
 def process_dxf_file(filepath):
     try:
         print(f"[DEBUG] Opening DXF file: {filepath}")
@@ -175,8 +215,10 @@ def process_dxf_file(filepath):
         else:
             mat_header_out, mat_rows_out = [], []
         if cut_rows:
-            cut_header_out = cut_header + ['Drawing-No.']
-            cut_rows_out = [r + [drawing_no] for r in cut_rows]
+            # Convert to single-row format (one piece per row)
+            cut_header_converted, cut_rows_converted = convert_cut_length_to_single_row_format(cut_header, cut_rows, drawing_no)
+            cut_header_out = cut_header_converted
+            cut_rows_out = cut_rows_converted
         else:
             cut_header_out, cut_rows_out = [], []
         print(f"[DEBUG] Extracted {len(mat_rows_out)} material rows and {len(cut_rows_out)} cut length rows from {filepath}")
@@ -219,29 +261,47 @@ def extract_table(text_entities, table_title, max_cols=20, max_rows=100):
         return [], []
     
     title_text, title_x, title_y = title_entity
-    # For CUT PIPE LENGTH, use a more relaxed X filter since data might be to the left of title
+    # Optimize filtering with early breaks and efficient conditions
+    filtered_entities = []
     if table_title.lower() == 'cut pipe length':
         # Allow data to the left of the title for cut pipe length table
-        filtered_entities = [(text, x, y) for text, x, y in text_entities if y < title_y and x >= (title_x - 50)]
+        min_x = title_x - 50
+        for text, x, y in text_entities:
+            if y >= title_y:  # Skip rows at or above title
+                continue
+            if x >= min_x:
+                filtered_entities.append((text, x, y))
     else:
         # Only keep entities with x >= title_x and y < title_y
-        filtered_entities = [(text, x, y) for text, x, y in text_entities if y < title_y and x >= title_x]
+        for text, x, y in text_entities:
+            if y >= title_y:  # Skip rows at or above title
+                continue
+            if x >= title_x:
+                filtered_entities.append((text, x, y))
     
     # Now process table from filtered_entities only
-    rows_dict = defaultdict(list)
+    rows_dict = {}
     for text, x, y in filtered_entities:
-        rows_dict[round(y, 1)].append((x, text))
+        y_key = round(y, 1)
+        if y_key not in rows_dict:
+            rows_dict[y_key] = []
+        rows_dict[y_key].append((x, text))
+    
     sorted_rows = sorted(rows_dict.items(), key=lambda item: -item[0])
     
     # For each row, sort by x ascending (left to right)
     table_rows = []
     for idx, (y, cells) in enumerate(sorted_rows):
         row = [t for x, t in sorted(cells, key=lambda c: c[0])]
-        xs = [x for x, t in sorted(cells, key=lambda c: c[0])]
+        
+        # Reduced debug output for performance (only show first few rows and special cases)
         if table_title.lower() == 'cut pipe length' and idx == 2:
+            xs = [x for x, t in sorted(cells, key=lambda c: c[0])]
             print(f"[DEBUG] Extracted row {idx+1} at y={y}, x={xs}: {row} <-- 3RD ROW BELOW 'CUT PIPE LENGTH'")
-        else:
+        elif idx < 3:  # Only show first 3 rows for debugging
+            xs = [x for x, t in sorted(cells, key=lambda c: c[0])]
             print(f"[DEBUG] Extracted row {idx+1} at y={y}, x={xs}: {row}")
+        
         table_rows.append(row)
     
     if table_title.lower() == 'cut pipe length':
@@ -350,7 +410,7 @@ def extract_table(text_entities, table_title, max_cols=20, max_rows=100):
             if '<' in ''.join(row):
                 kept_rows.append(row)
         print(f"[DEBUG] Kept rows for 'CUT PIPE LENGTH':")
-        for r in kept_rows:
+        for r in kept_rows[:2]:  # Only show first 2 rows for performance
             print(f"[DEBUG] {r}")
         data_rows = kept_rows
         
@@ -376,35 +436,56 @@ def extract_table(text_entities, table_title, max_cols=20, max_rows=100):
     return header, padded_rows
 
 def main(directory):
+    import time
+    start_time = time.time()
+    
     material_rows = []
     cut_rows = []
     mat_header = None
     cut_header = None
     summary = []
+    
+    # Count DXF files first
+    dxf_files = []
     for root, _, files in os.walk(directory):
         for file in files:
             if file.lower().endswith('.dxf'):
-                path = os.path.join(root, file)
-                result = process_dxf_file(path)
-                summary_row = {
-                    'file_path': path,
-                    'filename': file,
-                    'drawing_no': result['drawing_no'],
-                    'mat_rows': len(result['mat_rows']),
-                    'cut_rows': len(result['cut_rows']),
-                    'mat_missing': not bool(result['mat_rows']),
-                    'cut_missing': not bool(result['cut_rows']),
-                    'error': result['error']
-                }
-                summary.append(summary_row)
-                if result['mat_rows']:
-                    if not mat_header:
-                        mat_header = result['mat_header']
-                    material_rows.extend(result['mat_rows'])
-                if result['cut_rows']:
-                    if not cut_header:
-                        cut_header = result['cut_header']
-                    cut_rows.extend(result['cut_rows'])
+                dxf_files.append(os.path.join(root, file))
+    
+    total_files = len(dxf_files)
+    print(f"[DEBUG] Found {total_files} DXF files to process")
+    
+    # Process each file
+    for i, path in enumerate(dxf_files, 1):
+        file = os.path.basename(path)
+        file_start_time = time.time()
+        print(f"[DEBUG] Processing file {i}/{total_files}: {file}")
+        
+        result = process_dxf_file(path)
+        
+        file_end_time = time.time()
+        file_time = file_end_time - file_start_time
+        print(f"[DEBUG] File {i}/{total_files} completed in {file_time:.2f}s")
+        
+        summary_row = {
+            'file_path': path,
+            'filename': file,
+            'drawing_no': result['drawing_no'],
+            'mat_rows': len(result['mat_rows']),
+            'cut_rows': len(result['cut_rows']),
+            'mat_missing': not bool(result['mat_rows']),
+            'cut_missing': not bool(result['cut_rows']),
+            'error': result['error']
+        }
+        summary.append(summary_row)
+        if result['mat_rows']:
+            if not mat_header:
+                mat_header = result['mat_header']
+            material_rows.extend(result['mat_rows'])
+        if result['cut_rows']:
+            if not cut_header:
+                cut_header = result['cut_header']
+            cut_rows.extend(result['cut_rows'])
     # Write CSVs
     # Write all_materials.csv
     out_path = os.path.join(directory, 'all_materials.csv')
@@ -430,6 +511,18 @@ def main(directory):
         writer = csv.DictWriter(f, fieldnames=['file_path', 'filename', 'drawing_no', 'mat_rows', 'cut_rows', 'mat_missing', 'cut_missing', 'error'])
         writer.writeheader()
         writer.writerows(summary)
+    
+    # Final timing summary
+    end_time = time.time()
+    total_time = end_time - start_time
+    print(f"\n[DEBUG] === PROCESSING COMPLETE ===")
+    print(f"[DEBUG] Total files processed: {total_files}")
+    print(f"[DEBUG] Total processing time: {total_time:.2f} seconds")
+    if total_files > 0:
+        print(f"[DEBUG] Average time per file: {total_time/total_files:.2f} seconds")
+    print(f"[DEBUG] Total material rows: {len(material_rows)}")
+    print(f"[DEBUG] Total cut length rows: {len(cut_rows)}")
+    print(f"[DEBUG] Output files written to: {directory}")
 
 if __name__ == '__main__':
     import sys
