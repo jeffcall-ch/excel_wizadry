@@ -125,6 +125,95 @@ def extract_text_entities(doc):
     entities.sort(key=lambda item: -item[2])
     return entities
 
+def find_pipe_class(text_entities):
+    """
+    Find pipe class from DESIGN DATA section at bottom center of drawing.
+    Pipe class pattern is exactly 4 uppercase letters (AAAA) like 'AHDX'.
+    """
+    # Compile pattern for exactly 4 uppercase letters
+    pipe_class_pattern = re.compile(r'\b[A-Z]{4}\b')
+    
+    # Look for 'Pipe class:' label first
+    pipe_class_label_y = None
+    pipe_class_label_x = None
+    
+    for text, x, y in text_entities:
+        text_clean = text.strip().replace(' ', '').replace('\n', '').lower()
+        # More flexible matching for pipe class label
+        if ('pipeclass' in text_clean or 'pipe_class' in text_clean or 
+            ('pipe' in text.lower() and 'class' in text.lower())):
+            pipe_class_label_x, pipe_class_label_y = x, y
+            debug_print(f"[DEBUG] Found pipe class label at X={x}, Y={y}: '{text}'")
+            break
+    
+    if pipe_class_label_y is not None:
+        # Look for 4-letter codes near the label
+        candidates = []
+        for text, x, y in text_entities:
+            # Look for text near the label (horizontally close, similar Y level)
+            if (abs(y - pipe_class_label_y) < 20 and  # Same row or close
+                x > pipe_class_label_x and  # To the right of label
+                abs(x - pipe_class_label_x) < 200):  # Not too far horizontally
+                text_clean = text.strip()
+                match = pipe_class_pattern.search(text_clean)
+                if match:
+                    candidates.append((match.group(), abs(x - pipe_class_label_x)))
+                    debug_print(f"[DEBUG] Pipe class candidate: '{match.group()}' at distance {abs(x - pipe_class_label_x)}")
+        
+        if candidates:
+            # Sort by distance from label and pick the closest one
+            candidates.sort(key=lambda item: item[1])
+            pipe_class = candidates[0][0]
+            debug_print(f"[DEBUG] Selected pipe class: '{pipe_class}'")
+            return pipe_class
+    
+    # Alternative approach: Look for DESIGN DATA section first, then find pipe class within it
+    design_data_y = None
+    for text, x, y in text_entities:
+        if 'DESIGN DATA' in text.upper():
+            design_data_y = y
+            debug_print(f"[DEBUG] Found DESIGN DATA at Y={y}")
+            break
+    
+    if design_data_y is not None:
+        # Look for 4-letter codes within DESIGN DATA area (below the title)
+        design_area_entities = [(text, x, y) for text, x, y in text_entities 
+                              if y < design_data_y and y > design_data_y - 150]  # Within 150 units below DESIGN DATA
+        
+        for text, x, y in design_area_entities:
+            text_clean = text.strip()
+            match = pipe_class_pattern.search(text_clean)
+            if match:
+                pipe_class = match.group()
+                debug_print(f"[DEBUG] Found pipe class in DESIGN DATA area: '{pipe_class}' at X={x}, Y={y}")
+                return pipe_class
+    
+    # Fallback: look for 4-letter codes in bottom center area
+    # Focus search on bottom half and center area of drawing
+    bottom_entities = [e for e in text_entities if e[2] < 100]  # Y < 100 (bottom area)
+    if not bottom_entities:
+        bottom_entities = sorted(text_entities, key=lambda e: e[2])[:len(text_entities)//2]
+    
+    # Look for candidates in center area (avoid far right where revision notes might be)
+    center_candidates = []
+    for text, x, y in bottom_entities:
+        if x < 500:  # Avoid far right area where revision notes typically are
+            match = pipe_class_pattern.search(text.strip())
+            if match:
+                potential_class = match.group()
+                center_candidates.append((potential_class, x, y))
+                debug_print(f"[DEBUG] Center area pipe class candidate: '{potential_class}' at X={x}, Y={y}")
+    
+    if center_candidates:
+        # Prefer candidates in the center-left area (where DESIGN DATA typically is)
+        center_candidates.sort(key=lambda item: item[1])  # Sort by X coordinate
+        pipe_class = center_candidates[0][0]
+        debug_print(f"[DEBUG] Selected center area pipe class: '{pipe_class}'")
+        return pipe_class
+    
+    debug_print(f"[DEBUG] No pipe class found")
+    return ''
+
 def find_drawing_no(text_entities):
     # Find KKS code with pattern 1AAA11BR111 (1=digit, A=capital letter, BR=fixed)
     # Located in bottom right corner, below and to the right of ERECTION MATERIALS
@@ -173,16 +262,16 @@ def find_drawing_no(text_entities):
     debug_print(f"[DEBUG] No KKS code or Drawing-No. found")
     return ''
 
-def convert_cut_length_to_single_row_format(header, rows, drawing_no):
+def convert_cut_length_to_single_row_format(header, rows, drawing_no, pipe_class):
     """
     Convert CUT PIPE LENGTH from 8-column format (2 pieces per row) 
     to 5-column format (1 piece per row)
     """
     if not rows:
-        return ['PIECE NO', 'CUT LENGTH', 'N.S. (MM)', 'REMARKS', 'Drawing-No.'], []
+        return ['PIECE NO', 'CUT LENGTH', 'N.S. (MM)', 'REMARKS', 'Drawing-No.', 'Pipe Class'], []
     
-    # New header format
-    new_header = ['PIECE NO', 'CUT LENGTH', 'N.S. (MM)', 'REMARKS', 'Drawing-No.']
+    # New header format with pipe class
+    new_header = ['PIECE NO', 'CUT LENGTH', 'N.S. (MM)', 'REMARKS', 'Drawing-No.', 'Pipe Class']
     new_rows = []
     
     for row in rows:
@@ -194,7 +283,7 @@ def convert_cut_length_to_single_row_format(header, rows, drawing_no):
             piece1_remarks = row[3] if len(row) > 3 and row[3].strip() else ''
             
             if piece1_no:  # Only add if piece number exists
-                new_rows.append([piece1_no, piece1_length, piece1_ns, piece1_remarks, drawing_no])
+                new_rows.append([piece1_no, piece1_length, piece1_ns, piece1_remarks, drawing_no, pipe_class])
         
         # Extract second piece (columns 4-7)
         if len(row) >= 8:
@@ -204,7 +293,7 @@ def convert_cut_length_to_single_row_format(header, rows, drawing_no):
             piece2_remarks = row[7] if len(row) > 7 and row[7].strip() else ''
             
             if piece2_no:  # Only add if piece number exists
-                new_rows.append([piece2_no, piece2_length, piece2_ns, piece2_remarks, drawing_no])
+                new_rows.append([piece2_no, piece2_length, piece2_ns, piece2_remarks, drawing_no, pipe_class])
     
     return new_header, new_rows
 
@@ -214,24 +303,27 @@ def process_dxf_file(filepath):
         doc = ezdxf.readfile(filepath)
         text_entities = extract_text_entities(doc)
         drawing_no = find_drawing_no(text_entities)
+        pipe_class = find_pipe_class(text_entities)
         mat_header, mat_rows = extract_table(text_entities, 'ERECTION MATERIALS')
         cut_header, cut_rows = extract_table(text_entities, 'CUT PIPE LENGTH')
-        # Add Drawing-No. to each row
+        # Add Drawing-No. and Pipe Class to each row
         if mat_rows:
-            mat_header_out = mat_header + ['Drawing-No.']
-            mat_rows_out = [r + [drawing_no] for r in mat_rows]
+            mat_header_out = mat_header + ['Drawing-No.', 'Pipe Class']
+            mat_rows_out = [r + [drawing_no, pipe_class] for r in mat_rows]
         else:
             mat_header_out, mat_rows_out = [], []
         if cut_rows:
-            # Convert to single-row format (one piece per row)
-            cut_header_converted, cut_rows_converted = convert_cut_length_to_single_row_format(cut_header, cut_rows, drawing_no)
+            # Convert to single-row format (one piece per row) with pipe class
+            cut_header_converted, cut_rows_converted = convert_cut_length_to_single_row_format(cut_header, cut_rows, drawing_no, pipe_class)
             cut_header_out = cut_header_converted
             cut_rows_out = cut_rows_converted
         else:
             cut_header_out, cut_rows_out = [], []
         debug_print(f"[DEBUG] Extracted {len(mat_rows_out)} material rows and {len(cut_rows_out)} cut length rows from {filepath}")
+        debug_print(f"[DEBUG] Drawing No: '{drawing_no}', Pipe Class: '{pipe_class}'")
         return {
             'drawing_no': drawing_no,
+            'pipe_class': pipe_class,
             'mat_header': mat_header_out,
             'mat_rows': mat_rows_out,
             'cut_header': cut_header_out,
@@ -242,6 +334,7 @@ def process_dxf_file(filepath):
         print(f"[ERROR] Failed to process {filepath}: {e}")
         return {
             'drawing_no': '',
+            'pipe_class': '',
             'mat_header': [],
             'mat_rows': [],
             'cut_header': [],
@@ -443,7 +536,7 @@ def extract_table(text_entities, table_title, max_cols=20, max_rows=100):
         padded_rows.append(padded)
     return header, padded_rows
 
-def main(directory, debug=False):
+def main(directory, debug=False, workers=None):
     global DEBUG_MODE
     DEBUG_MODE = debug
     
@@ -465,41 +558,154 @@ def main(directory, debug=False):
     
     total_files = len(dxf_files)
     debug_print(f"[DEBUG] Found {total_files} DXF files to process")
-    print(f"Processing {total_files} DXF files...")
     
-    # Process each file
+    if total_files == 0:
+        print("No DXF files found.")
+        return
+    
+    # Determine if we should use parallel processing
+    if workers is None:
+        # Auto-determine: use parallel processing for multiple files
+        if total_files > 1:
+            import multiprocessing as mp
+            workers = min(total_files, mp.cpu_count())
+        else:
+            workers = 1
+    
+    if workers > 1:
+        print(f"Processing {total_files} DXF files using {workers} parallel workers...")
+        results = process_files_parallel(dxf_files, workers, debug)
+    else:
+        print(f"Processing {total_files} DXF files sequentially...")
+        results = process_files_sequential(dxf_files, debug)
+    
+    # Aggregate results
+    successful_files = 0
+    total_processing_time = 0
+    
+    for result in results:
+        if result['mat_rows']:
+            if not mat_header:
+                mat_header = result['mat_header']
+            material_rows.extend(result['mat_rows'])
+        
+        if result['cut_rows']:
+            if not cut_header:
+                cut_header = result['cut_header']
+            cut_rows.extend(result['cut_rows'])
+        
+        summary_row = {
+            'file_path': result.get('file_path', ''),
+            'filename': result.get('filename', ''),
+            'drawing_no': result['drawing_no'],
+            'pipe_class': result['pipe_class'],
+            'mat_rows': len(result['mat_rows']),
+            'cut_rows': len(result['cut_rows']),
+            'mat_missing': not bool(result['mat_rows']),
+            'cut_missing': not bool(result['cut_rows']),
+            'error': result['error'],
+            'processing_time': result.get('processing_time', 0)
+        }
+        summary.append(summary_row)
+        
+        if not result['error']:
+            successful_files += 1
+            total_processing_time += result.get('processing_time', 0)
+    
+    # Write CSVs
+    write_output_files(directory, material_rows, cut_rows, summary, mat_header, cut_header)
+    
+    # Final timing summary
+    end_time = time.time()
+    total_time = end_time - start_time
+    print_final_summary(total_files, successful_files, total_time, total_processing_time, 
+                       workers, len(material_rows), len(cut_rows), directory)
+
+def process_files_sequential(dxf_files, debug):
+    """Process files one by one sequentially."""
+    import time
+    results = []
     for i, path in enumerate(dxf_files, 1):
         file = os.path.basename(path)
         file_start_time = time.time()
-        debug_print(f"[DEBUG] Processing file {i}/{total_files}: {file}")
-        print(f"Processing file {i}/{total_files}: {file}")
+        debug_print(f"[DEBUG] Processing file {i}/{len(dxf_files)}: {file}")
+        print(f"Processing file {i}/{len(dxf_files)}: {file}")
         
         result = process_dxf_file(path)
         
         file_end_time = time.time()
         file_time = file_end_time - file_start_time
-        debug_print(f"[DEBUG] File {i}/{total_files} completed in {file_time:.2f}s")
+        result['processing_time'] = file_time
+        result['filename'] = file
+        result['file_path'] = path
         
-        summary_row = {
-            'file_path': path,
-            'filename': file,
-            'drawing_no': result['drawing_no'],
-            'mat_rows': len(result['mat_rows']),
-            'cut_rows': len(result['cut_rows']),
-            'mat_missing': not bool(result['mat_rows']),
-            'cut_missing': not bool(result['cut_rows']),
-            'error': result['error']
-        }
-        summary.append(summary_row)
-        if result['mat_rows']:
-            if not mat_header:
-                mat_header = result['mat_header']
-            material_rows.extend(result['mat_rows'])
-        if result['cut_rows']:
-            if not cut_header:
-                cut_header = result['cut_header']
-            cut_rows.extend(result['cut_rows'])
-    # Write CSVs
+        debug_print(f"[DEBUG] File {i}/{len(dxf_files)} completed in {file_time:.2f}s")
+        results.append(result)
+    
+    return results
+
+def process_files_parallel(dxf_files, workers, debug):
+    """Process files using multiprocessing."""
+    from concurrent.futures import ProcessPoolExecutor, as_completed
+    import time
+    
+    results = []
+    completed_count = 0
+    total_files = len(dxf_files)
+    
+    with ProcessPoolExecutor(max_workers=workers) as executor:
+        # Submit all jobs
+        future_to_file = {executor.submit(process_dxf_file_with_timing, file_path): file_path 
+                         for file_path in dxf_files}
+        
+        # Process completed jobs as they finish
+        for future in as_completed(future_to_file):
+            file_path = future_to_file[future]
+            completed_count += 1
+            
+            try:
+                result = future.result()
+                results.append(result)
+                
+                filename = os.path.basename(file_path)
+                processing_time = result.get('processing_time', 0)
+                print(f"[{completed_count}/{total_files}] Completed: {filename} ({processing_time:.2f}s)")
+                
+            except Exception as e:
+                print(f"[{completed_count}/{total_files}] Failed: {os.path.basename(file_path)} - {e}")
+                # Add error result
+                results.append({
+                    'filename': os.path.basename(file_path),
+                    'file_path': file_path,
+                    'drawing_no': '',
+                    'pipe_class': '',
+                    'mat_header': [],
+                    'mat_rows': [],
+                    'cut_header': [],
+                    'cut_rows': [],
+                    'error': str(e),
+                    'processing_time': 0
+                })
+    
+    return results
+
+def process_dxf_file_with_timing(filepath):
+    """Process a single DXF file and return results with timing information."""
+    import time
+    start_time = time.time()
+    
+    result = process_dxf_file(filepath)
+    processing_time = time.time() - start_time
+    
+    # Add timing and file info
+    result['processing_time'] = processing_time
+    result['filename'] = os.path.basename(filepath)
+    result['file_path'] = filepath
+    
+    return result
+
+def write_output_files(directory, material_rows, cut_rows, summary, mat_header, cut_header):
+    """Write all output CSV files."""
     # Write all_materials.csv
     out_path = os.path.join(directory, 'all_materials.csv')
     with open(out_path, 'w', newline='', encoding='utf-8') as f:
@@ -509,6 +715,7 @@ def main(directory, debug=False):
             writer.writerows(material_rows)
         else:
             writer.writerow(['No Data'])
+    
     # Write all_cut_lengths.csv
     out_path = os.path.join(directory, 'all_cut_lengths.csv')
     with open(out_path, 'w', newline='', encoding='utf-8') as f:
@@ -518,41 +725,63 @@ def main(directory, debug=False):
             writer.writerows(cut_rows)
         else:
             writer.writerow(['No Data'])
+    
     # Write summary.csv
     out_path = os.path.join(directory, 'summary.csv')
     with open(out_path, 'w', newline='', encoding='utf-8') as f:
-        writer = csv.DictWriter(f, fieldnames=['file_path', 'filename', 'drawing_no', 'mat_rows', 'cut_rows', 'mat_missing', 'cut_missing', 'error'])
+        writer = csv.DictWriter(f, fieldnames=['file_path', 'filename', 'drawing_no', 'pipe_class', 'mat_rows', 'cut_rows', 'mat_missing', 'cut_missing', 'error', 'processing_time'])
         writer.writeheader()
         writer.writerows(summary)
-    
-    # Final timing summary
-    end_time = time.time()
-    total_time = end_time - start_time
+
+def print_final_summary(total_files, successful_files, total_time, total_processing_time, 
+                       workers, total_materials, total_cuts, directory):
+    """Print comprehensive final summary."""
     print(f"\n=== PROCESSING COMPLETE ===")
     print(f"Total files processed: {total_files}")
-    print(f"Total processing time: {total_time:.2f} seconds")
-    if total_files > 0:
-        print(f"Average time per file: {total_time/total_files:.2f} seconds")
-    print(f"Total material rows: {len(material_rows)}")
-    print(f"Total cut length rows: {len(cut_rows)}")
+    print(f"Successful: {successful_files}")
+    print(f"Failed: {total_files - successful_files}")
+    print(f"Workers used: {workers}")
+    print(f"Total wall time: {total_time:.2f} seconds")
+    
+    if workers > 1 and successful_files > 0:
+        avg_per_file = total_processing_time / successful_files if successful_files > 0 else 0
+        speedup = total_processing_time / total_time if total_time > 0 else 1
+        efficiency = speedup / workers * 100 if workers > 0 else 0
+        
+        print(f"Total processing time: {total_processing_time:.2f} seconds")
+        print(f"Average per file: {avg_per_file:.2f} seconds")
+        print(f"Speedup factor: {speedup:.2f}x")
+        print(f"Parallel efficiency: {efficiency:.1f}%")
+        time_saved = total_processing_time - total_time
+        print(f"Time saved: {time_saved:.2f} seconds")
+    elif successful_files > 0:
+        avg_per_file = total_time / successful_files
+        print(f"Average time per file: {avg_per_file:.2f} seconds")
+    
+    print(f"Total material rows: {total_materials}")
+    print(f"Total cut length rows: {total_cuts}")
     print(f"Output files written to: {directory}")
     
     debug_print(f"[DEBUG] === PROCESSING COMPLETE ===")
     debug_print(f"[DEBUG] Total files processed: {total_files}")
-    debug_print(f"[DEBUG] Total processing time: {total_time:.2f} seconds")
-    if total_files > 0:
-        debug_print(f"[DEBUG] Average time per file: {total_time/total_files:.2f} seconds")
-    debug_print(f"[DEBUG] Total material rows: {len(material_rows)}")
-    debug_print(f"[DEBUG] Total cut length rows: {len(cut_rows)}")
+    debug_print(f"[DEBUG] Total wall time: {total_time:.2f} seconds")
+    debug_print(f"[DEBUG] Total material rows: {total_materials}")
+    debug_print(f"[DEBUG] Total cut length rows: {total_cuts}")
     debug_print(f"[DEBUG] Output files written to: {directory}")
 
 if __name__ == '__main__':
     import sys
-    if len(sys.argv) < 2:
-        print('Usage: python dxf_iso_bom_extraction.py <directory> [--debug]')
-        print('  <directory>: Root folder containing DXF files (recursively searched)')
-        print('  --debug: Show detailed debug output (optional)')
-    else:
-        directory = sys.argv[1]
-        debug_mode = '--debug' in sys.argv
-        main(directory, debug=debug_mode)
+    import argparse
+    
+    parser = argparse.ArgumentParser(description='Extract DXF Isometric BOM data')
+    parser.add_argument('directory', help='Directory containing DXF files (recursively searched)')
+    parser.add_argument('--debug', action='store_true', help='Enable detailed debug output')
+    parser.add_argument('--workers', type=int, help='Number of parallel workers (default: auto-detect based on file count)')
+    
+    args = parser.parse_args()
+    
+    if not os.path.isdir(args.directory):
+        print(f"Error: Directory '{args.directory}' does not exist")
+        sys.exit(1)
+    
+    main(args.directory, debug=args.debug, workers=args.workers)

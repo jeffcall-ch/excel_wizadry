@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 
-<exchange xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://download.autodesk.com/us/navisworks/schemas/nw-exchange-12.0.xsd" units="m" filename="ADI_Abu_Dhabi_20250806.nwd" filepath="C:\Users\szil\OneDrive - Kanadevia Inova\Desktop\Projects\03 AbuDhabi\02 Navisworks">
+<exchange xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://download.autodesk.com/us/navisworks/schemas/nw-exchange-12.0.xsd" units="m" filename="ADI_Abu_Dhabi_20250811.nwd" filepath="C:\Users\szil\OneDrive - Kanadevia Inova\Desktop\Projects\03 AbuDhabi\02 Navisworks">
   <findspec mode="all" disjoint="0">
     <conditions>
       <condition test="contains" flags="10">
@@ -8,7 +8,23 @@
           <name internal="LcOaSceneBaseUserName">Name</name>
         </property>
         <value>
-          <data type="wstring">2HGC60BR100</data>
+          <data type="wstring">/0AUX-P-INN/TW</data>
+        </value>
+      </condition>
+      <condition test="contains" flags="74">
+        <property>
+          <name internal="LcOaSceneBaseUserName">Name</name>
+        </property>
+        <value>
+          <data type="wstring">/0AUX-P-INN/PW</data>
+        </value>
+      </condition>
+      <condition test="contains" flags="74">
+        <property>
+          <name internal="LcOaSceneBaseUserName">Name</name>
+        </property>
+        <value>
+          <data type="wstring">/0AUX-P-INN/WW</data>
         </value>
       </condition>
     </conditions>
