@@ -1,0 +1,96 @@
+<?xml version='1.0' encoding='utf-8'?>
+<exchange xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://download.autodesk.com/us/navisworks/schemas/nw-exchange-12.0.xsd" units="m" filename="" filepath="">
+  <findspec mode="all" disjoint="0">
+    <conditions>
+      <condition test="contains" flags="10">
+        <property>
+          <name internal="LcOaSceneBaseUserName">Name</name>
+        </property>
+        <value>
+          <data type="wstring">/0AUX-P-INN/PW</data>
+        </value>
+      </condition>
+      <condition test="contains" flags="74">
+        <property>
+          <name internal="LcOaSceneBaseUserName">Name</name>
+        </property>
+        <value>
+          <data type="wstring">/0AUX-P-INN/TW</data>
+        </value>
+      </condition>
+      <condition test="contains" flags="74">
+        <property>
+          <name internal="LcOaSceneBaseUserName">Name</name>
+        </property>
+        <value>
+          <data type="wstring">/0AUX-P-INN/WW</data>
+        </value>
+      </condition>
+      <condition test="contains" flags="74">
+        <property>
+          <name internal="LcOaSceneBaseUserName">Name</name>
+        </property>
+        <value>
+          <data type="wstring">/1AUX-P-INN/CW-FH</data>
+        </value>
+      </condition>
+      <condition test="contains" flags="74">
+        <property>
+          <name internal="LcOaSceneBaseUserName">Name</name>
+        </property>
+        <value>
+          <data type="wstring">/1AUX-P-INN/PW-ISD</data>
+        </value>
+      </condition>
+      <condition test="contains" flags="74">
+        <property>
+          <name internal="LcOaSceneBaseUserName">Name</name>
+        </property>
+        <value>
+          <data type="wstring">/1AUX-P-INN/PW</data>
+        </value>
+      </condition>
+      <condition test="contains" flags="74">
+        <property>
+          <name internal="LcOaSceneBaseUserName">Name</name>
+        </property>
+        <value>
+          <data type="wstring">/1AUX-P-INN/WW</data>
+        </value>
+      </condition>
+      <condition test="contains" flags="74">
+        <property>
+          <name internal="LcOaSceneBaseUserName">Name</name>
+        </property>
+        <value>
+          <data type="wstring">/2AUX-P-INN/CW-FH</data>
+        </value>
+      </condition>
+      <condition test="contains" flags="74">
+        <property>
+          <name internal="LcOaSceneBaseUserName">Name</name>
+        </property>
+        <value>
+          <data type="wstring">/2AUX-P-INN/PW-ISD</data>
+        </value>
+      </condition>
+      <condition test="contains" flags="74">
+        <property>
+          <name internal="LcOaSceneBaseUserName">Name</name>
+        </property>
+        <value>
+          <data type="wstring">/2AUX-P-INN/PW</data>
+        </value>
+      </condition>
+      <condition test="contains" flags="74">
+        <property>
+          <name internal="LcOaSceneBaseUserName">Name</name>
+        </property>
+        <value>
+          <data type="wstring">/2AUX-P-INN/WW</data>
+        </value>
+      </condition>
+    </conditions>
+    <locator>/</locator>
+  </findspec>
+</exchange>

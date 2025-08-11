@@ -45,3 +45,7 @@ for %%f in (*_navis_filter.xml) do (
 )
 echo WARNING: XML file may not have been generated
 :found
+
+echo.
+echo Press any key to exit...
+pause >nul
