@@ -5,14 +5,142 @@ import pandas as pd
 import PyPDF2
 from datetime import datetime
 import re
+from typing import List, Dict, Tuple
 
-def search_pdf_for_text(pdf_path, search_text, case_sensitive=False):
+def parse_boolean_query(query: str) -> List[Tuple[str, str]]:
     """
-    Search a PDF file for the specified text and return matches with page numbers.
+    Parse a boolean search query into tokens.
+    
+    Args:
+        query (str): Boolean search query like "term1 AND term2 OR term3"
+        
+    Returns:
+        List[Tuple[str, str]]: List of (token_type, value) tuples
+                              token_type can be 'TERM', 'AND', 'OR', 'NOT', 'LPAREN', 'RPAREN'
+    """
+    # Replace operators with standardized versions and add spaces
+    query = re.sub(r'\bAND\b', ' AND ', query)
+    query = re.sub(r'\bOR\b', ' OR ', query)
+    query = re.sub(r'\bNOT\b', ' NOT ', query)
+    query = re.sub(r'\(', ' ( ', query)
+    query = re.sub(r'\)', ' ) ', query)
+    
+    # Split into tokens and filter out empty strings
+    tokens = [token.strip() for token in query.split() if token.strip()]
+    
+    parsed_tokens = []
+    for token in tokens:
+        if token == 'AND':
+            parsed_tokens.append(('AND', token))
+        elif token == 'OR':
+            parsed_tokens.append(('OR', token))
+        elif token == 'NOT':
+            parsed_tokens.append(('NOT', token))
+        elif token == '(':
+            parsed_tokens.append(('LPAREN', token))
+        elif token == ')':
+            parsed_tokens.append(('RPAREN', token))
+        else:
+            parsed_tokens.append(('TERM', token))
+    
+    return parsed_tokens
+
+def evaluate_boolean_expression(tokens: List[Tuple[str, str]], document_text: str, case_sensitive: bool = False) -> bool:
+    """
+    Evaluate a boolean expression against document text.
+    
+    Args:
+        tokens: List of (token_type, value) tuples
+        document_text: Full text of the document
+        case_sensitive: Whether search should be case sensitive
+        
+    Returns:
+        bool: True if the document matches the boolean expression
+    """
+    if not case_sensitive:
+        document_text = document_text.lower()
+    
+    def term_exists(term: str) -> bool:
+        """Check if a term exists in the document (exact or partial matching based on wildcard)"""
+        search_term = term if case_sensitive else term.lower()
+        
+        # Check if term ends with * for partial matching
+        if search_term.endswith('*'):
+            # Remove the * and do partial matching
+            search_term = search_term[:-1]
+            return search_term in document_text
+        else:
+            # Exact word matching using word boundaries
+            pattern = r'\b' + re.escape(search_term) + r'\b'
+            return bool(re.search(pattern, document_text, re.IGNORECASE if not case_sensitive else 0))
+    
+    def parse_expression(pos: int) -> Tuple[bool, int]:
+        """Parse and evaluate expression starting at position pos"""
+        result, pos = parse_or_expression(pos)
+        return result, pos
+    
+    def parse_or_expression(pos: int) -> Tuple[bool, int]:
+        """Parse OR expressions (lowest precedence)"""
+        result, pos = parse_and_expression(pos)
+        
+        while pos < len(tokens) and tokens[pos][0] == 'OR':
+            pos += 1  # Skip OR
+            right, pos = parse_and_expression(pos)
+            result = result or right
+            
+        return result, pos
+    
+    def parse_and_expression(pos: int) -> Tuple[bool, int]:
+        """Parse AND expressions (higher precedence than OR)"""
+        result, pos = parse_not_expression(pos)
+        
+        while pos < len(tokens) and tokens[pos][0] == 'AND':
+            pos += 1  # Skip AND
+            right, pos = parse_not_expression(pos)
+            result = result and right
+            
+        return result, pos
+    
+    def parse_not_expression(pos: int) -> Tuple[bool, int]:
+        """Parse NOT expressions (highest precedence)"""
+        if pos < len(tokens) and tokens[pos][0] == 'NOT':
+            pos += 1  # Skip NOT
+            result, pos = parse_primary(pos)
+            return not result, pos
+        else:
+            return parse_primary(pos)
+    
+    def parse_primary(pos: int) -> Tuple[bool, int]:
+        """Parse primary expressions (terms and parentheses)"""
+        if pos >= len(tokens):
+            return False, pos
+            
+        token_type, value = tokens[pos]
+        
+        if token_type == 'TERM':
+            return term_exists(value), pos + 1
+        elif token_type == 'LPAREN':
+            pos += 1  # Skip (
+            result, pos = parse_expression(pos)
+            if pos < len(tokens) and tokens[pos][0] == 'RPAREN':
+                pos += 1  # Skip )
+            return result, pos
+        else:
+            return False, pos
+    
+    if not tokens:
+        return False
+    
+    result, _ = parse_expression(0)
+    return result
+
+def search_pdf_for_boolean_text(pdf_path: str, search_query: str, case_sensitive: bool = False) -> List[Dict]:
+    """
+    Search a PDF file for text using boolean operators and return matches with page numbers.
     
     Args:
         pdf_path (str): Path to the PDF file
-        search_text (str): Text to search for
+        search_query (str): Boolean search query
         case_sensitive (bool): Whether the search should be case-sensitive
         
     Returns:
@@ -25,39 +153,74 @@ def search_pdf_for_text(pdf_path, search_text, case_sensitive=False):
             reader = PyPDF2.PdfReader(file)
             num_pages = len(reader.pages)
             
+            # Extract all text from the document for boolean evaluation
+            full_document_text = ""
+            page_texts = []
+            
             for page_num in range(num_pages):
                 page = reader.pages[page_num]
-                text = page.extract_text()
+                page_text = page.extract_text() or ""
+                page_texts.append(page_text)
+                full_document_text += page_text + "\n"
+            
+            # Parse the boolean query
+            tokens = parse_boolean_query(search_query)
+            
+            # Check if the document matches the boolean expression
+            if evaluate_boolean_expression(tokens, full_document_text, case_sensitive):
+                # If document matches, find which pages contain any of the search terms
+                search_terms = [token[1] for token in tokens if token[0] == 'TERM']
                 
-                if text:
-                    # Handle case sensitivity
-                    if not case_sensitive:
-                        search_pattern = search_text.lower()
-                        page_text = text.lower()
-                    else:
-                        search_pattern = search_text
-                        page_text = text
-                    
-                    # Check if the text exists on this page
-                    if search_pattern in page_text:
-                        # Find all occurrences and get surrounding context
-                        for match in re.finditer(re.escape(search_pattern), page_text, re.IGNORECASE if not case_sensitive else 0):
-                            start_pos = max(0, match.start() - 50)
-                            end_pos = min(len(page_text), match.end() + 50)
+                for page_num, page_text in enumerate(page_texts):
+                    if page_text:
+                        page_text_search = page_text if case_sensitive else page_text.lower()
+                        
+                        # Check if any search term appears on this page
+                        for term in search_terms:
+                            term_search = term if case_sensitive else term.lower()
                             
-                            # Get context (text before and after the match)
-                            context = "..." + page_text[start_pos:end_pos].replace('\n', ' ') + "..."
+                            # Handle wildcard vs exact matching
+                            if term.endswith('*'):
+                                # Partial matching - remove * and search for substring
+                                search_pattern = term_search[:-1]
+                                matches_found = list(re.finditer(re.escape(search_pattern), page_text_search))
+                            else:
+                                # Exact word matching using word boundaries
+                                pattern = r'\b' + re.escape(term_search) + r'\b'
+                                matches_found = list(re.finditer(pattern, page_text_search, re.IGNORECASE if not case_sensitive else 0))
                             
-                            # Store match information
-                            matches.append({
-                                'file_path': pdf_path,
-                                'page_number': page_num + 1,  # +1 because page numbers start from 1, not 0
-                                'match_context': context
-                            })
+                            # Find all occurrences of this term on this page
+                            for match in matches_found:
+                                start_pos = max(0, match.start() - 50)
+                                end_pos = min(len(page_text_search), match.end() + 50)
+                                
+                                # Get context (text before and after the match)
+                                context = "..." + page_text[start_pos:end_pos].replace('\n', ' ') + "..."
+                                
+                                # Store match information
+                                matches.append({
+                                    'file_path': pdf_path,
+                                    'page_number': page_num + 1,
+                                    'matched_term': term,
+                                    'match_context': context,
+                                    'search_query': search_query
+                                })
+                                break  # Only one match per term per page needed for context
+    
     except Exception as e:
         print(f"Error processing {pdf_path}: {str(e)}")
     
     return matches
+
+def search_pdf_for_text(pdf_path, search_text, case_sensitive=False):
+    """
+    Legacy function for backward compatibility. Uses boolean search internally.
+    """
+    # If no boolean operators detected, treat as simple term search
+    if not any(op in search_text.upper() for op in ['AND', 'OR', 'NOT']):
+        return search_pdf_for_boolean_text(pdf_path, search_text, case_sensitive)
+    else:
+        return search_pdf_for_boolean_text(pdf_path, search_text, case_sensitive)
 
 def search_directory_for_pdfs(directory, search_text, case_sensitive=False):
     """
@@ -159,25 +322,35 @@ def create_excel_report(matches, output_file, search_text):
 
 def main():
     """Main function to parse arguments and run the search"""
-    parser = argparse.ArgumentParser(description='Search PDF files for specific text and generate Excel report')
-    parser.add_argument('search_text', help='Text to search for in PDF files')
+    parser = argparse.ArgumentParser(description='Search PDF files for specific text using Boolean operators and generate Excel report')
+    parser.add_argument('search_text', help='Text to search for in PDF files. Supports Boolean operators: AND, OR, NOT. Use parentheses for grouping. Example: "term1 AND (term2 OR term3) AND NOT term4"')
     parser.add_argument('directory', help='Directory containing PDF files to search')
-    parser.add_argument('--output', '-o', help='Output file path for Excel report', 
-                        default=f'pdf_search_results_{datetime.now().strftime("%Y%m%d_%H%M%S")}.xlsx')
+    parser.add_argument('--output', '-o', help='Output file path for Excel report')
     parser.add_argument('--case-sensitive', '-c', action='store_true', help='Enable case-sensitive search')
-    
+
     args = parser.parse_args()
-    
+
     print(f"Searching for '{args.search_text}' in {args.directory}...")
-    
+    print("Boolean operators supported: AND, OR, NOT (case-sensitive)")
+    print("Use parentheses for grouping: (term1 OR term2) AND term3")
+    print("Wildcard matching: 'term*' for partial match, 'term' for exact word match")
+    print("Examples: 'his*' matches 'this', 'histogram'; 'this' matches only 'this'")
+    print("-" * 60)
+
     # Perform search
     matches = search_directory_for_pdfs(args.directory, args.search_text, args.case_sensitive)
-    
+
+    # Prepare output filename
+    safe_search = re.sub(r'[^A-Za-z0-9]+', '_', args.search_text)[:40]
+    date_str = datetime.now().strftime('%Y%m%d_%H%M%S')
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    output_file = args.output if args.output else os.path.join(script_dir, f"results_{safe_search}_{date_str}.xlsx")
+
     # Create Excel report
-    create_excel_report(matches, args.output, args.search_text)
-    
+    create_excel_report(matches, output_file, args.search_text)
+
     if matches:
-        print(f"Excel report created: {args.output}")
+        print(f"Excel report created: {output_file}")
 
 if __name__ == "__main__":
     main()
