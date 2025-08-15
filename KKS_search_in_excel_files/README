@@ -1,0 +1,150 @@
+# KKS Code Search Tool
+
+A Python utility for searching KKS codes across multiple Excel files and exporting results to CSV format.
+
+## Overview
+
+This tool searches through all Excel files (.xlsx, .xlsm, .xls) in a specified directory, looking for KKS codes or any search term within the cell contents. It extracts matching rows along with their headers and saves everything to a CSV file with clear source identification.
+
+## Features
+
+- **Multi-format Support**: Works with .xlsx, .xlsm, and .xls files
+- **Case-insensitive Search**: Finds partial matches regardless of case
+- **Header Detection**: Automatically identifies and includes header rows
+- **Source Tracking**: Shows which file and sheet each result came from
+- **Auto-filtering Aware**: Prioritizes sheets with Excel auto-filters
+- **Complete Audit Trail**: Creates files for both successful and empty searches
+- **Safe Output**: Uses CSV format to avoid Excel corruption issues
+
+## Requirements
+
+### Python Packages
+```bash
+pip install pandas openpyxl xlrd
+```
+
+### System Requirements
+- Python 3.6 or higher
+- Windows/Linux/Mac compatible
+
+## Installation
+
+1. Save the script as `KKS_search_in_excel_files.py`
+2. Install required packages: `pip install pandas openpyxl xlrd`
+3. Run from command line as shown below
+
+## Usage
+
+### Basic Syntax
+```bash
+python KKS_search_in_excel_files.py "SEARCH_TERM" "DIRECTORY_PATH"
+```
+
+### Real-world Example
+```bash
+python KKS_search_in_excel_files.py "1HFA20BQ007" "C:\Users\szil\OneDrive - Kanadevia Inova\Desktop\Projects\03 AbuDhabi\01 Documents\05 BOM Lists\250804\KVI SK-KVI AG-01943\02 Hanger and support material"
+```
+
+### Additional Examples
+```bash
+# Search for partial KKS codes
+python KKS_search_in_excel_files.py "BQ007" "C:\Project\BOM_Files"
+
+# Search for component types
+python KKS_search_in_excel_files.py "hanger" "C:\Project\BOM_Files"
+
+# Search with special characters
+python KKS_search_in_excel_files.py "KVI-123" "C:\Project\BOM_Files"
+
+# Case-insensitive search
+python KKS_search_in_excel_files.py "abc123" "C:\Project\BOM_Files"
+```
+
+## Output Files
+
+### When Matches Are Found
+- **Filename**: `RESULT_searchterm_YYYYMMDD_HHMMSS.csv`
+- **Example**: `RESULT_1HFA20BQ007_20250815_143022.csv`
+
+### When No Matches Are Found
+- **Filename**: `NO_RESULT_searchterm_YYYYMMDD_HHMMSS.csv`
+- **Example**: `NO_RESULT_1HFA20BQ007_20250815_143045.csv`
+
+## Output Format
+
+The CSV file contains:
+
+```csv
+KKS Search Results for: 1HFA20BQ007
+Search performed on: 2025-08-15 14:30:22
+Directory: C:\Users\szil\OneDrive - Kanadevia Inova\Desktop\...
+
+=== FILE: BOM_List_Materials.xlsx | SHEET: Sheet1 ===
+Part Number,Description,KKS Code,Quantity,Remarks
+P12345,Support Bracket,1HFA20BQ007,2,Standard
+P67890,Mounting Plate,1HFA20BQ007-01,4,Modified
+
+=== FILE: Parts_Inventory.xlsx | SHEET: Hangers ===
+Item,Type,Code,Location
+H001,Hanger Support,1HFA20BQ007,Warehouse A
+```
+
+## How It Works
+
+1. **File Discovery**: Recursively finds all Excel files in the specified directory
+2. **Filter Detection**: Prioritizes sheets with Excel auto-filters for better header detection
+3. **Content Search**: Performs case-insensitive partial matching across all cells
+4. **Header Extraction**: Automatically identifies and includes relevant header rows
+5. **Result Compilation**: Combines all matches into a single CSV with source identification
+6. **Output Generation**: Creates timestamped files in the search directory
+
+## Tips for Best Results
+
+### Search Terms
+- Use partial codes for broader results: `"BQ007"` instead of `"1HFA20BQ007"`
+- Search is case-insensitive: `"abc123"` will find `"ABC123"`
+- Special characters are supported: `"KVI-123/ABC"`
+
+### Directory Paths
+- Always use quotes around paths with spaces
+- Use full absolute paths for reliability
+- Ensure you have read access to all files in the directory
+
+### File Management
+- Close Excel files before running the search
+- Ensure the target directory is not read-only
+- Check that OneDrive/SharePoint files are fully synced
+
+## Troubleshooting
+
+### Common Issues
+
+**"No Excel files found"**
+- Verify the directory path exists
+- Check that the folder contains .xlsx, .xlsm, or .xls files
+- Ensure you have read permissions
+
+**"Error loading file"**
+- File may be password-protected
+- File might be corrupted
+- Excel file may be currently open
+
+**OneDrive/SharePoint Issues**
+- Ensure files are fully synced locally
+- Try copying files to a local directory first
+- Check network connectivity
+
+### Performance Tips
+- For large directories, consider searching subfolders individually
+- Close unnecessary applications to free up memory
+- Use more specific search terms to reduce processing time
+
+## Output Location
+
+All result files are automatically saved in the same directory where you run the search. No additional output path specification is needed.
+
+## Version History
+
+- **v1.0**: Initial release with Excel and CSV output support
+- **v2.0**: Improved error handling and CSV-only output for reliability
+- **v2.1**: Added NO_RESULT file creation for complete audit trail
