@@ -17,6 +17,7 @@ env file
 # excel, docx, pptx, etc.
 *.xlsx
 *.xls
+*.xlsm
 *.docx
 *.doc
 *.pptx
