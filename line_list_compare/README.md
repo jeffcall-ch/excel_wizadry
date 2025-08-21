@@ -58,6 +58,11 @@ pip install pandas openpyxl
 
 ## Error Handling
 
+## Known Limitations
+
+- Assumes KKS column is present and correctly labeled in both input files.
+- Duplicate KKS values are reported but may require manual review.
+- Only supports Excel files with standard formats; corrupted files may fail.
 The script performs the following validations:
 
 1. **File Existence**: Checks if input files exist

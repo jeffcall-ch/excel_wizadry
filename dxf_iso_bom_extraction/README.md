@@ -58,6 +58,12 @@ The tool automatically detects when to use multiprocessing:
 ## Example
 
 ```bash
+## Known Limitations
+
+- Only supports DXF files with expected table formats; custom or corrupted DXF files may not be processed correctly.
+- Requires Python and the ezdxf library; installation issues may occur on some systems.
+- Large batches may consume significant memory and CPU.
+- Error reporting is robust, but some edge cases may not be caught.
 # Process all DXF files in project folder with debug output
 python dxf_iso_bom_extraction.py "C:\Projects\Piping\Isometrics" --debug
 

@@ -53,11 +53,11 @@ python navisworks_xml_filter_gen.py
 ## Input File Format
 
 **Excel File**: `Navis_KKS_List.xlsx`
-- Put KKS codes in the **first column** (Column A)
-- **No header row** required
-- One KKS code per row
-- Spaces in KKS codes will be automatically removed
-- Empty rows will be ignored
+## Known Limitations
+
+- Only supports Excel files with KKS codes in the first column and no header.
+- Output XML structure is fixed for Navisworks; custom requirements may need script changes.
+- Large lists of KKS codes may impact performance.
 
 **Example Excel content:**
 ```

@@ -53,10 +53,9 @@
 ## Documentation
 - For each new script/tool, create a `README.md` in its folder.  
 - Each `README.md` must include:  
-  1. **Purpose** – what the script/tool does.  
-  2. **Requirements** – installation commands for dependencies.  
-  3. **Usage** – step-by-step instructions to run the script.  
-  4. **Examples** – input/output examples or CLI usage.  
-  5. **Known Limitations** – if applicable.  
+  1. **Purpose** – what the script/tool does, what input files it has, what is the output. Where the output is saved.  
+  2. **Usage** – step-by-step instructions to run the script.  
+  3. **Examples** – input/output examples or CLI usage.  
+  4. **Known Limitations** – if applicable.  
 
 ---

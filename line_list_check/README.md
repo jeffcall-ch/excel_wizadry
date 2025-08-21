@@ -60,6 +60,13 @@ Run the pipe class checker script:
 python line_list_check\line_list_check_pipe_class.py
 ```
 
+## Known Limitations
+
+- Assumes specific Excel formats for line lists and pipe class summaries.
+- Large files may impact performance.
+- Validation logic may not cover all edge cases or custom specifications.
+```
+
 This script:
 1. Reads the 'Query' tab from the Excel file `Export 17.06.2025_LS.xlsx`
 2. Loads reference data from `PIPE CLASS SUMMARY_LS_06.06.2025_updated_column_names.xlsx`

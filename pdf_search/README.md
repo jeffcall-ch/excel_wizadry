@@ -59,6 +59,11 @@ C:/Users/szil/Repos/excel_wizadry/.venv/Scripts/python.exe pdf_search/multi_pdf_
 
 ### Basic Search
 
+## Known Limitations
+
+- Only supports PDF files that are not encrypted or password-protected.
+- Large directories or files may impact performance.
+- Text extraction may fail for scanned or image-based PDFs.
 Search for "procurement lot order" in all PDFs in the "ProjectDocuments" folder:
 
 ```powershell
