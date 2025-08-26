@@ -73,7 +73,9 @@ def detect_table_structure(page_dict: dict, anchor_text: str):
 
     # Define the data structure for text elements
     text_elements = []
-    header_bottom_y = anchor_y1  # Initialize with the bottom of the anchor
+    header_top_y = anchor_y0  # Initialize with the bottom of the anchor
+    header_left_x = anchor_x0  # Initialize with the left of the anchor
+    header_right_x = anchor_x1  # Initialize with the right of the anchor
 
     # Find qualifying text elements
     print("[DEBUG] Header Text Detection")
@@ -96,60 +98,17 @@ def detect_table_structure(page_dict: dict, anchor_text: str):
                     )
                 ):
                     text_elements.append({"text": text, "bbox": bbox})
-                    header_bottom_y = max(header_bottom_y, text_y1)  # Update header_bottom_y
+                    header_top_y = min(header_top_y, text_y0)  # Update header_top_y
+                    header_right_x = max(header_right_x, text_x1)  # Update header_right_x
                     print(f"  - Text: '{text}'")
                     print(f"    BBox: {bbox}")
 
     print(f"\n[DEBUG] Total Header Text Elements Detected: {len(text_elements)}")
-    print(f"[DEBUG] Header Bottom Y: {header_bottom_y}\n")
+    print(f"[DEBUG] Header TOP Y: {header_top_y}")
+    print(f"[DEBUG] Header LEFT X: {header_left_x}")
+    print(f"[DEBUG] Header RIGHT X: {header_right_x}\n")
 
-    # Debug: Calculate average character length for specific headers within text_elements
-    headers_to_check = ["POS", "NUMBER", "TOTAL"]
-    avg_char_lengths = []
-    header_bboxes = {}
-    for header in headers_to_check:
-        for element in text_elements:
-            stripped_text = element["text"].strip()  # Strip front and back whitespaces
-            if header in stripped_text:
-                bbox = element["bbox"]
-                text_width = bbox[2] - bbox[0]  # x1 - x0
-                avg_char_length = text_width / len(stripped_text)
-                avg_char_lengths.append(avg_char_length)
-                header_bboxes[header] = bbox
-                print(f"[DEBUG] Header: '{header}'")
-                print(f"  - Stripped Text: '{stripped_text}'")
-                print(f"  - BBox: {bbox}")
-                print(f"  - Average Character Length (X): {avg_char_length}\n")
-
-    # Define char_width as the maximum of the average character lengths
-    avarage_char_width = max(avg_char_lengths) if avg_char_lengths else 0
-    print(f"[DEBUG] Maximum Average Character Width: {avarage_char_width}\n")
-
-    # Update column definitions to use partial match for 'QTY' from text_elements
-    qty_bbox = next((element["bbox"] for element in text_elements if "QTY" in element["text"]), [0, 0, 0, 0])
-
-    # Update column definitions to use text_elements instead of header_bboxes
-    number_bbox = next((element["bbox"] for element in text_elements if "NUMBER" in element["text"]), [0, 0, 0, 0])
-    length_bbox = next((element["bbox"] for element in text_elements if "LENGTH" in element["text"]), [0, 0, 0, 0])
-    total_bbox = next((element["bbox"] for element in text_elements if "TOTAL" in element["text"]), [0, 0, 0, 0])
-
-    # Define column boundaries
-    columns = [
-        ColumnDefinition("POS", anchor_x0 - avarage_char_width, anchor_x1 + avarage_char_width),
-        ColumnDefinition("ARTICLE_NUMBER", number_bbox[0] - avarage_char_width, number_bbox[2] + avarage_char_width),
-        ColumnDefinition("QTY", qty_bbox[0] - avarage_char_width, qty_bbox[0] + 4 * avarage_char_width),
-        ColumnDefinition("DESCRIPTION", qty_bbox[0] + 5 * avarage_char_width, length_bbox[0] - 4 * avarage_char_width),
-        ColumnDefinition("CUT_LENGTH", length_bbox[0] - 2 * avarage_char_width, length_bbox[2] + avarage_char_width),
-        ColumnDefinition("WEIGHT", length_bbox[2] + 2 * avarage_char_width, total_bbox[0] - 2 * avarage_char_width),
-        ColumnDefinition("TOTAL_WEIGHT", total_bbox[0] - 2 * avarage_char_width, total_bbox[2] + 2 * avarage_char_width),
-    ]
-
-    for column in columns:
-        print(f"[DEBUG] Column: {column.name}")
-        print(f"  - X0: {column.x0}")
-        print(f"  - X1: {column.x1}\n")
-
-    return anchor_bbox, text_elements, columns
+    return anchor_bbox, text_elements, (header_top_y, header_left_x, header_right_x)
 
 def find_table_bottom(page_dict: dict, target_text: str):
     """
