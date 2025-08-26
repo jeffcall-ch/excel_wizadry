@@ -120,12 +120,19 @@ def detect_table_structure(page_dict: dict, anchor_text: str):
                 print(f"  - Stripped Text: '{stripped_text}'")
                 print(f"  - BBox: {bbox}")
                 print(f"  - Average Character Length (X): {avg_char_length}\n")
-
+    
+    # Call find_table_bottom to locate the 'TOTAL' below 'WEIGHT'
+    table_bottom_y = find_table_bottom(page_dict, "TOTAL")
+    if table_bottom_y:
+        print(f"[DEBUG] Table Bottom Found: {table_bottom_y}\n")
+    else:
+        print("[DEBUG] Table Bottom Not Found\n")
     
     # Add some padding to  bounding boxes to make sure we have all text in the box and possible the table frame too
     header_left_x -= avg_char_length * 2
     header_right_x += avg_char_length * 2
     header_top_y -= anchor_height * 2
+    table_bottom_y = table_bottom_y["bbox"][3] + avg_char_length * 2
     
 
     print(f"\n[DEBUG] Total Header Text Elements Detected: {len(text_elements)}")
@@ -133,7 +140,7 @@ def detect_table_structure(page_dict: dict, anchor_text: str):
     print(f"[DEBUG] Header LEFT X: {header_left_x}")
     print(f"[DEBUG] Header RIGHT X: {header_right_x}\n")
 
-    return anchor_bbox, text_elements, (header_top_y, header_left_x, header_right_x)
+    return anchor_bbox, text_elements, avg_char_length, (header_top_y, header_left_x, header_right_x, table_bottom_y)
 
 def find_table_bottom(page_dict: dict, target_text: str):
     """
@@ -188,7 +195,7 @@ def find_table_bottom(page_dict: dict, target_text: str):
     print(f"[DEBUG] Target '{target_text}' not found below hardcoded header 'WEIGHT'.\n")
     return None
 
-def find_table_content(page_dict: dict, header_bounds: Tuple[float, float, float], table_bottom: float):
+def find_table_content(page_dict: dict, avg_char_length: float, table_bounds: Tuple[float, float, float, float]):
     """
     Extract all text within the table boundaries and print their coordinates.
 
@@ -197,13 +204,14 @@ def find_table_content(page_dict: dict, header_bounds: Tuple[float, float, float
         header_bounds (Tuple[float, float, float]): Tuple containing (header_top, header_left, header_right).
         table_bottom (float): The Y-coordinate of the table bottom.
     """
-    header_top, header_left, header_right = header_bounds
+    header_top, header_left, header_right, table_bottom = table_bounds
 
     # Debug print header bounds
     print("\n[DEBUG] Header Bounds:")
     print(f"  - Header Top: {header_top}")
     print(f"  - Header Left: {header_left}")
     print(f"  - Header Right: {header_right}")
+    print(f"  - Table Bottom: {table_bottom}")
 
     # List to store text elements within the table boundaries
     table_text_elements = []
@@ -229,10 +237,10 @@ def find_table_content(page_dict: dict, header_bounds: Tuple[float, float, float
         min_y0_element = min(table_text_elements, key=lambda e: e["bbox"][1])
         max_y1_element = max(table_text_elements, key=lambda e: e["bbox"][3])
 
-        min_x0 = min_x0_element["bbox"][0]
-        max_x1 = max_x1_element["bbox"][2]
-        min_y0 = min_y0_element["bbox"][1]
-        max_y1 = max_y1_element["bbox"][3]
+        min_x0 = min_x0_element["bbox"][0] - 2*avg_char_length
+        max_x1 = max_x1_element["bbox"][2] + 2*avg_char_length
+        min_y0 = min_y0_element["bbox"][1] - 2*avg_char_length
+        max_y1 = max_y1_element["bbox"][3] + 2*avg_char_length
 
         print("\n[DEBUG] Table Content:")
         for element in table_text_elements:
@@ -264,20 +272,12 @@ def process_pdf(pdf_path: str, anchor_text="POS"):  # Removed search_string para
             print(f"\n[DEBUG] Processing Page {page_num + 1} of PDF: {os.path.basename(pdf_path)}")
 
             # Detect table structure
-            anchor_bbox, text_elements, columns = detect_table_structure(page_dict, anchor_text)
+            anchor_bbox, text_elements, avg_char_length, table_bounds = detect_table_structure(page_dict, anchor_text)
             if anchor_bbox:
                 print(f"[DEBUG] Page {page_num + 1}: Anchor at {anchor_bbox}\n")
                 
-
-                # Call find_table_bottom to locate the 'TOTAL' below 'WEIGHT'
-                table_bottom = find_table_bottom(page_dict, "TOTAL")
-                if table_bottom:
-                    print(f"[DEBUG] Table Bottom Found: {table_bottom}\n")
-                else:
-                    print("[DEBUG] Table Bottom Not Found\n")
-
                 # Extract and analyze text within table boundaries
-                find_table_content(page_dict, columns, table_bottom["bbox"][3])  # Pass header_bounds and table bottom y-coordinate
+                find_table_content(page_dict, avg_char_length, table_bounds)  # Pass header_bounds and table bottom y-coordinate
             
 
 
