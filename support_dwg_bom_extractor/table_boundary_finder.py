@@ -8,6 +8,10 @@ import csv
 import fitz  # PyMuPDF
 from pathlib import Path
 from typing import List, Tuple, NamedTuple
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # -----------------------
 # Data Structures
@@ -50,7 +54,7 @@ def detect_table_structure(page_dict: dict, anchor_text: str):
     # Find anchor text
     anchor = find_anchor_position(page_dict, anchor_text)
     if not anchor:
-        print(f"\n[DEBUG] Anchor '{anchor_text}' not found on the page.\n")
+        logging.debug(f"Anchor '{anchor_text}' not found on the page.")
         return None, []
 
     anchor_bbox = anchor["bbox"]
@@ -64,12 +68,12 @@ def detect_table_structure(page_dict: dict, anchor_text: str):
     anchor_vertical_mid = anchor_y0 + anchor_height / 2
     tolerance = 0.2 * anchor_height  # 20% of anchor height
 
-    print("\n[DEBUG] Anchor Detection")
-    print(f"  - Anchor Text: '{anchor_text}'")
-    print(f"  - Anchor Position: {anchor_bbox}")
-    print(f"  - Anchor Height: {anchor_height}")
-    print(f"  - Anchor Vertical Midpoint: {anchor_vertical_mid}")
-    print(f"  - Tolerance: {tolerance}\n")
+    logging.debug("Anchor Detection")
+    logging.debug(f"  - Anchor Text: '{anchor_text}'")
+    logging.debug(f"  - Anchor Position: {anchor_bbox}")
+    logging.debug(f"  - Anchor Height: {anchor_height}")
+    logging.debug(f"  - Anchor Vertical Midpoint: {anchor_vertical_mid}")
+    logging.debug(f"  - Tolerance: {tolerance}")
 
     # Define the data structure for text elements
     text_elements = []
@@ -78,7 +82,7 @@ def detect_table_structure(page_dict: dict, anchor_text: str):
     header_right_x = anchor_x1  # Initialize with the right of the anchor
 
     # Find qualifying text elements
-    print("[DEBUG] Header Text Detection")
+    logging.debug("Header Text Detection")
     for block in page_dict.get("blocks", []):
         for line in block.get("lines", []):
             for span in line.get("spans", []):
@@ -100,8 +104,8 @@ def detect_table_structure(page_dict: dict, anchor_text: str):
                     text_elements.append({"text": text, "bbox": bbox})
                     header_top_y = min(header_top_y, text_y0)  # Update header_top_y
                     header_right_x = max(header_right_x, text_x1)  # Update header_right_x
-                    print(f"  - Text: '{text}'")
-                    print(f"    BBox: {bbox}")
+                    logging.debug(f"  - Text: '{text}'")
+                    logging.debug(f"    BBox: {bbox}")
 
     # Debug: Calculate average character length for specific headers within text_elements
     headers_to_check = ["POS", "NUMBER", "TOTAL"]
@@ -116,17 +120,18 @@ def detect_table_structure(page_dict: dict, anchor_text: str):
                 avg_char_length = text_width / len(stripped_text)
                 avg_char_lengths.append(avg_char_length)
                 header_bboxes[header] = bbox
-                print(f"[DEBUG] Header: '{header}'")
-                print(f"  - Stripped Text: '{stripped_text}'")
-                print(f"  - BBox: {bbox}")
-                print(f"  - Average Character Length (X): {avg_char_length}\n")
-    
+                logging.debug(f"Header: '{header}'")
+                logging.debug(f"  - Stripped Text: '{stripped_text}'")
+                logging.debug(f"  - BBox: {bbox}")
+    avg_char_length =max(avg_char_lengths)
+    logging.debug(f"  - Average Character Length (X): {avg_char_length}")
+
     # Call find_table_bottom to locate the 'TOTAL' below 'WEIGHT'
     table_bottom_y = find_table_bottom(page_dict, "TOTAL")
     if table_bottom_y:
-        print(f"[DEBUG] Table Bottom Found: {table_bottom_y}\n")
+        logging.debug(f"Table Bottom Found: {table_bottom_y}")
     else:
-        print("[DEBUG] Table Bottom Not Found\n")
+        logging.debug("Table Bottom Not Found")
     
     # Add some padding to  bounding boxes to make sure we have all text in the box and possible the table frame too
     header_left_x -= avg_char_length * 2
@@ -135,10 +140,10 @@ def detect_table_structure(page_dict: dict, anchor_text: str):
     table_bottom_y = table_bottom_y["bbox"][3] + avg_char_length * 2
     
 
-    print(f"\n[DEBUG] Total Header Text Elements Detected: {len(text_elements)}")
-    print(f"[DEBUG] Header TOP Y: {header_top_y}")
-    print(f"[DEBUG] Header LEFT X: {header_left_x}")
-    print(f"[DEBUG] Header RIGHT X: {header_right_x}\n")
+    logging.debug(f"Total Header Text Elements Detected: {len(text_elements)}")
+    logging.debug(f"Header TOP Y: {header_top_y}")
+    logging.debug(f"Header LEFT X: {header_left_x}")
+    logging.debug(f"Header RIGHT X: {header_right_x}")
 
     return anchor_bbox, text_elements, avg_char_length, (header_top_y, header_left_x, header_right_x, table_bottom_y)
 
@@ -147,9 +152,9 @@ def find_table_bottom(page_dict: dict, target_text: str):
     Find the target text (e.g., 'TOTAL') below the hardcoded 'WEIGHT' header.
     Return the target text and its bounding box in the usual data format.
     """
-    print("\n[DEBUG] Finding Table Bottom")
-    print("  - Hardcoded Header Text: 'WEIGHT'")
-    print(f"  - Target Text: '{target_text}'\n")
+    logging.debug("Finding Table Bottom")
+    logging.debug("  - Hardcoded Header Text: 'WEIGHT'")
+    logging.debug(f"  - Target Text: '{target_text}'")
 
     # Step 1: Locate the hardcoded 'WEIGHT' header
     header_bbox = None
@@ -161,8 +166,8 @@ def find_table_bottom(page_dict: dict, target_text: str):
 
                 if text.strip() == "WEIGHT":  # Full match for 'WEIGHT'
                     header_bbox = bbox
-                    print(f"  - Hardcoded Header Found: '{text}'")
-                    print(f"    BBox: {bbox}\n")
+                    logging.debug(f"  - Hardcoded Header Found: '{text}'")
+                    logging.debug(f"    BBox: {bbox}")
                     break
             if header_bbox:
                 break
@@ -170,7 +175,7 @@ def find_table_bottom(page_dict: dict, target_text: str):
             break
 
     if not header_bbox:
-        print("[DEBUG] Hardcoded Header 'WEIGHT' not found.\n")
+        logging.debug("Hardcoded Header 'WEIGHT' not found.")
         return None
 
     # Step 2: Define the search area below the hardcoded header
@@ -187,12 +192,12 @@ def find_table_bottom(page_dict: dict, target_text: str):
 
                 # Check if the text is below the header and matches the target text
                 if text_y0 > search_y_min and text_x0 >= header_x0 and text.strip() == target_text:  # Full match only
-                    print(f"  - Target Found: '{text}'")
-                    print(f"    BBox: {bbox}\n")
+                    logging.debug(f"  - Target Found: '{text}'")
+                    logging.debug(f"    BBox: {bbox}")
                     return {"text": text, "bbox": bbox}
 
     # Debug statement if TOTAL is not found
-    print(f"[DEBUG] Target '{target_text}' not found below hardcoded header 'WEIGHT'.\n")
+    logging.debug(f"Target '{target_text}' not found below hardcoded header 'WEIGHT'.")
     return None
 
 def find_table_content(page_dict: dict, avg_char_length: float, table_bounds: Tuple[float, float, float, float]):
@@ -207,11 +212,11 @@ def find_table_content(page_dict: dict, avg_char_length: float, table_bounds: Tu
     header_top, header_left, header_right, table_bottom = table_bounds
 
     # Debug print header bounds
-    print("\n[DEBUG] Header Bounds:")
-    print(f"  - Header Top: {header_top}")
-    print(f"  - Header Left: {header_left}")
-    print(f"  - Header Right: {header_right}")
-    print(f"  - Table Bottom: {table_bottom}")
+    logging.debug("Header Bounds:")
+    logging.debug(f"  - Header Top: {header_top}")
+    logging.debug(f"  - Header Left: {header_left}")
+    logging.debug(f"  - Header Right: {header_right}")
+    logging.debug(f"  - Table Bottom: {table_bottom}")
 
     # List to store text elements within the table boundaries
     table_text_elements = []
@@ -242,21 +247,21 @@ def find_table_content(page_dict: dict, avg_char_length: float, table_bounds: Tu
         min_y0 = min_y0_element["bbox"][1] - 2*avg_char_length
         max_y1 = max_y1_element["bbox"][3] + 2*avg_char_length
 
-        print("\n[DEBUG] Table Content:")
+        logging.debug("Table Content:")
         for element in table_text_elements:
-            print(f"  - Text: '{element['text']}'")
-            print(f"    BBox: {element['bbox']}")
+            logging.debug(f"  - Text: '{element['text']}'")
+            logging.debug(f"    BBox: {element['bbox']}")
 
-        print("\n[DEBUG] Table Boundary Coordinates:")
-        print(f"  - Minimum X0: {min_x0} (Text: '{min_x0_element['text']}', BBox: {min_x0_element['bbox']})")
-        print(f"  - Maximum X1: {max_x1} (Text: '{max_x1_element['text']}', BBox: {max_x1_element['bbox']})")
-        print(f"  - Minimum Y0: {min_y0} (Text: '{min_y0_element['text']}', BBox: {min_y0_element['bbox']})")
-        print(f"  - Maximum Y1: {max_y1} (Text: '{max_y1_element['text']}', BBox: {max_y1_element['bbox']})\n")
+        logging.debug("Table Boundary Coordinates:")
+        logging.debug(f"  - Minimum X0: {min_x0} (Text: '{min_x0_element['text']}', BBox: {min_x0_element['bbox']})")
+        logging.debug(f"  - Maximum X1: {max_x1} (Text: '{max_x1_element['text']}', BBox: {max_x1_element['bbox']})")
+        logging.debug(f"  - Minimum Y0: {min_y0} (Text: '{min_y0_element['text']}', BBox: {min_y0_element['bbox']})")
+        logging.debug(f"  - Maximum Y1: {max_y1} (Text: '{max_y1_element['text']}', BBox: {max_y1_element['bbox']})")
 
         return (min_x0, min_y0, max_x1, max_y1)
 
     else:
-        print("\n[DEBUG] No text found within the table boundaries.\n")
+        logging.debug("No text found within the table boundaries.")
 
 
 # Example usage in process_pdf
@@ -264,20 +269,20 @@ def process_pdf(pdf_path: str, anchor_text="POS"):  # Removed search_string para
     """Process a single PDF to detect table structure."""
     with fitz.open(pdf_path) as doc:
         if len(doc) == 0:
-            print(f"\n[DEBUG] PDF: {os.path.basename(pdf_path)}")
-            print("[DEBUG] Status: Empty PDF\n")
+            logging.debug(f"PDF: {os.path.basename(pdf_path)}")
+            logging.debug("Status: Empty PDF")
             return []
 
         for page_num in range(len(doc)):
             page = doc[page_num]
             page_dict = page.get_text("dict")
 
-            print(f"\n[DEBUG] Processing Page {page_num + 1} of PDF: {os.path.basename(pdf_path)}")
+            logging.debug(f"Processing Page {page_num + 1} of PDF: {os.path.basename(pdf_path)}")
 
             # Detect table structure
             anchor_bbox, text_elements, avg_char_length, table_bounds = detect_table_structure(page_dict, anchor_text)
             if anchor_bbox:
-                print(f"[DEBUG] Page {page_num + 1}: Anchor at {anchor_bbox}\n")
+                logging.debug(f"Page {page_num + 1}: Anchor at {anchor_bbox}")
                 
                 # Extract and analyze text within table boundaries
                 table_boundaries = find_table_content(page_dict, avg_char_length, table_bounds)  # Pass header_bounds and table bottom y-coordinate
@@ -295,8 +300,8 @@ def run(input_dir: str):
         try:
             process_pdf(pdf)  # Removed search_string argument
         except Exception as e:
-            print(f"\n[DEBUG] PDF: {os.path.basename(pdf)}")
-            print(f"[DEBUG] Error: {e}\n")
+            logging.debug(f"PDF: {os.path.basename(pdf)}")
+            logging.debug(f"Error: {e}")
 
 if __name__ == "__main__":
     import sys
