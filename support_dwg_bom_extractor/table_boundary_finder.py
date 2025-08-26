@@ -103,6 +103,31 @@ def detect_table_structure(page_dict: dict, anchor_text: str):
                     print(f"  - Text: '{text}'")
                     print(f"    BBox: {bbox}")
 
+    # Debug: Calculate average character length for specific headers within text_elements
+    headers_to_check = ["POS", "NUMBER", "TOTAL"]
+    avg_char_lengths = []
+    header_bboxes = {}
+    for header in headers_to_check:
+        for element in text_elements:
+            stripped_text = element["text"].strip()  # Strip front and back whitespaces
+            if header in stripped_text:
+                bbox = element["bbox"]
+                text_width = bbox[2] - bbox[0]  # x1 - x0
+                avg_char_length = text_width / len(stripped_text)
+                avg_char_lengths.append(avg_char_length)
+                header_bboxes[header] = bbox
+                print(f"[DEBUG] Header: '{header}'")
+                print(f"  - Stripped Text: '{stripped_text}'")
+                print(f"  - BBox: {bbox}")
+                print(f"  - Average Character Length (X): {avg_char_length}\n")
+
+    
+    # Add some padding to  bounding boxes to make sure we have all text in the box and possible the table frame too
+    header_left_x -= avg_char_length * 2
+    header_right_x += avg_char_length * 2
+    header_top_y -= anchor_height * 2
+    
+
     print(f"\n[DEBUG] Total Header Text Elements Detected: {len(text_elements)}")
     print(f"[DEBUG] Header TOP Y: {header_top_y}")
     print(f"[DEBUG] Header LEFT X: {header_left_x}")
@@ -163,47 +188,64 @@ def find_table_bottom(page_dict: dict, target_text: str):
     print(f"[DEBUG] Target '{target_text}' not found below hardcoded header 'WEIGHT'.\n")
     return None
 
-def extract_table_data(anchor_bbox, text_elements, columns, table_bottom_y):
+def find_table_content(page_dict: dict, header_bounds: Tuple[float, float, float], table_bottom: float):
     """
-    Extract table data by assigning text elements to their respective columns.
+    Extract all text within the table boundaries and print their coordinates.
 
-    Parameters:
-        anchor_bbox (tuple): The bounding box of the anchor.
-        text_elements (list): List of text elements with their bounding boxes.
-        columns (list): List of ColumnDefinition objects defining the columns.
-        table_bottom_y (float): The Y-coordinate of the bottom of the table.
-
-    Returns:
-        list: A list of rows, where each row is a dictionary mapping column names to text.
+    Args:
+        page_dict (dict): The page dictionary containing text blocks.
+        header_bounds (Tuple[float, float, float]): Tuple containing (header_top, header_left, header_right).
+        table_bottom (float): The Y-coordinate of the table bottom.
     """
-    header_bottom_y = anchor_bbox[3]  # Bottom of the header
-    rows = []
+    header_top, header_left, header_right = header_bounds
 
-    print("\n[DEBUG] Extracting Table Data")
-    print(f"  - Header Bottom Y: {header_bottom_y}")
-    print(f"  - Table Bottom Y: {table_bottom_y}\n")
+    # Debug print header bounds
+    print("\n[DEBUG] Header Bounds:")
+    print(f"  - Header Top: {header_top}")
+    print(f"  - Header Left: {header_left}")
+    print(f"  - Header Right: {header_right}")
 
-    # Iterate through text elements and assign them to columns
-    for element in text_elements:
-        text = element["text"]
-        bbox = element["bbox"]
-        text_x0, text_y0, text_x1, text_y1 = bbox
+    # List to store text elements within the table boundaries
+    table_text_elements = []
 
-        # Check if the text is within the vertical range (below header and above table bottom)
-        if header_bottom_y < text_y0 < table_bottom_y:
-            for column in columns:
-                # Check if the text fits within the column's horizontal range
-                if column.x0 <= text_x0 and text_x1 <= column.x1:
-                    # Add the text to the corresponding column
-                    if len(rows) == 0 or rows[-1].get(column.name) is not None:
-                        rows.append({col.name: "" for col in columns})  # Start a new row
-                    rows[-1][column.name] += (" " if rows[-1][column.name] else "") + text
-                    print(f"[DEBUG] Assigned Text: '{text}' to Column: '{column.name}'")
-                    print(f"  - BBox: {bbox}\n")
-                    break
+    for block in page_dict.get("blocks", []):
+        for line in block.get("lines", []):
+            for span in line.get("spans", []):
+                text = span["text"]
+                bbox = span["bbox"]
+                text_x0, text_y0, text_x1, text_y1 = bbox
 
-    print(f"[DEBUG] Total Rows Extracted: {len(rows)}\n")
-    return rows
+                # Check if the text is within the table boundaries
+                if (
+                    header_top <= text_y0 <= table_bottom and  # Below header_top and above table_bottom
+                    header_left <= text_x0 <= header_right    # Between header_left and header_right
+                ):
+                    table_text_elements.append({"text": text, "bbox": bbox})
+
+    # Find the minimum and maximum coordinates
+    if table_text_elements:
+        min_x0_element = min(table_text_elements, key=lambda e: e["bbox"][0])
+        max_x1_element = max(table_text_elements, key=lambda e: e["bbox"][2])
+        min_y0_element = min(table_text_elements, key=lambda e: e["bbox"][1])
+        max_y1_element = max(table_text_elements, key=lambda e: e["bbox"][3])
+
+        min_x0 = min_x0_element["bbox"][0]
+        max_x1 = max_x1_element["bbox"][2]
+        min_y0 = min_y0_element["bbox"][1]
+        max_y1 = max_y1_element["bbox"][3]
+
+        print("\n[DEBUG] Table Content:")
+        for element in table_text_elements:
+            print(f"  - Text: '{element['text']}'")
+            print(f"    BBox: {element['bbox']}")
+
+        print("\n[DEBUG] Table Boundary Coordinates:")
+        print(f"  - Minimum X0: {min_x0} (Text: '{min_x0_element['text']}', BBox: {min_x0_element['bbox']})")
+        print(f"  - Maximum X1: {max_x1} (Text: '{max_x1_element['text']}', BBox: {max_x1_element['bbox']})")
+        print(f"  - Minimum Y0: {min_y0} (Text: '{min_y0_element['text']}', BBox: {min_y0_element['bbox']})")
+        print(f"  - Maximum Y1: {max_y1} (Text: '{max_y1_element['text']}', BBox: {max_y1_element['bbox']})\n")
+    else:
+        print("\n[DEBUG] No text found within the table boundaries.\n")
 
 
 # Example usage in process_pdf
@@ -234,11 +276,9 @@ def process_pdf(pdf_path: str, anchor_text="POS"):  # Removed search_string para
                 else:
                     print("[DEBUG] Table Bottom Not Found\n")
 
-                    # Extract table data using the detected structure
-                rows = extract_table_data(anchor_bbox, text_elements, columns, table_bottom["bbox"][1] if table_bottom else 9999)
-                print(f"[DEBUG] Extracted Rows: {len(rows)}")
-                for row in rows:
-                    print(f"  - Row: {row}")
+                # Extract and analyze text within table boundaries
+                find_table_content(page_dict, columns, table_bottom["bbox"][3])  # Pass header_bounds and table bottom y-coordinate
+            
 
 
 # -----------------------
