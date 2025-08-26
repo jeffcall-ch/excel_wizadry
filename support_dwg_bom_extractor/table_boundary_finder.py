@@ -252,6 +252,9 @@ def find_table_content(page_dict: dict, avg_char_length: float, table_bounds: Tu
         print(f"  - Maximum X1: {max_x1} (Text: '{max_x1_element['text']}', BBox: {max_x1_element['bbox']})")
         print(f"  - Minimum Y0: {min_y0} (Text: '{min_y0_element['text']}', BBox: {min_y0_element['bbox']})")
         print(f"  - Maximum Y1: {max_y1} (Text: '{max_y1_element['text']}', BBox: {max_y1_element['bbox']})\n")
+
+        return (min_x0, min_y0, max_x1, max_y1)
+
     else:
         print("\n[DEBUG] No text found within the table boundaries.\n")
 
@@ -277,7 +280,7 @@ def process_pdf(pdf_path: str, anchor_text="POS"):  # Removed search_string para
                 print(f"[DEBUG] Page {page_num + 1}: Anchor at {anchor_bbox}\n")
                 
                 # Extract and analyze text within table boundaries
-                find_table_content(page_dict, avg_char_length, table_bounds)  # Pass header_bounds and table bottom y-coordinate
+                table_boundaries = find_table_content(page_dict, avg_char_length, table_bounds)  # Pass header_bounds and table bottom y-coordinate
             
 
 
