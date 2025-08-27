@@ -132,7 +132,7 @@ def process_single_pdf(pdf_path: str, csv_file_path: str, log_file_path: str) ->
                 
                 # Step 1: Get table boundaries for this specific page
                 try:
-                    table_bounds, kks_codes_ = get_table_boundaries_for_page(pdf_path, page_num)
+                    table_bounds, kks_codes_and_kks_su_codes = get_table_boundaries_for_page(pdf_path, page_num)
                 except AnchorTextNotFoundError as e:
                     processing_time = time.time() - page_start_time
                     log_processing_event(log_file_path, pdf_path, page_num, 
@@ -194,6 +194,14 @@ def process_single_pdf(pdf_path: str, csv_file_path: str, log_file_path: str) ->
                 tables_df.insert(0, 'full_path', full_path)
                 tables_df.insert(1, 'filename', pdf_filename)
                 tables_df.insert(2, 'page_number', page_num)
+
+                # Add KKS and KKS/SU columns to the table
+                kks_codes, kks_su_codes = kks_codes_and_kks_su_codes
+
+                # Ensure the lists are represented as full lists in each cell
+                tables_df['KKS'] = [kks_codes] * len(tables_df)
+                tables_df['KKS/SU'] = [kks_su_codes] * len(tables_df)
+
                 
                 # Step 4: Save to CSV
                 file_exists = os.path.exists(csv_file_path)
