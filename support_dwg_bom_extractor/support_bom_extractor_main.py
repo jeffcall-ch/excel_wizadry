@@ -181,8 +181,14 @@ def process_single_pdf(pdf_path: str, csv_file_path: str, log_file_path: str) ->
                 
                 # Step 4: Save to CSV
                 file_exists = os.path.exists(csv_file_path)
-                tables_df.to_csv(csv_file_path, mode='a', header=not file_exists, 
-                                index=False, encoding='utf-8')
+
+                # If the file exists, drop the first 3 rows of the DataFrame
+                df_to_save = tables_df.copy()
+                if file_exists:
+                    df_to_save = df_to_save.iloc[3:]
+
+                df_to_save.to_csv(csv_file_path, mode='a', header=not file_exists, 
+                                  index=False, encoding='utf-8')
                 
                 processing_time = time.time() - page_start_time
                 rows_extracted = len(tables_df)
