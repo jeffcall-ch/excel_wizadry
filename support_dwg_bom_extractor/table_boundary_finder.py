@@ -10,9 +10,12 @@ import fitz  # PyMuPDF
 from pathlib import Path
 from typing import List, Tuple, NamedTuple
 import logging
+logging.getLogger('camelot').setLevel(logging.WARNING)
+logging.getLogger('pdfminer').setLevel(logging.WARNING)
+logging.getLogger('pdfplumber').setLevel(logging.WARNING)
 
 # Configure logging
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # -----------------------
 # Custom Exceptions

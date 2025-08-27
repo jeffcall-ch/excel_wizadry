@@ -246,6 +246,33 @@ def extract_table_stream_only(pdf_path: str, table_bounds: tuple, page_num: int 
         else:
             raise CamelotExtractionError(f"Stream parser extraction failed: {str(e)}")
 
+
+def export_to_csv_safe(df, output_path):
+    """
+    Export DataFrame to CSV with safe formatting for Excel compatibility.
+    """
+    # Clone the dataframe to avoid modifying original
+    df_export = df.copy()
+    
+    # Ensure all data is single-line
+    for col in df_export.columns:
+        if df_export[col].dtype == 'object':  # String columns
+            df_export[col] = df_export[col].astype(str)
+            df_export[col] = df_export[col].str.replace('\n', ' ').str.replace('\r', ' ')
+            df_export[col] = df_export[col].str.replace(r'\s+', ' ', regex=True)
+    
+    # Export with proper CSV parameters
+    df_export.to_csv(
+        output_path, 
+        index=False, 
+        encoding='utf-8-sig',  # BOM for Excel compatibility
+        lineterminator='\n',   # Consistent line endings
+        quoting=1              # Quote all text fields
+    )
+    
+    return df_export
+
+
 if __name__ == "__main__":
     import argparse
 
@@ -281,7 +308,8 @@ if __name__ == "__main__":
                 
                 # Save to CSV for inspection
                 output_file = f"extracted_table_stream_page_{args.page}.csv"
-                result_df.to_csv(output_file, index=False)
+                export_to_csv_safe(result_df, output_file)
+                # result_df.to_csv(output_file, index=False)
                 print(f"\nTable saved to: {output_file}")
             else:
                 print("No table data extracted")

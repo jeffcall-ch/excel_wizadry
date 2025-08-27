@@ -12,6 +12,9 @@ from datetime import datetime
 import logging
 import time
 from typing import Optional, Tuple, List
+logging.getLogger('camelot').setLevel(logging.WARNING)
+logging.getLogger('pdfminer').setLevel(logging.WARNING)
+logging.getLogger('pdfplumber').setLevel(logging.WARNING)
 
 # Import our custom modules
 from table_boundary_finder import get_table_boundaries_for_page, get_total_pages
