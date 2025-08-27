@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
 MVP PDF BOM Extractor - Single Process, Simple CSV Output
+Updated with custom exceptions while preserving original logic
 """
 
 import os
@@ -12,6 +13,30 @@ import logging
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+
+# -----------------------
+# Custom Exceptions
+# -----------------------
+
+class TableBoundaryError(Exception):
+    """Base exception for table boundary detection errors"""
+    pass
+
+class AnchorTextNotFoundError(TableBoundaryError):
+    """Raised when anchor text is not found on the page"""
+    pass
+
+class TableStructureError(TableBoundaryError):
+    """Raised when table structure cannot be detected"""
+    pass
+
+class PDFProcessingError(TableBoundaryError):
+    """Raised when PDF cannot be processed"""
+    pass
+
+class PageNotFoundError(TableBoundaryError):
+    """Raised when specified page doesn't exist in PDF"""
+    pass
 
 # -----------------------
 # Data Structures
@@ -55,7 +80,7 @@ def detect_table_structure(page_dict: dict, anchor_text: str):
     anchor = find_anchor_position(page_dict, anchor_text)
     if not anchor:
         logging.debug(f"Anchor '{anchor_text}' not found on the page.")
-        return None, []
+        raise AnchorTextNotFoundError(f"Anchor text '{anchor_text}' not found on the page")
 
     anchor_bbox = anchor["bbox"]
     anchor_x0 = anchor_bbox[0]  # x0 of the anchor
@@ -123,15 +148,20 @@ def detect_table_structure(page_dict: dict, anchor_text: str):
                 logging.debug(f"Header: '{header}'")
                 logging.debug(f"  - Stripped Text: '{stripped_text}'")
                 logging.debug(f"  - BBox: {bbox}")
-    avg_char_length =max(avg_char_lengths)
+    
+    if not avg_char_lengths:
+        raise TableStructureError("No recognizable table headers found (POS, NUMBER, TOTAL)")
+        
+    avg_char_length = max(avg_char_lengths)
     logging.debug(f"  - Average Character Length (X): {avg_char_length}")
 
     # Call find_table_bottom to locate the 'TOTAL' below 'WEIGHT'
     table_bottom_y = find_table_bottom(page_dict, "TOTAL")
-    if table_bottom_y:
-        logging.debug(f"Table Bottom Found: {table_bottom_y}")
-    else:
+    if not table_bottom_y:
         logging.debug("Table Bottom Not Found")
+        raise TableStructureError("Table bottom marker 'TOTAL' not found below 'WEIGHT' header")
+    else:
+        logging.debug(f"Table Bottom Found: {table_bottom_y}")
     
     # Add some padding to  bounding boxes to make sure we have all text in the box and possible the table frame too
     header_left_x -= avg_char_length * 2
@@ -176,7 +206,7 @@ def find_table_bottom(page_dict: dict, target_text: str):
 
     if not header_bbox:
         logging.debug("Hardcoded Header 'WEIGHT' not found.")
-        return None
+        raise TableStructureError("Required 'WEIGHT' header not found for table bottom detection")
 
     # Step 2: Define the search area below the hardcoded header
     search_y_min = header_bbox[3]  # Bottom of the header
@@ -206,8 +236,14 @@ def find_table_content(page_dict: dict, avg_char_length: float, table_bounds: Tu
 
     Args:
         page_dict (dict): The page dictionary containing text blocks.
-        header_bounds (Tuple[float, float, float]): Tuple containing (header_top, header_left, header_right).
-        table_bottom (float): The Y-coordinate of the table bottom.
+        avg_char_length (float): Average character length for padding.
+        table_bounds (Tuple[float, float, float, float]): Tuple containing (header_top, header_left, header_right, table_bottom).
+        
+    Returns:
+        Tuple[float, float, float, float]: Final table boundaries (min_x0, min_y0, max_x1, max_y1).
+        
+    Raises:
+        TableStructureError: If no text is found within table boundaries.
     """
     header_top, header_left, header_right, table_bottom = table_bounds
 
@@ -262,31 +298,41 @@ def find_table_content(page_dict: dict, avg_char_length: float, table_bounds: Tu
 
     else:
         logging.debug("No text found within the table boundaries.")
+        raise TableStructureError("No text content found within calculated table boundaries")
 
 
 # Example usage in process_pdf
 def process_pdf(pdf_path: str, anchor_text="POS"):  # Removed search_string parameter
     """Process a single PDF to detect table structure."""
-    with fitz.open(pdf_path) as doc:
-        if len(doc) == 0:
-            logging.debug(f"PDF: {os.path.basename(pdf_path)}")
-            logging.debug("Status: Empty PDF")
-            return []
+    try:
+        with fitz.open(pdf_path) as doc:
+            if len(doc) == 0:
+                logging.debug(f"PDF: {os.path.basename(pdf_path)}")
+                logging.debug("Status: Empty PDF")
+                raise PDFProcessingError(f"PDF file is empty: {pdf_path}")
 
-        for page_num in range(len(doc)):
-            page = doc[page_num]
-            page_dict = page.get_text("dict")
+            for page_num in range(len(doc)):
+                page = doc[page_num]
+                page_dict = page.get_text("dict")
 
-            logging.debug(f"Processing Page {page_num + 1} of PDF: {os.path.basename(pdf_path)}")
+                logging.debug(f"Processing Page {page_num + 1} of PDF: {os.path.basename(pdf_path)}")
 
-            # Detect table structure
-            anchor_bbox, text_elements, avg_char_length, table_bounds = detect_table_structure(page_dict, anchor_text)
-            if anchor_bbox:
-                logging.debug(f"Page {page_num + 1}: Anchor at {anchor_bbox}")
-                
-                # Extract and analyze text within table boundaries
-                table_boundaries = find_table_content(page_dict, avg_char_length, table_bounds)  # Pass header_bounds and table bottom y-coordinate
-            
+                # Detect table structure
+                anchor_bbox, text_elements, avg_char_length, table_bounds = detect_table_structure(page_dict, anchor_text)
+                if anchor_bbox:
+                    logging.debug(f"Page {page_num + 1}: Anchor at {anchor_bbox}")
+                    
+                    # Extract and analyze text within table boundaries
+                    table_boundaries = find_table_content(page_dict, avg_char_length, table_bounds)  # Pass header_bounds and table bottom y-coordinate
+    except fitz.fitz.FileDataError as e:
+        raise PDFProcessingError(f"Cannot open PDF file {pdf_path}: {str(e)}")
+    except fitz.fitz.FileNotFoundError as e:
+        raise PDFProcessingError(f"PDF file not found: {pdf_path}")
+    except Exception as e:
+        if isinstance(e, (AnchorTextNotFoundError, TableStructureError, PDFProcessingError)):
+            raise
+        else:
+            raise PDFProcessingError(f"Unexpected error processing PDF {pdf_path}: {str(e)}")
 
 
 # -----------------------
@@ -303,10 +349,140 @@ def run(input_dir: str):
             logging.debug(f"PDF: {os.path.basename(pdf)}")
             logging.debug(f"Error: {e}")
 
+def get_table_boundaries(pdf_path: str, anchor_text="POS"):
+    """
+    Detect table boundaries in a single PDF file.
+
+    Args:
+        pdf_path (str): Path to the PDF file.
+        anchor_text (str): Anchor text to locate the table header.
+
+    Returns:
+        tuple: Table boundaries (x0, y0, x1, y1).
+        
+    Raises:
+        PDFProcessingError: If PDF cannot be processed.
+        AnchorTextNotFoundError: If anchor text is not found.
+        TableStructureError: If table structure cannot be detected.
+    """
+    try:
+        with fitz.open(pdf_path) as doc:
+            if len(doc) == 0:
+                logging.debug(f"PDF: {os.path.basename(pdf_path)} is empty.")
+                raise PDFProcessingError(f"PDF file is empty: {pdf_path}")
+
+            for page_num in range(len(doc)):
+                page = doc[page_num]
+                page_dict = page.get_text("dict")
+
+                logging.debug(f"Processing Page {page_num + 1} of PDF: {os.path.basename(pdf_path)}")
+
+                # Detect table structure
+                anchor_bbox, text_elements, avg_char_length, table_bounds = detect_table_structure(page_dict, anchor_text)
+                if anchor_bbox:
+                    logging.debug(f"Page {page_num + 1}: Anchor at {anchor_bbox}")
+                    table_boundaries = find_table_content(page_dict, avg_char_length, table_bounds)
+                    return table_boundaries
+
+        raise AnchorTextNotFoundError(f"No table boundaries detected in PDF: {os.path.basename(pdf_path)}")
+        
+    except fitz.fitz.FileDataError as e:
+        raise PDFProcessingError(f"Cannot open PDF file {pdf_path}: {str(e)}")
+    except fitz.fitz.FileNotFoundError as e:
+        raise PDFProcessingError(f"PDF file not found: {pdf_path}")
+    except Exception as e:
+        if isinstance(e, (AnchorTextNotFoundError, TableStructureError, PDFProcessingError)):
+            raise
+        else:
+            raise PDFProcessingError(f"Unexpected error processing PDF {pdf_path}: {str(e)}")
+
+def get_table_boundaries_for_page(pdf_path: str, page_num: int) -> Tuple[float, float, float, float]:
+    """
+    Get table boundaries for a specific page using hardcoded "POS" anchor.
+    
+    Args:
+        pdf_path (str): Path to the PDF file.
+        page_num (int): Page number (1-based).
+        
+    Returns:
+        Tuple[float, float, float, float]: Table boundaries (x0, y0, x1, y1).
+        
+    Raises:
+        PDFProcessingError: If PDF cannot be opened or processed.
+        PageNotFoundError: If page number is invalid.
+        AnchorTextNotFoundError: If "POS" anchor text is not found.
+        TableStructureError: If table structure cannot be determined.
+    """
+    logging.debug(f"Getting table boundaries for page {page_num} in {pdf_path}")
+    
+    try:
+        with fitz.open(pdf_path) as doc:
+            if len(doc) == 0:
+                raise PDFProcessingError(f"PDF file is empty: {pdf_path}")
+            
+            if page_num < 1 or page_num > len(doc):
+                raise PageNotFoundError(f"Invalid page number {page_num}. PDF has {len(doc)} pages")
+                
+            page = doc[page_num - 1]  # Convert to 0-based indexing
+            page_dict = page.get_text("dict")
+            
+            # Use original detect_table_structure function with hardcoded "POS" anchor
+            anchor_bbox, text_elements, avg_char_length, table_bounds = detect_table_structure(page_dict, "POS")
+            
+            # Get the actual table boundaries using original function
+            table_boundaries = find_table_content(page_dict, avg_char_length, table_bounds)
+            
+            # Validate boundary values
+            x0, y0, x1, y1 = table_boundaries
+            if not all(isinstance(coord, (int, float)) for coord in table_boundaries):
+                raise TableStructureError(f"Non-numeric table boundaries on page {page_num}: {table_boundaries}")
+            
+            if x0 >= x1 or y0 >= y1:
+                raise TableStructureError(f"Invalid table boundary coordinates on page {page_num}: left={x0}, top={y0}, right={x1}, bottom={y1}")
+            
+            logging.debug(f"Successfully detected table boundaries on page {page_num}: {table_boundaries}")
+            return table_boundaries
+            
+    except fitz.fitz.FileDataError as e:
+        raise PDFProcessingError(f"Cannot open PDF file {pdf_path}: {str(e)}")
+    except fitz.fitz.FileNotFoundError as e:
+        raise PDFProcessingError(f"PDF file not found: {pdf_path}")
+    except Exception as e:
+        # Re-raise our custom exceptions
+        if isinstance(e, (AnchorTextNotFoundError, TableStructureError, PageNotFoundError, PDFProcessingError)):
+            raise
+        else:
+            raise PDFProcessingError(f"Unexpected error processing PDF {pdf_path}, page {page_num}: {str(e)}")
+
+def get_total_pages(pdf_path: str) -> int:
+    """
+    Get the total number of pages in a PDF.
+    
+    Args:
+        pdf_path (str): Path to the PDF file.
+        
+    Returns:
+        int: Total number of pages.
+        
+    Raises:
+        PDFProcessingError: If PDF cannot be opened.
+    """
+    try:
+        with fitz.open(pdf_path) as doc:
+            return len(doc)
+    except Exception as e:
+        raise PDFProcessingError(f"Cannot determine page count for {pdf_path}: {str(e)}")
+
 if __name__ == "__main__":
-    import sys
-    # if len(sys.argv) < 2:
-    #     print("Usage: python bom_extractor_mvp.py <input_directory>")
-    #     sys.exit(1)
-    # run(sys.argv[1])
-    run(r"C:\Users\szil\Repos\excel_wizadry\support_dwg_bom_extractor")
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Detect table boundaries in a PDF file.")
+    parser.add_argument("pdf_path", type=str, help="Path to the PDF file.")
+    args = parser.parse_args()
+
+    try:
+        boundaries = get_table_boundaries(args.pdf_path)
+        print(f"Table boundaries: {boundaries}")
+    except TableBoundaryError as e:
+        print(f"Error: {e}")
+        exit(1)
