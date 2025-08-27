@@ -22,6 +22,7 @@ env file
 *.doc
 *.pptx
 *.ppt
+*.csv
 
 # C# build artifacts
 bin/

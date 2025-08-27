@@ -1,2 +1,0 @@
-timestamp,pdf_path,page_num,input_coordinates,status,details,processing_time_seconds,table_rows_extracted,table_columns_extracted
-2025-08-27 07:32:08,C:\Users\szil\Repos\excel_wizadry\support_dwg_bom_extractor\TC021-INOV-1ETX50BQ002-SU_0.0_Sikla_support_drawing.pdf,1,"(1185.0, 40.0, 1641.0, 182.0)",UNEXPECTED_ERROR,module 'camelot' has no attribute 'core',0.003,0,0

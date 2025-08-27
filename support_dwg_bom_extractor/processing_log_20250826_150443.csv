@@ -1,3 +1,0 @@
-timestamp,pdf_path,page_num,status,details,processing_time_seconds,table_rows_extracted,table_columns_extracted
-2025-08-26 15:04:43,C:\Users\szil\Repos\excel_wizadry\support_dwg_bom_extractor\TC021-INOV-1ETX50BQ002-SU_0.0_Sikla support drawing.pdf,1,EXTRACTION_FAILED,Table boundaries found but extraction failed,0.09,0,0
-2025-08-26 15:04:43,C:\Users\szil\Repos\excel_wizadry\support_dwg_bom_extractor\TC021-INOV-1HBX10BQ008-SU_0.0_Sikla support drawing.pdf,1,EXTRACTION_FAILED,Table boundaries found but extraction failed,0.267,0,0

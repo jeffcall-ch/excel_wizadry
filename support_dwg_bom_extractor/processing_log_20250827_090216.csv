@@ -1,4 +1,0 @@
-timestamp,pdf_path,page_num,status,details,processing_time_seconds,table_rows_extracted,table_columns_extracted
-2025-08-27 09:02:24,C:\Users\szil\Repos\excel_wizadry\support_dwg_bom_extractor\TC021-INOV-0QFB10BQ012-SU_0.0_Sikla_support_drawing.pdf,1,SUCCESS,Table extracted and saved successfully,7.996,31,10
-2025-08-27 09:02:25,C:\Users\szil\Repos\excel_wizadry\support_dwg_bom_extractor\TC021-INOV-1ETX50BQ002-SU_0.0_Sikla_support_drawing.pdf,1,SUCCESS,Table extracted and saved successfully,0.597,10,10
-2025-08-27 09:02:35,C:\Users\szil\Repos\excel_wizadry\support_dwg_bom_extractor\TC021-INOV-1HBX10BQ008-SU_0.0_Sikla_support_drawing.pdf,1,SUCCESS,Table extracted and saved successfully,10.111,35,10

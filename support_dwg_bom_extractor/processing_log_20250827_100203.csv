@@ -1,4 +1,0 @@
-timestamp,pdf_path,page_num,status,details,processing_time_seconds,table_rows_extracted,table_columns_extracted
-2025-08-27 10:02:11,C:\Users\szil\Repos\excel_wizadry\support_dwg_bom_extractor\TC021-INOV-0QFB10BQ012-SU_0.0_Sikla_support_drawing.pdf,1,UNEXPECTED_ERROR,Unexpected error processing page: Length of values (15) does not match length of index (31),7.984,0,0
-2025-08-27 10:02:11,C:\Users\szil\Repos\excel_wizadry\support_dwg_bom_extractor\TC021-INOV-1ETX50BQ002-SU_0.0_Sikla_support_drawing.pdf,1,UNEXPECTED_ERROR,Unexpected error processing page: Length of values (3) does not match length of index (10),0.597,0,0
-2025-08-27 10:02:21,C:\Users\szil\Repos\excel_wizadry\support_dwg_bom_extractor\TC021-INOV-1HBX10BQ008-SU_0.0_Sikla_support_drawing.pdf,1,UNEXPECTED_ERROR,Unexpected error processing page: Length of values (7) does not match length of index (35),10.071,0,0
