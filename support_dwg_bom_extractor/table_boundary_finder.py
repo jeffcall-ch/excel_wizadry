@@ -178,7 +178,7 @@ def detect_table_structure(page_dict: dict, anchor_text: str):
     header_left_x -= avg_char_length * 2
     header_right_x += avg_char_length * 2
     header_top_y -= anchor_height * 2
-    table_bottom_y = table_bottom_y["bbox"][3] + avg_char_length * 2
+    table_bottom_y = table_bottom_y["bbox"][3] + avg_char_length
     
 
     logging.debug(f"Total Header Text Elements Detected: {len(text_elements)}")
