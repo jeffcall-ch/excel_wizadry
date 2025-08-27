@@ -12,6 +12,9 @@ from datetime import datetime
 import logging
 import time
 from typing import Optional, Tuple, List
+import multiprocessing
+from multiprocessing import Manager
+
 logging.getLogger('camelot').setLevel(logging.WARNING)
 logging.getLogger('pdfminer').setLevel(logging.WARNING)
 logging.getLogger('pdfplumber').setLevel(logging.WARNING)
@@ -257,75 +260,83 @@ def get_table_boundaries_for_page(pdf_path: str, page_num: int) -> Optional[Tupl
     from table_boundary_finder import get_table_boundaries_for_page as boundary_func
     return boundary_func(pdf_path, page_num)
 
+def process_pdf_worker(pdf_path, csv_file_path, log_file_path, lock):
+    """Worker function for processing a single PDF file."""
+    try:
+        stats = process_single_pdf(pdf_path, csv_file_path, log_file_path)
+        return stats
+    except Exception as e:
+        logging.error(f"Error in worker for {pdf_path}: {e}")
+        return None
+
 def main():
     """Main processing function."""
     import argparse
-    
+
     parser = argparse.ArgumentParser(description="Process PDF files and extract tables to CSV")
     parser.add_argument("input_dir", help="Directory to search for PDF files")
     parser.add_argument("--output-dir", default=".", help="Output directory for CSV files (default: current directory)")
-    
+
     args = parser.parse_args()
-    
+
     # Validate input directory
     if not os.path.isdir(args.input_dir):
         print(f"Error: Input directory '{args.input_dir}' does not exist.")
         return
-    
+
     # Setup output files
     csv_file_path, log_file_path = setup_output_files(args.output_dir)
     initialize_log_file(log_file_path)
-    
+
     print(f"Output files:")
     print(f"  Tables CSV: {csv_file_path}")
     print(f"  Processing Log: {log_file_path}")
-    
+
     # Find all PDF files
     pdf_files = find_pdf_files(args.input_dir)
     print(f"\nFound {len(pdf_files)} PDF files to process")
-    
+
     if not pdf_files:
         print("No PDF files found in the specified directory.")
         return
-    
-    # Process each PDF file
-    total_stats = {
-        'pdfs_processed': 0,
-        'pdfs_failed': 0,
-        'total_pages': 0,
-        'pages_with_tables': 0,
-        'pages_no_data': 0,
-        'pages_failed': 0,
-        'total_rows_extracted': 0
-    }
-    
-    start_time = time.time()
-    
-    for i, pdf_path in enumerate(pdf_files, 1):
-        print(f"\nProcessing {i}/{len(pdf_files)}: {os.path.basename(pdf_path)}")
-        
-        try:
-            stats = process_single_pdf(pdf_path, csv_file_path, log_file_path)
-            
-            total_stats['pdfs_processed'] += 1
-            total_stats['total_pages'] += stats['total_pages']
-            total_stats['pages_with_tables'] += stats['pages_with_tables']
-            total_stats['pages_no_data'] += stats['pages_no_data']
-            total_stats['pages_failed'] += stats['pages_failed']
-            total_stats['total_rows_extracted'] += stats['total_rows_extracted']
-            
-            print(f"  Pages processed: {stats['pages_processed']}/{stats['total_pages']}")
-            print(f"  Tables found: {stats['pages_with_tables']}")
-            print(f"  No data: {stats['pages_no_data']}")
-            print(f"  Failed: {stats['pages_failed']}")
-            print(f"  Rows extracted: {stats['total_rows_extracted']}")
-            
-        except Exception as e:
-            total_stats['pdfs_failed'] += 1
-            logging.error(f"Failed to process PDF {pdf_path}: {str(e)}")
-            log_processing_event(log_file_path, pdf_path, 0, 'CRITICAL_ERROR', 
-                               f"Critical error: {str(e)}", 0.0)
-    
+
+    # Multiprocessing setup
+    num_workers = max(1, multiprocessing.cpu_count() - 2)  # Leave 2 cores free
+    manager = Manager()
+    lock = manager.Lock()
+
+    with multiprocessing.Pool(processes=num_workers) as pool:
+        results = [
+            pool.apply_async(process_pdf_worker, args=(pdf_path, csv_file_path, log_file_path, lock))
+            for pdf_path in pdf_files
+        ]
+
+        total_stats = {
+            'pdfs_processed': 0,
+            'pdfs_failed': 0,
+            'total_pages': 0,
+            'pages_with_tables': 0,
+            'pages_no_data': 0,
+            'pages_failed': 0,
+            'total_rows_extracted': 0
+        }
+
+        for result in results:
+            try:
+                stats = result.get()
+                if stats:
+                    total_stats['pdfs_processed'] += 1
+                    total_stats['total_pages'] += stats['total_pages']
+                    total_stats['pages_with_tables'] += stats['pages_with_tables']
+                    total_stats['pages_no_data'] += stats['pages_no_data']
+                    total_stats['pages_failed'] += stats['pages_failed']
+                    total_stats['total_rows_extracted'] += stats['total_rows_extracted']
+                else:
+                    total_stats['pdfs_failed'] += 1
+            except Exception as e:
+                logging.error(f"Error retrieving result: {e}")
+                total_stats['pdfs_failed'] += 1
+
     # Final summary
     total_time = time.time() - start_time
     print(f"\n" + "="*50)
@@ -344,4 +355,5 @@ def main():
     print(f"  Log: {log_file_path}")
 
 if __name__ == "__main__":
+    start_time = time.time()
     main()
