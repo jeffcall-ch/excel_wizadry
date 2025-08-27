@@ -18,7 +18,7 @@ logging.getLogger('pdfplumber').setLevel(logging.WARNING)
 
 # Import our custom modules
 from table_boundary_finder import get_table_boundaries_for_page, get_total_pages
-from table_boundary_finder import TableBoundaryError, AnchorTextNotFoundError, TableStructureError, PDFProcessingError, PageNotFoundError
+from table_boundary_finder import TableBoundaryError, AnchorTextNotFoundError, TableStructureError, PDFProcessingError, PageNotFoundError, KKSCodeNotFoundError, KKSSUCodeNotFoundError
 from extract_table_camelot import extract_table_with_camelot
 from extract_table_camelot import CamelotExtractionError, InvalidTableBoundsError, PDFPageAccessError, EmptyTableError
 
@@ -132,7 +132,7 @@ def process_single_pdf(pdf_path: str, csv_file_path: str, log_file_path: str) ->
                 
                 # Step 1: Get table boundaries for this specific page
                 try:
-                    table_bounds = get_table_boundaries_for_page(pdf_path, page_num)
+                    table_bounds, kks_codes_ = get_table_boundaries_for_page(pdf_path, page_num)
                 except AnchorTextNotFoundError as e:
                     processing_time = time.time() - page_start_time
                     log_processing_event(log_file_path, pdf_path, page_num, 
@@ -154,6 +154,22 @@ def process_single_pdf(pdf_path: str, csv_file_path: str, log_file_path: str) ->
                     log_processing_event(log_file_path, pdf_path, page_num, 
                                        'BOUNDARY_ERROR', str(e), processing_time)
                     stats['pages_failed'] += 1
+                    continue
+                except KKSCodeNotFoundError as e:
+                    processing_time = time.time() - page_start_time
+                    log_processing_event(log_file_path, pdf_path, page_num, 
+                                       'KKS_CODE_NOT_FOUND', str(e), processing_time)
+                    add_empty_row_to_csv(csv_file_path, full_path, pdf_filename, page_num)
+                    stats['pages_processed'] += 1
+                    stats['pages_no_data'] += 1
+                    continue
+                except KKSSUCodeNotFoundError as e:
+                    processing_time = time.time() - page_start_time
+                    log_processing_event(log_file_path, pdf_path, page_num, 
+                                       'KKS_SU_CODE_NOT_FOUND', str(e), processing_time)
+                    add_empty_row_to_csv(csv_file_path, full_path, pdf_filename, page_num)
+                    stats['pages_processed'] += 1
+                    stats['pages_no_data'] += 1
                     continue
                 
                 # Step 2: Extract table using Camelot

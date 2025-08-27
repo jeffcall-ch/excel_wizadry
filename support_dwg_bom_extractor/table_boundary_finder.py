@@ -41,6 +41,14 @@ class PageNotFoundError(TableBoundaryError):
     """Raised when specified page doesn't exist in PDF"""
     pass
 
+class KKSCodeNotFoundError(TableBoundaryError):
+    """Raised when KKS code is not found on the page"""
+    pass
+
+class KKSSUCodeNotFoundError(TableBoundaryError):
+    """Raised when KKS/SU code is not found on the page"""
+    pass
+
 # -----------------------
 # Data Structures
 # -----------------------
@@ -304,6 +312,50 @@ def find_table_content(page_dict: dict, avg_char_length: float, table_bounds: Tu
         raise TableStructureError("No text content found within calculated table boundaries")
 
 
+def extract_kks_codes_from_page_dict(page_dict: dict):
+    """
+    Extract KKS codes and KKS codes with "/SU" postfix from a page dictionary.
+
+    Args:
+        page_dict (dict): The page dictionary containing text blocks.
+
+    Returns:
+        tuple: A tuple containing two lists:
+            - List of KKS codes.
+            - List of KKS codes with "/SU" postfix.
+
+    Raises:
+        ValueError: If no KKS codes are found.
+        ValueError: If no KKS codes with "/SU" postfix are found.
+    """
+    import re
+
+    kks_pattern = r"\b\d[A-Z]{3}\d{2}BQ\d{3}\b"
+    kks_su_pattern = r"\b\d[A-Z]{3}\d{2}BQ\d{3}/SU\b"
+
+    kks_codes = []
+    kks_su_codes = []
+
+    # Iterate through the text spans in the page dictionary
+    for block in page_dict.get("blocks", []):
+        for line in block.get("lines", []):
+            for span in line.get("spans", []):
+                text = span.get("text", "")
+
+                # Find all KKS codes in the text
+                kks_codes.extend(re.findall(kks_pattern, text))
+
+                # Find all KKS codes with "/SU" postfix in the text
+                kks_su_codes.extend(re.findall(kks_su_pattern, text))
+
+    if not kks_codes:
+        raise ValueError("No KKS codes were found.")
+
+    if not kks_su_codes:
+        raise ValueError("No KKS codes with '/SU' postfix were found.")
+
+    return kks_codes, kks_su_codes
+
 # Example usage in process_pdf
 def process_pdf(pdf_path: str, anchor_text="POS"):  # Removed search_string parameter
     """Process a single PDF to detect table structure."""
@@ -399,6 +451,9 @@ def get_table_boundaries(pdf_path: str, anchor_text="POS"):
         else:
             raise PDFProcessingError(f"Unexpected error processing PDF {pdf_path}: {str(e)}")
 
+
+
+
 def get_table_boundaries_for_page(pdf_path: str, page_num: int) -> Tuple[float, float, float, float]:
     """
     Get table boundaries for a specific page using hardcoded "POS" anchor.
@@ -428,7 +483,10 @@ def get_table_boundaries_for_page(pdf_path: str, page_num: int) -> Tuple[float, 
                 
             page = doc[page_num - 1]  # Convert to 0-based indexing
             page_dict = page.get_text("dict")
-            
+
+            # Get KKS codes and KKS/SU codes as two lists
+            kks_codes_and_kks_su_codes = extract_kks_codes_from_page_dict(page_dict)
+
             # Use original detect_table_structure function with hardcoded "POS" anchor
             anchor_bbox, text_elements, avg_char_length, table_bounds = detect_table_structure(page_dict, "POS")
             
@@ -444,7 +502,7 @@ def get_table_boundaries_for_page(pdf_path: str, page_num: int) -> Tuple[float, 
                 raise TableStructureError(f"Invalid table boundary coordinates on page {page_num}: left={x0}, top={y0}, right={x1}, bottom={y1}")
             
             logging.debug(f"Successfully detected table boundaries on page {page_num}: {table_boundaries}")
-            return table_boundaries
+            return table_boundaries, kks_codes_and_kks_su_codes
             
     except fitz.fitz.FileDataError as e:
         raise PDFProcessingError(f"Cannot open PDF file {pdf_path}: {str(e)}")
