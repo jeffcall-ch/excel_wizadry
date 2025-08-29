@@ -423,9 +423,9 @@ def process_pdf(pdf_path: str, anchor_text="POS"):  # Removed search_string para
                     
                     # Extract and analyze text within table boundaries
                     table_boundaries = find_table_content(page_dict, avg_char_length, table_bounds)  # Pass header_bounds and table bottom y-coordinate
-    except fitz.fitz.FileDataError as e:
+    except fitz.FileDataError as e:
         raise PDFCorruptedError(f"Cannot open PDF file {pdf_path}: {str(e)}")
-    except fitz.fitz.FileNotFoundError as e:
+    except fitz.FileNotFoundError as e:
         raise PDFNotFoundError(f"PDF file not found: {pdf_path}")
     except Exception as e:
         if isinstance(e, (AnchorTextNotFoundError, TableDetectionError, PDFFileError)):
@@ -485,9 +485,9 @@ def get_table_boundaries(pdf_path: str, anchor_text="POS"):
 
         raise AnchorTextNotFoundError(f"No table boundaries detected in PDF: {os.path.basename(pdf_path)}")
         
-    except fitz.fitz.FileDataError as e:
+    except fitz.FileDataError as e:
         raise PDFCorruptedError(f"Cannot open PDF file {pdf_path}: {str(e)}")
-    except fitz.fitz.FileNotFoundError as e:
+    except fitz.FileNotFoundError as e:
         raise PDFNotFoundError(f"PDF file not found: {pdf_path}")
     except Exception as e:
         if isinstance(e, (AnchorTextNotFoundError, TableDetectionError, PDFFileError)):
@@ -550,9 +550,9 @@ def get_table_boundaries_for_page(pdf_path: str, page_num: int) -> Tuple[Tuple[f
             logging.debug(f"Successfully detected table boundaries on page {page_num}: {table_boundaries}")
             return table_boundaries, kks_codes_and_kks_su_codes
             
-    except fitz.fitz.FileDataError as e:
+    except fitz.FileDataError as e:
         raise PDFCorruptedError(f"Cannot open PDF file {pdf_path}: {str(e)}")
-    except fitz.fitz.FileNotFoundError as e:
+    except fitz.FileNotFoundError as e:
         raise PDFNotFoundError(f"PDF file not found: {pdf_path}")
     except Exception as e:
         # Re-raise our custom exceptions
@@ -577,9 +577,9 @@ def get_total_pages(pdf_path: str) -> int:
     try:
         with fitz.open(pdf_path) as doc:
             return len(doc)
-    except fitz.fitz.FileDataError as e:
+    except fitz.FileDataError as e:
         raise PDFCorruptedError(f"Cannot open PDF file {pdf_path}: {str(e)}")
-    except fitz.fitz.FileNotFoundError as e:
+    except fitz.FileNotFoundError as e:
         raise PDFNotFoundError(f"PDF file not found: {pdf_path}")
     except Exception as e:
         raise PDFCorruptedError(f"Cannot determine page count for {pdf_path}: {str(e)}")

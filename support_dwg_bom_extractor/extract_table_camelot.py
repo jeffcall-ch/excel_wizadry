@@ -114,9 +114,9 @@ def extract_table_with_camelot(pdf_path: str, table_bounds: tuple, page_num: int
             page = doc[page_num - 1]  # Convert to 0-based indexing
             page_rect = page.rect
             page_height = page_rect.height
-    except fitz.fitz.FileDataError as e:
+    except fitz.FileDataError as e:
         raise PDFPageNotAccessibleError(f"Cannot access PDF file {pdf_path}: {str(e)}")
-    except fitz.fitz.FileNotFoundError as e:
+    except fitz.FileNotFoundError as e:
         raise PDFPageNotAccessibleError(f"PDF file not found: {pdf_path}")
     except Exception as e:
         raise PDFPageNotAccessibleError(f"Error reading PDF dimensions: {str(e)}")
