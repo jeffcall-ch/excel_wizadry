@@ -2,6 +2,7 @@
 """
 Main PDF Table Extraction Pipeline
 Recursively processes PDF files, extracts table boundaries, and saves results to CSV.
+Updated with improved exception handling and KKS warning system.
 """
 
 import os
@@ -11,6 +12,7 @@ from pathlib import Path
 from datetime import datetime
 import logging
 import time
+import warnings
 from typing import Optional, Tuple, List
 import multiprocessing
 from multiprocessing import Manager
@@ -20,13 +22,56 @@ logging.getLogger('pdfminer').setLevel(logging.WARNING)
 logging.getLogger('pdfplumber').setLevel(logging.WARNING)
 
 # Import our custom modules
-from table_boundary_finder import get_table_boundaries_for_page, get_total_pages
-from table_boundary_finder import TableBoundaryError, AnchorTextNotFoundError, TableStructureError, PDFProcessingError, PageNotFoundError, KKSCodeNotFoundError, KKSSUCodeNotFoundError
-from extract_table_camelot import extract_table_with_camelot
-from extract_table_camelot import CamelotExtractionError, InvalidTableBoundsError, PDFPageAccessError, EmptyTableError
+from table_boundary_finder import (
+    get_table_boundaries_for_page, 
+    get_total_pages,
+    # Improved exceptions
+    TableBoundaryError,
+    PDFFileError,
+    PDFNotFoundError,
+    PDFCorruptedError,
+    PDFEmptyError,
+    PageNavigationError,
+    InvalidPageNumberError,
+    TableDetectionError,
+    AnchorTextNotFoundError,
+    TableHeadersNotFoundError,
+    WeightHeaderNotFoundError,
+    TotalMarkerNotFoundError,
+    TableBoundaryCalculationError,
+    EmptyTableRegionError,
+    # KKS warnings
+    KKSCodeWarning,
+    NoKKSCodesFoundWarning,
+    NoKKSSUCodesFoundWarning
+)
+
+from extract_table_camelot import (
+    extract_table_with_camelot,
+    # Improved exceptions
+    CamelotExtractionError,
+    PDFDimensionError,
+    PDFPageNotAccessibleError,
+    PDFPageCountMismatchError,
+    TableBoundsError,
+    InvalidTableBoundsFormatError,
+    NonNumericTableBoundsError,
+    ParserError,
+    StreamParserFailedError,
+    LatticeParserFailedError,
+    AllParsersFailedError,
+    TableDataError,
+    NoTablesDetectedError,
+    EmptyTableExtractedError,
+    TableCleaningError,
+    CSVExportError
+)
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+
+# Configure warnings to be captured in logs
+warnings.filterwarnings("default", category=KKSCodeWarning)
 
 def setup_output_files(output_dir: str = ".") -> Tuple[str, str]:
     """
@@ -56,12 +101,15 @@ def initialize_log_file(log_file_path: str):
             'details', 
             'processing_time_seconds',
             'table_rows_extracted',
-            'table_columns_extracted'
+            'table_columns_extracted',
+            'kks_codes_found',
+            'kks_su_codes_found'
         ])
 
 def log_processing_event(log_file_path: str, pdf_path: str, page_num: int, 
                         status: str, details: str, processing_time: float = 0.0,
-                        table_rows: int = 0, table_cols: int = 0):
+                        table_rows: int = 0, table_cols: int = 0,
+                        kks_found: bool = True, kks_su_found: bool = True):
     """Log a processing event to the log CSV file."""
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
@@ -69,7 +117,8 @@ def log_processing_event(log_file_path: str, pdf_path: str, page_num: int,
         writer = csv.writer(f)
         writer.writerow([
             timestamp, pdf_path, page_num, status, details, 
-            round(processing_time, 3), table_rows, table_cols
+            round(processing_time, 3), table_rows, table_cols,
+            kks_found, kks_su_found
         ])
 
 def add_empty_row_to_csv(csv_file_path: str, full_path: str, filename: str, page_num: int):
@@ -78,7 +127,9 @@ def add_empty_row_to_csv(csv_file_path: str, full_path: str, filename: str, page
     empty_row = pd.DataFrame({
         'full_path': [full_path],
         'filename': [filename], 
-        'page_number': [page_num]
+        'page_number': [page_num],
+        'KKS': [[]],  # Empty list for KKS codes
+        'KKS/SU': [[]]  # Empty list for KKS/SU codes
     })
     
     # Check if CSV exists to determine if we need headers
@@ -111,7 +162,9 @@ def process_single_pdf(pdf_path: str, csv_file_path: str, log_file_path: str) ->
         'pages_with_tables': 0,
         'pages_failed': 0,
         'pages_no_data': 0,
-        'total_rows_extracted': 0
+        'total_rows_extracted': 0,
+        'kks_warnings_count': 0,
+        'kks_su_warnings_count': 0
     }
     
     logging.info(f"Processing PDF: {pdf_filename}")
@@ -122,74 +175,115 @@ def process_single_pdf(pdf_path: str, csv_file_path: str, log_file_path: str) ->
         stats['total_pages'] = total_pages
         
         if total_pages == 0:
-            log_processing_event(log_file_path, pdf_path, 0, 'EMPTY_PDF', 
+            log_processing_event(log_file_path, pdf_path, 0, 'PDF_EMPTY', 
                                'PDF file contains no pages', 0.0)
             return stats
         
         # Process each page
         for page_num in range(1, total_pages + 1):  # 1-based page numbering
             page_start_time = time.time()
+            kks_found = True
+            kks_su_found = True
             
             try:
                 logging.debug(f"Processing page {page_num} of {pdf_filename}")
                 
                 # Step 1: Get table boundaries for this specific page
-                try:
-                    table_bounds, kks_codes_and_kks_su_codes = get_table_boundaries_for_page(pdf_path, page_num)
-                except AnchorTextNotFoundError as e:
-                    processing_time = time.time() - page_start_time
-                    log_processing_event(log_file_path, pdf_path, page_num, 
-                                       'NO_ANCHOR_FOUND', str(e), processing_time)
-                    add_empty_row_to_csv(csv_file_path, full_path, pdf_filename, page_num)
-                    stats['pages_processed'] += 1
-                    stats['pages_no_data'] += 1
-                    continue
-                except TableStructureError as e:
-                    processing_time = time.time() - page_start_time
-                    log_processing_event(log_file_path, pdf_path, page_num, 
-                                       'NO_TABLE_STRUCTURE', str(e), processing_time)
-                    add_empty_row_to_csv(csv_file_path, full_path, pdf_filename, page_num)
-                    stats['pages_processed'] += 1
-                    stats['pages_no_data'] += 1
-                    continue
-                except (PageNotFoundError, PDFProcessingError) as e:
-                    processing_time = time.time() - page_start_time
-                    log_processing_event(log_file_path, pdf_path, page_num, 
-                                       'BOUNDARY_ERROR', str(e), processing_time)
-                    stats['pages_failed'] += 1
-                    continue
-                except KKSCodeNotFoundError as e:
-                    processing_time = time.time() - page_start_time
-                    log_processing_event(log_file_path, pdf_path, page_num, 
-                                       'KKS_CODE_NOT_FOUND', str(e), processing_time)
-                    add_empty_row_to_csv(csv_file_path, full_path, pdf_filename, page_num)
-                    stats['pages_processed'] += 1
-                    stats['pages_no_data'] += 1
-                    continue
-                except KKSSUCodeNotFoundError as e:
-                    processing_time = time.time() - page_start_time
-                    log_processing_event(log_file_path, pdf_path, page_num, 
-                                       'KKS_SU_CODE_NOT_FOUND', str(e), processing_time)
-                    add_empty_row_to_csv(csv_file_path, full_path, pdf_filename, page_num)
-                    stats['pages_processed'] += 1
-                    stats['pages_no_data'] += 1
-                    continue
+                # Capture KKS warnings using warning context
+                with warnings.catch_warnings(record=True) as w:
+                    warnings.simplefilter("always", category=KKSCodeWarning)
+                    
+                    try:
+                        table_bounds, kks_codes_and_kks_su_codes = get_table_boundaries_for_page(pdf_path, page_num)
+                        
+                        # Check for KKS warnings
+                        for warning in w:
+                            if issubclass(warning.category, NoKKSCodesFoundWarning):
+                                kks_found = False
+                                stats['kks_warnings_count'] += 1
+                                logging.warning(f"Page {page_num}: {warning.message}")
+                            elif issubclass(warning.category, NoKKSSUCodesFoundWarning):
+                                kks_su_found = False  
+                                stats['kks_su_warnings_count'] += 1
+                                logging.warning(f"Page {page_num}: {warning.message}")
+                        
+                    except AnchorTextNotFoundError as e:
+                        processing_time = time.time() - page_start_time
+                        log_processing_event(log_file_path, pdf_path, page_num, 
+                                           'ANCHOR_NOT_FOUND', str(e), processing_time,
+                                           kks_found=False, kks_su_found=False)
+                        add_empty_row_to_csv(csv_file_path, full_path, pdf_filename, page_num)
+                        stats['pages_processed'] += 1
+                        stats['pages_no_data'] += 1
+                        continue
+                        
+                    except (TableHeadersNotFoundError, WeightHeaderNotFoundError, 
+                           TotalMarkerNotFoundError) as e:
+                        processing_time = time.time() - page_start_time
+                        log_processing_event(log_file_path, pdf_path, page_num, 
+                                           'TABLE_STRUCTURE_ERROR', str(e), processing_time,
+                                           kks_found=False, kks_su_found=False)
+                        add_empty_row_to_csv(csv_file_path, full_path, pdf_filename, page_num)
+                        stats['pages_processed'] += 1
+                        stats['pages_no_data'] += 1
+                        continue
+                        
+                    except (TableBoundaryCalculationError, EmptyTableRegionError) as e:
+                        processing_time = time.time() - page_start_time
+                        log_processing_event(log_file_path, pdf_path, page_num, 
+                                           'TABLE_BOUNDARY_ERROR', str(e), processing_time,
+                                           kks_found=False, kks_su_found=False)
+                        add_empty_row_to_csv(csv_file_path, full_path, pdf_filename, page_num)
+                        stats['pages_processed'] += 1
+                        stats['pages_no_data'] += 1
+                        continue
+                        
+                    except (InvalidPageNumberError, PDFFileError) as e:
+                        processing_time = time.time() - page_start_time
+                        log_processing_event(log_file_path, pdf_path, page_num, 
+                                           'PAGE_ACCESS_ERROR', str(e), processing_time,
+                                           kks_found=False, kks_su_found=False)
+                        stats['pages_failed'] += 1
+                        continue
                 
                 # Step 2: Extract table using Camelot
                 try:
                     tables_df = extract_table_with_camelot(pdf_path, table_bounds, page_num)
-                except (CamelotExtractionError, EmptyTableError) as e:
+                    
+                except (NoTablesDetectedError, EmptyTableExtractedError) as e:
                     processing_time = time.time() - page_start_time
                     log_processing_event(log_file_path, pdf_path, page_num, 
-                                       'EXTRACTION_FAILED', str(e), processing_time)
+                                       'NO_TABLE_DATA', str(e), processing_time,
+                                       kks_found=kks_found, kks_su_found=kks_su_found)
                     add_empty_row_to_csv(csv_file_path, full_path, pdf_filename, page_num)
                     stats['pages_processed'] += 1
                     stats['pages_no_data'] += 1
                     continue
-                except (InvalidTableBoundsError, PDFPageAccessError) as e:
+                    
+                except (AllParsersFailedError, StreamParserFailedError, LatticeParserFailedError) as e:
                     processing_time = time.time() - page_start_time
                     log_processing_event(log_file_path, pdf_path, page_num, 
-                                       'CAMELOT_ERROR', str(e), processing_time)
+                                       'PARSER_FAILED', str(e), processing_time,
+                                       kks_found=kks_found, kks_su_found=kks_su_found)
+                    add_empty_row_to_csv(csv_file_path, full_path, pdf_filename, page_num)
+                    stats['pages_processed'] += 1
+                    stats['pages_no_data'] += 1
+                    continue
+                    
+                except (InvalidTableBoundsFormatError, NonNumericTableBoundsError, 
+                       PDFPageNotAccessibleError, PDFPageCountMismatchError) as e:
+                    processing_time = time.time() - page_start_time
+                    log_processing_event(log_file_path, pdf_path, page_num, 
+                                       'CAMELOT_SETUP_ERROR', str(e), processing_time,
+                                       kks_found=kks_found, kks_su_found=kks_su_found)
+                    stats['pages_failed'] += 1
+                    continue
+                    
+                except TableCleaningError as e:
+                    processing_time = time.time() - page_start_time
+                    log_processing_event(log_file_path, pdf_path, page_num, 
+                                       'TABLE_CLEANING_ERROR', str(e), processing_time,
+                                       kks_found=kks_found, kks_su_found=kks_su_found)
                     stats['pages_failed'] += 1
                     continue
                 
@@ -205,17 +299,25 @@ def process_single_pdf(pdf_path: str, csv_file_path: str, log_file_path: str) ->
                 tables_df['KKS'] = [kks_codes] * len(tables_df)
                 tables_df['KKS/SU'] = [kks_su_codes] * len(tables_df)
 
-                
                 # Step 4: Save to CSV
-                file_exists = os.path.exists(csv_file_path)
+                try:
+                    file_exists = os.path.exists(csv_file_path)
 
-                # If the file exists, drop the first 3 rows of the DataFrame
-                df_to_save = tables_df.copy()
-                if file_exists:
-                    df_to_save = df_to_save.iloc[3:]
+                    # If the file exists, drop the first 3 rows of the DataFrame
+                    df_to_save = tables_df.copy()
+                    if file_exists:
+                        df_to_save = df_to_save.iloc[3:]
 
-                df_to_save.to_csv(csv_file_path, mode='a', header=not file_exists, 
-                                  index=False, encoding='utf-8')
+                    df_to_save.to_csv(csv_file_path, mode='a', header=not file_exists, 
+                                      index=False, encoding='utf-8')
+                    
+                except Exception as e:
+                    processing_time = time.time() - page_start_time
+                    log_processing_event(log_file_path, pdf_path, page_num, 
+                                       'CSV_SAVE_ERROR', f"Failed to save to CSV: {str(e)}", processing_time,
+                                       kks_found=kks_found, kks_su_found=kks_su_found)
+                    stats['pages_failed'] += 1
+                    continue
                 
                 processing_time = time.time() - page_start_time
                 rows_extracted = len(tables_df)
@@ -224,7 +326,8 @@ def process_single_pdf(pdf_path: str, csv_file_path: str, log_file_path: str) ->
                 log_processing_event(log_file_path, pdf_path, page_num, 
                                    'SUCCESS', 
                                    f'Table extracted and saved successfully', 
-                                   processing_time, rows_extracted, cols_extracted)
+                                   processing_time, rows_extracted, cols_extracted,
+                                   kks_found=kks_found, kks_su_found=kks_su_found)
                 
                 stats['pages_processed'] += 1
                 stats['pages_with_tables'] += 1
@@ -237,14 +340,15 @@ def process_single_pdf(pdf_path: str, csv_file_path: str, log_file_path: str) ->
                 processing_time = time.time() - page_start_time
                 error_msg = f"Unexpected error processing page: {str(e)}"
                 log_processing_event(log_file_path, pdf_path, page_num, 
-                                   'UNEXPECTED_ERROR', error_msg, processing_time)
+                                   'UNEXPECTED_ERROR', error_msg, processing_time,
+                                   kks_found=False, kks_su_found=False)
                 stats['pages_failed'] += 1
                 logging.error(f"Page {page_num}: {error_msg}")
                 continue
                     
-    except PDFProcessingError as e:
-        error_msg = f"Cannot process PDF file: {str(e)}"
-        log_processing_event(log_file_path, pdf_path, 0, 'PDF_ACCESS_ERROR', error_msg, 0.0)
+    except (PDFNotFoundError, PDFCorruptedError, PDFEmptyError) as e:
+        error_msg = f"PDF file error: {str(e)}"
+        log_processing_event(log_file_path, pdf_path, 0, 'PDF_FILE_ERROR', error_msg, 0.0)
         logging.error(f"Failed to process {pdf_filename}: {error_msg}")
     except Exception as e:
         error_msg = f"Critical error processing PDF: {str(e)}"
@@ -253,13 +357,6 @@ def process_single_pdf(pdf_path: str, csv_file_path: str, log_file_path: str) ->
     
     return stats
 
-def get_table_boundaries_for_page(pdf_path: str, page_num: int) -> Optional[Tuple]:
-    """
-    DEPRECATED: This function is now handled directly by table_boundary_finder.py
-    """
-    from table_boundary_finder import get_table_boundaries_for_page as boundary_func
-    return boundary_func(pdf_path, page_num)
-
 def process_pdf_worker(pdf_path, csv_file_path, log_file_path, lock):
     """Worker function for processing a single PDF file."""
     try:
@@ -267,7 +364,17 @@ def process_pdf_worker(pdf_path, csv_file_path, log_file_path, lock):
         return stats
     except Exception as e:
         logging.error(f"Error in worker for {pdf_path}: {e}")
-        return None
+        return {
+            'pdfs_failed': 1,
+            'total_pages': 0,
+            'pages_processed': 0,
+            'pages_with_tables': 0,
+            'pages_failed': 0,
+            'pages_no_data': 0,
+            'total_rows_extracted': 0,
+            'kks_warnings_count': 0,
+            'kks_su_warnings_count': 0
+        }
 
 def main():
     """Main processing function."""
@@ -276,6 +383,7 @@ def main():
     parser = argparse.ArgumentParser(description="Process PDF files and extract tables to CSV")
     parser.add_argument("input_dir", help="Directory to search for PDF files")
     parser.add_argument("--output-dir", default=".", help="Output directory for CSV files (default: current directory)")
+    parser.add_argument("--single-process", action="store_true", help="Run in single process mode (useful for debugging)")
 
     args = parser.parse_args()
 
@@ -300,42 +408,65 @@ def main():
         print("No PDF files found in the specified directory.")
         return
 
-    # Multiprocessing setup
-    num_workers = max(1, multiprocessing.cpu_count() - 2)  # Leave 2 cores free
-    manager = Manager()
-    lock = manager.Lock()
+    start_time = time.time()
 
-    with multiprocessing.Pool(processes=num_workers) as pool:
-        results = [
-            pool.apply_async(process_pdf_worker, args=(pdf_path, csv_file_path, log_file_path, lock))
-            for pdf_path in pdf_files
-        ]
+    total_stats = {
+        'pdfs_processed': 0,
+        'pdfs_failed': 0,
+        'total_pages': 0,
+        'pages_with_tables': 0,
+        'pages_no_data': 0,
+        'pages_failed': 0,
+        'total_rows_extracted': 0,
+        'kks_warnings_count': 0,
+        'kks_su_warnings_count': 0
+    }
 
-        total_stats = {
-            'pdfs_processed': 0,
-            'pdfs_failed': 0,
-            'total_pages': 0,
-            'pages_with_tables': 0,
-            'pages_no_data': 0,
-            'pages_failed': 0,
-            'total_rows_extracted': 0
-        }
-
-        for result in results:
+    if args.single_process:
+        # Single process mode for debugging
+        print("Running in single process mode...")
+        for pdf_path in pdf_files:
             try:
-                stats = result.get()
+                stats = process_single_pdf(pdf_path, csv_file_path, log_file_path)
                 if stats:
                     total_stats['pdfs_processed'] += 1
-                    total_stats['total_pages'] += stats['total_pages']
-                    total_stats['pages_with_tables'] += stats['pages_with_tables']
-                    total_stats['pages_no_data'] += stats['pages_no_data']
-                    total_stats['pages_failed'] += stats['pages_failed']
-                    total_stats['total_rows_extracted'] += stats['total_rows_extracted']
+                    for key in ['total_pages', 'pages_with_tables', 'pages_no_data', 
+                               'pages_failed', 'total_rows_extracted', 'kks_warnings_count',
+                               'kks_su_warnings_count']:
+                        total_stats[key] += stats.get(key, 0)
                 else:
                     total_stats['pdfs_failed'] += 1
             except Exception as e:
-                logging.error(f"Error retrieving result: {e}")
+                logging.error(f"Error processing {pdf_path}: {e}")
                 total_stats['pdfs_failed'] += 1
+    else:
+        # Multiprocessing mode
+        num_workers = max(1, multiprocessing.cpu_count() - 2)  # Leave 2 cores free
+        print(f"Using {num_workers} worker processes...")
+        
+        manager = Manager()
+        lock = manager.Lock()
+
+        with multiprocessing.Pool(processes=num_workers) as pool:
+            results = [
+                pool.apply_async(process_pdf_worker, args=(pdf_path, csv_file_path, log_file_path, lock))
+                for pdf_path in pdf_files
+            ]
+
+            for result in results:
+                try:
+                    stats = result.get()
+                    if stats and 'pdfs_failed' not in stats:
+                        total_stats['pdfs_processed'] += 1
+                        for key in ['total_pages', 'pages_with_tables', 'pages_no_data', 
+                                   'pages_failed', 'total_rows_extracted', 'kks_warnings_count',
+                                   'kks_su_warnings_count']:
+                            total_stats[key] += stats.get(key, 0)
+                    else:
+                        total_stats['pdfs_failed'] += 1
+                except Exception as e:
+                    logging.error(f"Error retrieving result: {e}")
+                    total_stats['pdfs_failed'] += 1
 
     # Final summary
     total_time = time.time() - start_time
@@ -350,10 +481,11 @@ def main():
     print(f"Pages with no data: {total_stats['pages_no_data']}")
     print(f"Pages failed: {total_stats['pages_failed']}")
     print(f"Total rows extracted: {total_stats['total_rows_extracted']}")
+    print(f"KKS code warnings: {total_stats['kks_warnings_count']}")
+    print(f"KKS/SU code warnings: {total_stats['kks_su_warnings_count']}")
     print(f"\nOutput files:")
     print(f"  Tables: {csv_file_path}")
     print(f"  Log: {log_file_path}")
 
 if __name__ == "__main__":
-    start_time = time.time()
     main()
