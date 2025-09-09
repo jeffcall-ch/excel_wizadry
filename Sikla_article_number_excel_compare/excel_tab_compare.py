@@ -243,10 +243,10 @@ def find_exact_match_by_hierarchy_vectorized(baseline_row, comparison_subset, ma
         matched_indices: List of indices that matched on KKS/SU
         
     Returns:
-        tuple: (match_index, match_details)
+        tuple: (match_index, match_details, mismatch_category)
     """
     if len(matched_indices) == 0:
-        return None, "No KKS/SU match found"
+        return None, "No KKS/SU match found", "NO_KKS_MATCH"
     
     # Get the baseline values for comparison
     baseline_article_raw = baseline_row.get('ARTICLE_NUMBER')
@@ -260,7 +260,7 @@ def find_exact_match_by_hierarchy_vectorized(baseline_row, comparison_subset, ma
     candidates = comparison_subset.loc[matched_indices].copy()
     
     if candidates.empty:
-        return None, "No valid candidates found"
+        return None, "No valid candidates found", "NO_VALID_CANDIDATES"
     
     # Step 1: Filter by Article Number (with normalization)
     candidates['ARTICLE_NUMBER_NORMALIZED'] = candidates['ARTICLE_NUMBER'].apply(normalize_article_number)
@@ -273,7 +273,7 @@ def find_exact_match_by_hierarchy_vectorized(baseline_row, comparison_subset, ma
     if article_matches.empty:
         # No article matches
         article_mismatches = len(candidates)
-        return None, f"Article number mismatch: {baseline_article_raw} (normalized: {baseline_article}) not found in {article_mismatches} KKS candidates"
+        return None, f"Article number mismatch: {baseline_article_raw} (normalized: {baseline_article}) not found in {article_mismatches} KKS candidates", "ARTICLE_MISMATCH"
     
     # Step 2: Filter by QTY
     if pd.isna(baseline_qty):
@@ -284,7 +284,7 @@ def find_exact_match_by_hierarchy_vectorized(baseline_row, comparison_subset, ma
     if qty_matches.empty:
         # Article matches but no QTY matches
         qty_mismatches = len(article_matches)
-        return None, f"Article {baseline_article} matches but QTY mismatch: {baseline_qty} not found in {qty_mismatches} candidates"
+        return None, f"Article {baseline_article} matches but QTY mismatch: {baseline_qty} not found in {qty_mismatches} candidates", "QTY_MISMATCH"
     
     # Step 3: Filter by Cut Length (with normalization and special empty/NaN handling)
     baseline_cut_length_norm = normalize_cut_length(baseline_cut_length)
@@ -304,16 +304,16 @@ def find_exact_match_by_hierarchy_vectorized(baseline_row, comparison_subset, ma
             comp_cut_norm = normalize_cut_length(row.get('CUT_LENGTH'))
             mismatch_examples.append(f"comp:{comp_cut_norm}")
         examples_str = ", ".join(mismatch_examples)
-        return None, f"Article {baseline_article}, QTY {baseline_qty} match but Cut Length mismatch: baseline:{baseline_cut_length_norm} vs [{examples_str}] in {cut_length_mismatches} candidates"
+        return None, f"Article {baseline_article}, QTY {baseline_qty} match but Cut Length mismatch: baseline:{baseline_cut_length_norm} vs [{examples_str}] in {cut_length_mismatches} candidates", "CUT_LENGTH_MISMATCH"
     
     # We have exact match(es)
     if len(final_matches) == 1:
         match_idx = final_matches[0]
-        return match_idx, f"Exact match: Article {baseline_article}, QTY {baseline_qty}, Cut Length {baseline_cut_length_norm}"
+        return match_idx, f"Exact match: Article {baseline_article}, QTY {baseline_qty}, Cut Length {baseline_cut_length_norm}", "EXACT_MATCH"
     else:
         # Multiple exact matches - return the first one but note the issue
         match_idx = final_matches[0]
-        return match_idx, f"Multiple exact matches ({len(final_matches)}): Article {baseline_article}, QTY {baseline_qty}, Cut Length {baseline_cut_length_norm}"
+        return match_idx, f"Multiple exact matches ({len(final_matches)}): Article {baseline_article}, QTY {baseline_qty}, Cut Length {baseline_cut_length_norm}", "MULTIPLE_MATCHES"
 
 
 def compare_tabs(baseline_df, comparison_df):
@@ -368,6 +368,7 @@ def compare_tabs(baseline_df, comparison_df):
     # Initialize result lists
     match_results = []
     match_details = []
+    mismatch_categories = []
     
     # Process in chunks for better memory management and progress reporting
     chunk_size = 1000
@@ -381,6 +382,7 @@ def compare_tabs(baseline_df, comparison_df):
         
         chunk_match_results = []
         chunk_match_details = []
+        chunk_mismatch_categories = []
         
         for idx in range(start_idx, end_idx):
             baseline_row = baseline_df.iloc[idx]
@@ -392,25 +394,30 @@ def compare_tabs(baseline_df, comparison_df):
             if not matched_indices:
                 chunk_match_results.append('no match')
                 chunk_match_details.append('No KKS/SU partial match found')
+                chunk_mismatch_categories.append('NO_KKS_MATCH')
             else:
                 # Use hierarchical matching: Article Number -> QTY -> Cut Length
-                best_match_idx, match_detail = find_exact_match_by_hierarchy_vectorized(
+                best_match_idx, match_detail, mismatch_category = find_exact_match_by_hierarchy_vectorized(
                     baseline_row, comparison_subset, matched_indices
                 )
                 
                 if best_match_idx is not None:
                     chunk_match_results.append('match')
                     chunk_match_details.append(match_detail)
+                    chunk_mismatch_categories.append(mismatch_category)
                 else:
                     chunk_match_results.append('no match')
                     chunk_match_details.append(match_detail)
+                    chunk_mismatch_categories.append(mismatch_category)
         
         match_results.extend(chunk_match_results)
         match_details.extend(chunk_match_details)
+        mismatch_categories.extend(chunk_mismatch_categories)
     
     # Add the results to the DataFrame
     result_df['Match_Status'] = match_results
     result_df['Match_Details'] = match_details
+    result_df['Mismatch_Category'] = mismatch_categories
     
     return result_df
 
@@ -464,6 +471,12 @@ def main():
         print(f"Total rows processed: {len(result_df)}")
         for status, count in match_counts.items():
             print(f"{status}: {count} ({count/len(result_df)*100:.1f}%)")
+        
+        # Print mismatch category breakdown
+        print(f"\nMismatch Category Breakdown:")
+        mismatch_counts = result_df['Mismatch_Category'].value_counts()
+        for category, count in mismatch_counts.items():
+            print(f"{category}: {count} ({count/len(result_df)*100:.1f}%)")
             
     except Exception as e:
         print(f"Error saving results: {e}")
