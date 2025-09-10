@@ -4,6 +4,78 @@ import re
 from datetime import datetime
 import os
 
+def extract_extra_long_number(remark):
+    """Extract the number from extra-long remarks like '5 off extra-long'"""
+    if pd.isna(remark) or 'extra-long' not in str(remark):
+        return 0
+    
+    import re
+    # Find number before 'off extra-long'
+    match = re.search(r'(\d+)\s+off\s+extra-long', str(remark))
+    if match:
+        return int(match.group(1))
+    return 0
+
+def combine_extra_long_remarks(remarks_list):
+    """Combine extra-long remarks by adding the numbers"""
+    total_extra_long = 0
+    non_extra_long_remarks = []
+    
+    for remark in remarks_list:
+        if pd.isna(remark):
+            continue
+        elif 'extra-long' in str(remark):
+            total_extra_long += extract_extra_long_number(remark)
+        else:
+            non_extra_long_remarks.append(str(remark))
+    
+    # Build final remark
+    final_remarks = []
+    if total_extra_long > 0:
+        final_remarks.append(f"{total_extra_long} off extra-long")
+    if non_extra_long_remarks:
+        final_remarks.extend(non_extra_long_remarks)
+    
+    if final_remarks:
+        return "; ".join(final_remarks)
+    else:
+        return np.nan
+
+def aggregate_duplicates_with_extra_long(df):
+    """
+    Aggregate duplicate items within same corrosion category, 
+    handling extra-long remarks specially
+    """
+    result_rows = []
+    
+    # Group by Item Number and Corrosion Category
+    grouped = df.groupby(['Item Number', 'Corrosion Category'])
+    
+    for (item_num, corr_cat), group in grouped:
+        if len(group) == 1:
+            # Not a duplicate, keep as-is
+            result_rows.append(group.iloc[0])
+        else:
+            # Duplicate - aggregate with extra-long logic
+            aggregated_row = group.iloc[0].copy()  # Start with first row
+            
+            # Aggregate numeric values
+            aggregated_row['Qty'] = group['Qty'].sum()
+            aggregated_row['Total Weight [kg]'] = group['Total Weight [kg]'].sum()
+            if 'Total Length [mm]' in group.columns:
+                aggregated_row['Total Length [mm]'] = group['Total Length [mm]'].sum()
+            
+            # Handle remarks with extra-long logic
+            remarks_list = group['Remarks'].tolist()
+            aggregated_row['Remarks'] = combine_extra_long_remarks(remarks_list)
+            
+            # Mark as no longer duplicate since we're aggregating
+            aggregated_row['Duplicate Item Number'] = False
+            
+            result_rows.append(aggregated_row)
+    
+    return pd.DataFrame(result_rows).reset_index(drop=True)
+
 def clean_numeric_value(value, decimal_places=2):
     """Extract float value from text and return rounded to specified decimal places"""
     if pd.isna(value):
@@ -70,9 +142,9 @@ def aggregate_data(df):
     
     aggregated_results = []
     
-    # Process items WITHOUT cut length (aggregate by item number)
+    # Process items WITHOUT cut length (aggregate by item number and corrosion category)
     if not items_no_cut_length.empty:
-        grouped_no_cut = items_no_cut_length.groupby('Item Number').agg({
+        grouped_no_cut = items_no_cut_length.groupby(['Item Number', 'Corrosion Category']).agg({
             'Qty': 'sum',
             'Description': 'first',  # Should be the same for same item number
             'Total Weight [kg]': 'sum'
@@ -92,8 +164,8 @@ def aggregate_data(df):
         # Process descriptions
         items_with_cut_length['Description'] = items_with_cut_length['Description'].apply(process_description_with_cut_length)
         
-        # Group by Item Number and processed Description
-        grouped_cut_length = items_with_cut_length.groupby(['Item Number', 'Description']).agg({
+        # Group by Item Number, processed Description, and Corrosion Category
+        grouped_cut_length = items_with_cut_length.groupby(['Item Number', 'Description', 'Corrosion Category']).agg({
             'Total Length [mm]': 'sum',
             'Total Weight [kg]': 'sum'
         }).reset_index()
@@ -166,6 +238,10 @@ def main():
     df['Weight [kg]'] = df['Weight [kg]'].apply(lambda x: clean_numeric_value(x, 2))
     df['Total Weight [kg]'] = df['Total Weight [kg]'].apply(lambda x: clean_numeric_value(x, 2))
     
+    # Clean Corrosion Category column
+    df['Corrosion Category'] = df['Corrosion Category'].astype(str).str.strip()
+    df['Corrosion Category'] = df['Corrosion Category'].replace('nan', np.nan)
+    
     # Remove rows where Item Number is NaN
     df = df[df['Item Number'].notna()]
     
@@ -181,8 +257,8 @@ def main():
     standalone_items = result_df[result_df['Item Type'] == 'Standalone'].copy()
     
     # Define columns for each type
-    aggregated_columns = ['Item Number', 'Qty', 'Description', 'Total Length [mm]', 'Total Weight [kg]']
-    standalone_columns = ['Item Number', 'Qty', 'Description', 'Cut Length [mm]', 'Total Length [mm]', 'Total Weight [kg]', 'Remarks']
+    aggregated_columns = ['Item Number', 'Qty', 'Description', 'Total Length [mm]', 'Total Weight [kg]', 'Corrosion Category']
+    standalone_columns = ['Item Number', 'Qty', 'Description', 'Cut Length [mm]', 'Total Length [mm]', 'Total Weight [kg]', 'Remarks', 'Corrosion Category']
     
     # Prepare aggregated items output (no Cut Length column)
     if not aggregated_items.empty:
@@ -200,7 +276,7 @@ def main():
         standalone_items = standalone_items[standalone_columns]
     
     # Combine results
-    final_output_columns = ['Item Number', 'Qty', 'Description', 'Cut Length [mm]', 'Total Length [mm]', 'Total Weight [kg]', 'Remarks']
+    final_output_columns = ['Item Number', 'Qty', 'Description', 'Cut Length [mm]', 'Total Length [mm]', 'Total Weight [kg]', 'Remarks', 'Corrosion Category']
     
     if not aggregated_items.empty and not standalone_items.empty:
         # Add Cut Length column to aggregated items as NaN for consistency
@@ -219,21 +295,47 @@ def main():
     # Sort alphabetically by Description
     result_df = result_df.sort_values('Description').reset_index(drop=True)
     
-    # Post-processing: Check for duplicate item numbers and mark them
-    print("Checking for duplicate item numbers...")
-    item_counts = result_df['Item Number'].value_counts()
-    duplicates = item_counts[item_counts > 1].index.tolist()
+    # Post-processing: Check for duplicate item numbers within the same corrosion category
+    print("Checking for duplicate item numbers within same corrosion category...")
     
-    # Add a new column to mark duplicates
-    result_df['Duplicate Item Number'] = result_df['Item Number'].isin(duplicates)
+    # Group by corrosion category and find duplicates within each category
+    duplicate_mask = pd.Series([False] * len(result_df), index=result_df.index)
     
-    if duplicates:
-        print(f"Found {len(duplicates)} item numbers with duplicates:")
-        for item_num in duplicates:
-            count = item_counts[item_num]
-            print(f"  Item Number {item_num}: appears {count} times")
+    for category in result_df['Corrosion Category'].unique():
+        category_df = result_df[result_df['Corrosion Category'] == category]
+        item_counts = category_df['Item Number'].value_counts()
+        duplicates_in_category = item_counts[item_counts > 1].index.tolist()
+        
+        if duplicates_in_category:
+            print(f"Corrosion Category '{category}':")
+            for item_num in duplicates_in_category:
+                count = item_counts[item_num]
+                print(f"  Item Number {item_num}: appears {count} times")
+            
+            # Mark duplicates for this category
+            category_mask = (result_df['Corrosion Category'] == category) & (result_df['Item Number'].isin(duplicates_in_category))
+            duplicate_mask = duplicate_mask | category_mask
+    
+    # Add the duplicate flag column
+    result_df['Duplicate Item Number'] = duplicate_mask
+    
+    total_duplicates = duplicate_mask.sum()
+    if total_duplicates == 0:
+        print("No duplicate item numbers found within same corrosion categories.")
     else:
-        print("No duplicate item numbers found.")
+        print(f"Total items marked as duplicates: {total_duplicates}")
+    
+    # Aggregate duplicates with extra-long logic
+    print("Aggregating duplicate items with extra-long remark handling...")
+    result_df = aggregate_duplicates_with_extra_long(result_df)
+    
+    # Clean up Total Length column - replace 0 values with NaN
+    if 'Total Length [mm]' in result_df.columns:
+        result_df['Total Length [mm]'] = result_df['Total Length [mm]'].replace(0, np.nan)
+    
+    # Reorder columns to put Corrosion Category as the very last column
+    column_order = ['Item Number', 'Qty', 'Description', 'Cut Length [mm]', 'Total Length [mm]', 'Total Weight [kg]', 'Remarks', 'Duplicate Item Number', 'Corrosion Category']
+    result_df = result_df[column_order]
     
     print(f"Final aggregated data shape: {result_df.shape}")
     
