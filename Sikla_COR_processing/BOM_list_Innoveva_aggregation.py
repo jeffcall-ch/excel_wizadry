@@ -219,6 +219,22 @@ def main():
     # Sort alphabetically by Description
     result_df = result_df.sort_values('Description').reset_index(drop=True)
     
+    # Post-processing: Check for duplicate item numbers and mark them
+    print("Checking for duplicate item numbers...")
+    item_counts = result_df['Item Number'].value_counts()
+    duplicates = item_counts[item_counts > 1].index.tolist()
+    
+    # Add a new column to mark duplicates
+    result_df['Duplicate Item Number'] = result_df['Item Number'].isin(duplicates)
+    
+    if duplicates:
+        print(f"Found {len(duplicates)} item numbers with duplicates:")
+        for item_num in duplicates:
+            count = item_counts[item_num]
+            print(f"  Item Number {item_num}: appears {count} times")
+    else:
+        print("No duplicate item numbers found.")
+    
     print(f"Final aggregated data shape: {result_df.shape}")
     
     # Generate output filename with timestamp
