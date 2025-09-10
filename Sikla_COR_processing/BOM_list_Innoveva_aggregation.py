@@ -3,6 +3,36 @@ import numpy as np
 import re
 from datetime import datetime
 import os
+import math
+
+def process_threaded_rod_qty(description, qty):
+    """
+    Process threaded rod quantity by extracting standard length and dividing qty.
+    Standard lengths are multiples of 1000 (1000, 2000, 3000, etc.)
+    Returns the adjusted quantity rounded up to next integer.
+    """
+    if pd.isna(description) or pd.isna(qty) or not isinstance(description, str):
+        return qty
+    
+    # Check if this is a threaded rod
+    if 'Threaded Rod' not in description:
+        return qty
+    
+    # Extract number that is a multiple of 1000
+    # Look for patterns like M10/3000, M12/2000, etc.
+    pattern = r'/(\d+)'
+    matches = re.findall(pattern, description)
+    
+    for match in matches:
+        length = int(match)
+        # Check if it's a multiple of 1000 and at least 1000
+        if length >= 1000 and length % 1000 == 0:
+            # Divide qty by standard length and round up
+            adjusted_qty = math.ceil(qty / length)
+            return adjusted_qty
+    
+    # If no valid standard length found, return original qty
+    return qty
 
 def extract_extra_long_number(remark):
     """Extract the number from extra-long remarks like '5 off extra-long'"""
@@ -153,56 +183,114 @@ def aggregate_data(df):
     
     # Process items WITHOUT cut length (aggregate by item number and corrosion category)
     if not items_no_cut_length.empty:
-        grouped_no_cut = items_no_cut_length.groupby(['Item Number', 'Corrosion Category']).agg({
-            'Qty': 'sum',
-            'Description': 'first',  # Should be the same for same item number
-            'Total Weight [kg]': 'sum'
-        }).reset_index()
+        # Separate bracket items from non-bracket items
+        bracket_items_no_cut = items_no_cut_length[items_no_cut_length['Description'].str.contains('Bracket', case=False, na=False)].copy()
+        non_bracket_items_no_cut = items_no_cut_length[~items_no_cut_length['Description'].str.contains('Bracket', case=False, na=False)].copy()
         
-        # Add empty columns for consistency (but no Cut Length for aggregated items)
-        grouped_no_cut['Total Length [mm]'] = np.nan
-        grouped_no_cut['Item Type'] = 'Aggregated'
+        # Process non-bracket items normally
+        if not non_bracket_items_no_cut.empty:
+            grouped_no_cut = non_bracket_items_no_cut.groupby(['Item Number', 'Corrosion Category']).agg({
+                'Qty': 'sum',
+                'Description': 'first',  # Should be the same for same item number
+                'Total Weight [kg]': 'sum'
+            }).reset_index()
+            
+            # Add empty columns for consistency (but no Cut Length for aggregated items)
+            grouped_no_cut['Total Length [mm]'] = np.nan
+            grouped_no_cut['Item Type'] = 'Aggregated'
+            
+            aggregated_results.append(grouped_no_cut)
         
-        aggregated_results.append(grouped_no_cut)
+        # Process bracket items - only aggregate qty, keep lengths empty
+        if not bracket_items_no_cut.empty:
+            grouped_brackets = bracket_items_no_cut.groupby(['Item Number', 'Corrosion Category']).agg({
+                'Qty': 'sum',
+                'Description': 'first',  # Should be the same for same item number
+                'Total Weight [kg]': 'sum'
+            }).reset_index()
+            
+            # For bracket items, explicitly set length columns to NaN
+            grouped_brackets['Total Length [mm]'] = np.nan
+            grouped_brackets['Item Type'] = 'Aggregated'
+            
+            aggregated_results.append(grouped_brackets)
     
     # Process items WITH cut length
     if not items_with_cut_length.empty:
-        # Calculate Total Length [mm] = Qty * Cut Length [mm]
-        items_with_cut_length['Total Length [mm]'] = items_with_cut_length['Qty'] * items_with_cut_length['Cut Length [mm]']
+        # Separate bracket items from non-bracket items
+        bracket_items_with_cut = items_with_cut_length[items_with_cut_length['Description'].str.contains('Bracket', case=False, na=False)].copy()
+        non_bracket_items_with_cut = items_with_cut_length[~items_with_cut_length['Description'].str.contains('Bracket', case=False, na=False)].copy()
         
-        # Process descriptions
-        items_with_cut_length['Description'] = items_with_cut_length['Description'].apply(process_description_with_cut_length)
+        # Process non-bracket items normally
+        if not non_bracket_items_with_cut.empty:
+            # Calculate Total Length [mm] = Qty * Cut Length [mm]
+            non_bracket_items_with_cut['Total Length [mm]'] = non_bracket_items_with_cut['Qty'] * non_bracket_items_with_cut['Cut Length [mm]']
+            
+            # Process descriptions
+            non_bracket_items_with_cut['Description'] = non_bracket_items_with_cut['Description'].apply(process_description_with_cut_length)
+            
+            # Group by Item Number, processed Description, and Corrosion Category
+            grouped_cut_length = non_bracket_items_with_cut.groupby(['Item Number', 'Description', 'Corrosion Category']).agg({
+                'Total Length [mm]': 'sum',
+                'Total Weight [kg]': 'sum'
+            }).reset_index()
+            
+            # Calculate back the effective quantity (this is for reference, might not be meaningful)
+            grouped_cut_length['Qty'] = np.nan  # Since we aggregated by length, qty becomes meaningless
+            grouped_cut_length['Item Type'] = 'Aggregated'
+            
+            aggregated_results.append(grouped_cut_length)
         
-        # Group by Item Number, processed Description, and Corrosion Category
-        grouped_cut_length = items_with_cut_length.groupby(['Item Number', 'Description', 'Corrosion Category']).agg({
-            'Total Length [mm]': 'sum',
-            'Total Weight [kg]': 'sum'
-        }).reset_index()
-        
-        # Calculate back the effective quantity (this is for reference, might not be meaningful)
-        grouped_cut_length['Qty'] = np.nan  # Since we aggregated by length, qty becomes meaningless
-        grouped_cut_length['Item Type'] = 'Aggregated'
-        
-        aggregated_results.append(grouped_cut_length)
+        # Process bracket items with cut length - only aggregate qty, ignore lengths
+        if not bracket_items_with_cut.empty:
+            grouped_brackets_with_cut = bracket_items_with_cut.groupby(['Item Number', 'Corrosion Category']).agg({
+                'Qty': 'sum',
+                'Description': 'first',  # Should be the same for same item number
+                'Total Weight [kg]': 'sum'
+            }).reset_index()
+            
+            # For bracket items, explicitly set length columns to NaN (ignore cut length)
+            grouped_brackets_with_cut['Total Length [mm]'] = np.nan
+            grouped_brackets_with_cut['Item Type'] = 'Aggregated'
+            
+            aggregated_results.append(grouped_brackets_with_cut)
     
     # Add items with remarks (kept separate)
     if not items_with_remarks.empty:
-        items_with_remarks_processed = items_with_remarks.copy()
-        # For items with cut length and remarks, still process the description
-        mask_cut_length = items_with_remarks_processed['Cut Length [mm]'].notna()
-        items_with_remarks_processed.loc[mask_cut_length, 'Description'] = items_with_remarks_processed.loc[mask_cut_length, 'Description'].apply(process_description_with_cut_length)
+        # Separate bracket items from non-bracket items in remarks section too
+        bracket_items_with_remarks = items_with_remarks[items_with_remarks['Description'].str.contains('Bracket', case=False, na=False)].copy()
+        non_bracket_items_with_remarks = items_with_remarks[~items_with_remarks['Description'].str.contains('Bracket', case=False, na=False)].copy()
         
-        # Calculate Total Length for items with cut length and remarks
-        items_with_remarks_processed['Total Length [mm]'] = np.nan
-        items_with_remarks_processed.loc[mask_cut_length, 'Total Length [mm]'] = (
-            items_with_remarks_processed.loc[mask_cut_length, 'Qty'] * 
-            items_with_remarks_processed.loc[mask_cut_length, 'Cut Length [mm]']
-        )
+        # Process non-bracket items with remarks normally
+        if not non_bracket_items_with_remarks.empty:
+            non_bracket_items_with_remarks_processed = non_bracket_items_with_remarks.copy()
+            # For items with cut length and remarks, still process the description
+            mask_cut_length = non_bracket_items_with_remarks_processed['Cut Length [mm]'].notna()
+            non_bracket_items_with_remarks_processed.loc[mask_cut_length, 'Description'] = non_bracket_items_with_remarks_processed.loc[mask_cut_length, 'Description'].apply(process_description_with_cut_length)
+            
+            # Calculate Total Length for items with cut length and remarks
+            non_bracket_items_with_remarks_processed['Total Length [mm]'] = np.nan
+            non_bracket_items_with_remarks_processed.loc[mask_cut_length, 'Total Length [mm]'] = (
+                non_bracket_items_with_remarks_processed.loc[mask_cut_length, 'Qty'] * 
+                non_bracket_items_with_remarks_processed.loc[mask_cut_length, 'Cut Length [mm]']
+            )
+            
+            # Mark as standalone items
+            non_bracket_items_with_remarks_processed['Item Type'] = 'Standalone'
+            
+            aggregated_results.append(non_bracket_items_with_remarks_processed)
         
-        # Mark as standalone items
-        items_with_remarks_processed['Item Type'] = 'Standalone'
-        
-        aggregated_results.append(items_with_remarks_processed)
+        # Process bracket items with remarks - keep qty only, set lengths to NaN
+        if not bracket_items_with_remarks.empty:
+            bracket_items_with_remarks_processed = bracket_items_with_remarks.copy()
+            
+            # For bracket items, set both Total Length and Cut Length calculations to NaN
+            bracket_items_with_remarks_processed['Total Length [mm]'] = np.nan
+            
+            # Mark as standalone items
+            bracket_items_with_remarks_processed['Item Type'] = 'Standalone'
+            
+            aggregated_results.append(bracket_items_with_remarks_processed)
     
     # Combine all results
     if aggregated_results:
@@ -342,6 +430,54 @@ def main():
     # Clean up Total Length column - replace 0 values with NaN
     if 'Total Length [mm]' in result_df.columns:
         result_df['Total Length [mm]'] = result_df['Total Length [mm]'].replace(0, np.nan)
+    
+    # Post-processing: Handle empty Qty cells
+    print("Post-processing: Checking for empty Qty cells...")
+    empty_qty_mask = result_df['Qty'].isna()
+    
+    if empty_qty_mask.any():
+        # For rows with empty Qty, check if Remarks does NOT contain "SPECIAL"
+        # AND Description does NOT contain "Bracket" (bracket items should keep empty lengths)
+        # Note: na=False means NaN values are treated as False (don't contain "SPECIAL")
+        no_special_mask = ~result_df['Remarks'].str.contains('SPECIAL', case=False, na=False)
+        no_bracket_mask = ~result_df['Description'].str.contains('Bracket', case=False, na=False)
+        
+        # Combine conditions: empty Qty AND no "SPECIAL" in remarks AND no "Bracket" in description
+        update_mask = empty_qty_mask & no_special_mask & no_bracket_mask
+        
+        if update_mask.any():
+            # Copy Total Length [mm] to Qty for these rows
+            result_df.loc[update_mask, 'Qty'] = result_df.loc[update_mask, 'Total Length [mm]']
+            
+            updated_count = update_mask.sum()
+            print(f"Updated {updated_count} rows: copied Total Length [mm] to empty Qty cells (excluding rows with 'SPECIAL' in remarks or 'Bracket' in description)")
+        else:
+            print("No rows found with empty Qty that don't contain 'SPECIAL' in remarks or 'Bracket' in description")
+    else:
+        print("No empty Qty cells found")
+    
+    # Post-processing: Handle threaded rods - divide qty by standard length and round up
+    print("Post-processing: Adjusting threaded rod quantities...")
+    threaded_rod_mask = result_df['Description'].str.contains('Threaded Rod', case=False, na=False)
+    
+    if threaded_rod_mask.any():
+        threaded_rods = result_df[threaded_rod_mask].copy()
+        
+        # Apply threaded rod qty processing
+        for idx, row in threaded_rods.iterrows():
+            original_qty = row['Qty']
+            # Only process if original qty is not NaN
+            if pd.notna(original_qty):
+                adjusted_qty = process_threaded_rod_qty(row['Description'], original_qty)
+                result_df.loc[idx, 'Qty'] = adjusted_qty
+                
+                if adjusted_qty != original_qty:
+                    print(f"  Threaded rod {row['Description']}: Qty {original_qty} → {adjusted_qty}")
+        
+        threaded_rod_count = threaded_rod_mask.sum()
+        print(f"Processed {threaded_rod_count} threaded rod items")
+    else:
+        print("No threaded rod items found")
     
     # Reorder columns to put Corrosion Category as the very last column
     column_order = ['Item Number', 'Qty', 'Description', 'Cut Length [mm]', 'Total Length [mm]', 'Total Weight [kg]', 'Remarks', 'Duplicate Item Number', 'Corrosion Category']
