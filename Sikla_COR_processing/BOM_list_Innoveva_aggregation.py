@@ -44,7 +44,8 @@ def combine_extra_long_remarks(remarks_list):
 def aggregate_duplicates_with_extra_long(df):
     """
     Aggregate duplicate items within same corrosion category, 
-    handling extra-long remarks specially
+    handling extra-long remarks specially.
+    Items with 'special' in remarks are excluded from aggregation.
     """
     result_rows = []
     
@@ -56,23 +57,31 @@ def aggregate_duplicates_with_extra_long(df):
             # Not a duplicate, keep as-is
             result_rows.append(group.iloc[0])
         else:
-            # Duplicate - aggregate with extra-long logic
-            aggregated_row = group.iloc[0].copy()  # Start with first row
+            # Check if any item has "special" in remarks - if so, don't aggregate
+            has_special = group['Remarks'].str.contains('special', case=False, na=False).any()
             
-            # Aggregate numeric values
-            aggregated_row['Qty'] = group['Qty'].sum()
-            aggregated_row['Total Weight [kg]'] = group['Total Weight [kg]'].sum()
-            if 'Total Length [mm]' in group.columns:
-                aggregated_row['Total Length [mm]'] = group['Total Length [mm]'].sum()
-            
-            # Handle remarks with extra-long logic
-            remarks_list = group['Remarks'].tolist()
-            aggregated_row['Remarks'] = combine_extra_long_remarks(remarks_list)
-            
-            # Mark as no longer duplicate since we're aggregating
-            aggregated_row['Duplicate Item Number'] = False
-            
-            result_rows.append(aggregated_row)
+            if has_special:
+                # Don't aggregate - keep all items separate
+                for _, row in group.iterrows():
+                    result_rows.append(row)
+            else:
+                # Duplicate without "special" - aggregate with extra-long logic
+                aggregated_row = group.iloc[0].copy()  # Start with first row
+                
+                # Aggregate numeric values
+                aggregated_row['Qty'] = group['Qty'].sum()
+                aggregated_row['Total Weight [kg]'] = group['Total Weight [kg]'].sum()
+                if 'Total Length [mm]' in group.columns:
+                    aggregated_row['Total Length [mm]'] = group['Total Length [mm]'].sum()
+                
+                # Handle remarks with extra-long logic
+                remarks_list = group['Remarks'].tolist()
+                aggregated_row['Remarks'] = combine_extra_long_remarks(remarks_list)
+                
+                # Mark as no longer duplicate since we're aggregating
+                aggregated_row['Duplicate Item Number'] = False
+                
+                result_rows.append(aggregated_row)
     
     return pd.DataFrame(result_rows).reset_index(drop=True)
 
@@ -327,6 +336,7 @@ def main():
     
     # Aggregate duplicates with extra-long logic
     print("Aggregating duplicate items with extra-long remark handling...")
+    print("Note: Items with 'special' in remarks are excluded from aggregation.")
     result_df = aggregate_duplicates_with_extra_long(result_df)
     
     # Clean up Total Length column - replace 0 values with NaN
