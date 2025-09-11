@@ -43,7 +43,8 @@ from table_boundary_finder import (
     # KKS warnings
     KKSCodeWarning,
     NoKKSCodesFoundWarning,
-    NoKKSSUCodesFoundWarning
+    NoKKSSUCodesFoundWarning,
+    NoWorkingAreaCodesFoundWarning
 )
 
 from extract_table_camelot import (
@@ -103,13 +104,14 @@ def initialize_log_file(log_file_path: str):
             'table_rows_extracted',
             'table_columns_extracted',
             'kks_codes_found',
-            'kks_su_codes_found'
+            'kks_su_codes_found',
+            'working_area_codes_found'
         ])
 
 def log_processing_event(log_file_path: str, pdf_path: str, page_num: int, 
                         status: str, details: str, processing_time: float = 0.0,
                         table_rows: int = 0, table_cols: int = 0,
-                        kks_found: bool = True, kks_su_found: bool = True):
+                        kks_found: bool = True, kks_su_found: bool = True, working_area_found: bool = True):
     """Log a processing event to the log CSV file."""
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
@@ -118,7 +120,7 @@ def log_processing_event(log_file_path: str, pdf_path: str, page_num: int,
         writer.writerow([
             timestamp, pdf_path, page_num, status, details, 
             round(processing_time, 3), table_rows, table_cols,
-            kks_found, kks_su_found
+            kks_found, kks_su_found, working_area_found
         ])
 
 def add_empty_row_to_csv(csv_file_path: str, full_path: str, filename: str, page_num: int):
@@ -129,7 +131,8 @@ def add_empty_row_to_csv(csv_file_path: str, full_path: str, filename: str, page
         'filename': [filename], 
         'page_number': [page_num],
         'KKS': [[]],  # Empty list for KKS codes
-        'KKS/SU': [[]]  # Empty list for KKS/SU codes
+        'KKS/SU': [[]],  # Empty list for KKS/SU codes
+        'WORKING_AREA': [[]]  # Empty list for working area codes
     })
     
     # Check if CSV exists to determine if we need headers
@@ -164,7 +167,8 @@ def process_single_pdf(pdf_path: str, csv_file_path: str, log_file_path: str) ->
         'pages_no_data': 0,
         'total_rows_extracted': 0,
         'kks_warnings_count': 0,
-        'kks_su_warnings_count': 0
+        'kks_su_warnings_count': 0,
+        'working_area_warnings_count': 0
     }
     
     logging.info(f"Processing PDF: {pdf_filename}")
@@ -184,6 +188,7 @@ def process_single_pdf(pdf_path: str, csv_file_path: str, log_file_path: str) ->
             page_start_time = time.time()
             kks_found = True
             kks_su_found = True
+            working_area_found = True
             
             try:
                 logging.debug(f"Processing page {page_num} of {pdf_filename}")
@@ -194,7 +199,7 @@ def process_single_pdf(pdf_path: str, csv_file_path: str, log_file_path: str) ->
                     warnings.simplefilter("always", category=KKSCodeWarning)
                     
                     try:
-                        table_bounds, kks_codes_and_kks_su_codes = get_table_boundaries_for_page(pdf_path, page_num)
+                        table_bounds, kks_codes_and_kks_su_codes_and_working_area_codes = get_table_boundaries_for_page(pdf_path, page_num)
                         
                         # Check for KKS warnings
                         for warning in w:
@@ -206,12 +211,16 @@ def process_single_pdf(pdf_path: str, csv_file_path: str, log_file_path: str) ->
                                 kks_su_found = False  
                                 stats['kks_su_warnings_count'] += 1
                                 logging.warning(f"Page {page_num}: {warning.message}")
+                            elif issubclass(warning.category, NoWorkingAreaCodesFoundWarning):
+                                working_area_found = False
+                                stats['working_area_warnings_count'] += 1
+                                logging.warning(f"Page {page_num}: {warning.message}")
                         
                     except AnchorTextNotFoundError as e:
                         processing_time = time.time() - page_start_time
                         log_processing_event(log_file_path, pdf_path, page_num, 
                                            'ANCHOR_NOT_FOUND', str(e), processing_time,
-                                           kks_found=False, kks_su_found=False)
+                                           kks_found=False, kks_su_found=False, working_area_found=False)
                         add_empty_row_to_csv(csv_file_path, full_path, pdf_filename, page_num)
                         stats['pages_processed'] += 1
                         stats['pages_no_data'] += 1
@@ -222,7 +231,7 @@ def process_single_pdf(pdf_path: str, csv_file_path: str, log_file_path: str) ->
                         processing_time = time.time() - page_start_time
                         log_processing_event(log_file_path, pdf_path, page_num, 
                                            'TABLE_STRUCTURE_ERROR', str(e), processing_time,
-                                           kks_found=False, kks_su_found=False)
+                                           kks_found=False, kks_su_found=False, working_area_found=False)
                         add_empty_row_to_csv(csv_file_path, full_path, pdf_filename, page_num)
                         stats['pages_processed'] += 1
                         stats['pages_no_data'] += 1
@@ -232,7 +241,7 @@ def process_single_pdf(pdf_path: str, csv_file_path: str, log_file_path: str) ->
                         processing_time = time.time() - page_start_time
                         log_processing_event(log_file_path, pdf_path, page_num, 
                                            'TABLE_BOUNDARY_ERROR', str(e), processing_time,
-                                           kks_found=False, kks_su_found=False)
+                                           kks_found=False, kks_su_found=False, working_area_found=False)
                         add_empty_row_to_csv(csv_file_path, full_path, pdf_filename, page_num)
                         stats['pages_processed'] += 1
                         stats['pages_no_data'] += 1
@@ -242,7 +251,7 @@ def process_single_pdf(pdf_path: str, csv_file_path: str, log_file_path: str) ->
                         processing_time = time.time() - page_start_time
                         log_processing_event(log_file_path, pdf_path, page_num, 
                                            'PAGE_ACCESS_ERROR', str(e), processing_time,
-                                           kks_found=False, kks_su_found=False)
+                                           kks_found=False, kks_su_found=False, working_area_found=False)
                         stats['pages_failed'] += 1
                         continue
                 
@@ -254,7 +263,7 @@ def process_single_pdf(pdf_path: str, csv_file_path: str, log_file_path: str) ->
                     processing_time = time.time() - page_start_time
                     log_processing_event(log_file_path, pdf_path, page_num, 
                                        'NO_TABLE_DATA', str(e), processing_time,
-                                       kks_found=kks_found, kks_su_found=kks_su_found)
+                                       kks_found=kks_found, kks_su_found=kks_su_found, working_area_found=working_area_found)
                     add_empty_row_to_csv(csv_file_path, full_path, pdf_filename, page_num)
                     stats['pages_processed'] += 1
                     stats['pages_no_data'] += 1
@@ -264,7 +273,7 @@ def process_single_pdf(pdf_path: str, csv_file_path: str, log_file_path: str) ->
                     processing_time = time.time() - page_start_time
                     log_processing_event(log_file_path, pdf_path, page_num, 
                                        'PARSER_FAILED', str(e), processing_time,
-                                       kks_found=kks_found, kks_su_found=kks_su_found)
+                                       kks_found=kks_found, kks_su_found=kks_su_found, working_area_found=working_area_found)
                     add_empty_row_to_csv(csv_file_path, full_path, pdf_filename, page_num)
                     stats['pages_processed'] += 1
                     stats['pages_no_data'] += 1
@@ -275,7 +284,7 @@ def process_single_pdf(pdf_path: str, csv_file_path: str, log_file_path: str) ->
                     processing_time = time.time() - page_start_time
                     log_processing_event(log_file_path, pdf_path, page_num, 
                                        'CAMELOT_SETUP_ERROR', str(e), processing_time,
-                                       kks_found=kks_found, kks_su_found=kks_su_found)
+                                       kks_found=kks_found, kks_su_found=kks_su_found, working_area_found=working_area_found)
                     stats['pages_failed'] += 1
                     continue
                     
@@ -283,7 +292,7 @@ def process_single_pdf(pdf_path: str, csv_file_path: str, log_file_path: str) ->
                     processing_time = time.time() - page_start_time
                     log_processing_event(log_file_path, pdf_path, page_num, 
                                        'TABLE_CLEANING_ERROR', str(e), processing_time,
-                                       kks_found=kks_found, kks_su_found=kks_su_found)
+                                       kks_found=kks_found, kks_su_found=kks_su_found, working_area_found=working_area_found)
                     stats['pages_failed'] += 1
                     continue
                 
@@ -292,12 +301,13 @@ def process_single_pdf(pdf_path: str, csv_file_path: str, log_file_path: str) ->
                 tables_df.insert(1, 'filename', pdf_filename)
                 tables_df.insert(2, 'page_number', page_num)
 
-                # Add KKS and KKS/SU columns to the table
-                kks_codes, kks_su_codes = kks_codes_and_kks_su_codes
+                # Add KKS, KKS/SU, and working area columns to the table
+                kks_codes, kks_su_codes, working_area_codes = kks_codes_and_kks_su_codes_and_working_area_codes
 
                 # Ensure the lists are represented as full lists in each cell
                 tables_df['KKS'] = [kks_codes] * len(tables_df)
                 tables_df['KKS/SU'] = [kks_su_codes] * len(tables_df)
+                tables_df['WORKING_AREA'] = [working_area_codes] * len(tables_df)
 
                 # Step 4: Save to CSV
                 try:
@@ -315,7 +325,7 @@ def process_single_pdf(pdf_path: str, csv_file_path: str, log_file_path: str) ->
                     processing_time = time.time() - page_start_time
                     log_processing_event(log_file_path, pdf_path, page_num, 
                                        'CSV_SAVE_ERROR', f"Failed to save to CSV: {str(e)}", processing_time,
-                                       kks_found=kks_found, kks_su_found=kks_su_found)
+                                       kks_found=kks_found, kks_su_found=kks_su_found, working_area_found=working_area_found)
                     stats['pages_failed'] += 1
                     continue
                 
@@ -327,7 +337,7 @@ def process_single_pdf(pdf_path: str, csv_file_path: str, log_file_path: str) ->
                                    'SUCCESS', 
                                    f'Table extracted and saved successfully', 
                                    processing_time, rows_extracted, cols_extracted,
-                                   kks_found=kks_found, kks_su_found=kks_su_found)
+                                   kks_found=kks_found, kks_su_found=kks_su_found, working_area_found=working_area_found)
                 
                 stats['pages_processed'] += 1
                 stats['pages_with_tables'] += 1
@@ -341,7 +351,7 @@ def process_single_pdf(pdf_path: str, csv_file_path: str, log_file_path: str) ->
                 error_msg = f"Unexpected error processing page: {str(e)}"
                 log_processing_event(log_file_path, pdf_path, page_num, 
                                    'UNEXPECTED_ERROR', error_msg, processing_time,
-                                   kks_found=False, kks_su_found=False)
+                                   kks_found=False, kks_su_found=False, working_area_found=False)
                 stats['pages_failed'] += 1
                 logging.error(f"Page {page_num}: {error_msg}")
                 continue
@@ -373,7 +383,8 @@ def process_pdf_worker(pdf_path, csv_file_path, log_file_path, lock):
             'pages_no_data': 0,
             'total_rows_extracted': 0,
             'kks_warnings_count': 0,
-            'kks_su_warnings_count': 0
+            'kks_su_warnings_count': 0,
+            'working_area_warnings_count': 0
         }
 
 def main():
@@ -419,7 +430,8 @@ def main():
         'pages_failed': 0,
         'total_rows_extracted': 0,
         'kks_warnings_count': 0,
-        'kks_su_warnings_count': 0
+        'kks_su_warnings_count': 0,
+        'working_area_warnings_count': 0
     }
 
     if args.single_process:
@@ -432,7 +444,7 @@ def main():
                     total_stats['pdfs_processed'] += 1
                     for key in ['total_pages', 'pages_with_tables', 'pages_no_data', 
                                'pages_failed', 'total_rows_extracted', 'kks_warnings_count',
-                               'kks_su_warnings_count']:
+                               'kks_su_warnings_count', 'working_area_warnings_count']:
                         total_stats[key] += stats.get(key, 0)
                 else:
                     total_stats['pdfs_failed'] += 1
@@ -460,7 +472,7 @@ def main():
                         total_stats['pdfs_processed'] += 1
                         for key in ['total_pages', 'pages_with_tables', 'pages_no_data', 
                                    'pages_failed', 'total_rows_extracted', 'kks_warnings_count',
-                                   'kks_su_warnings_count']:
+                                   'kks_su_warnings_count', 'working_area_warnings_count']:
                             total_stats[key] += stats.get(key, 0)
                     else:
                         total_stats['pdfs_failed'] += 1
@@ -483,6 +495,7 @@ def main():
     print(f"Total rows extracted: {total_stats['total_rows_extracted']}")
     print(f"KKS code warnings: {total_stats['kks_warnings_count']}")
     print(f"KKS/SU code warnings: {total_stats['kks_su_warnings_count']}")
+    print(f"Working area code warnings: {total_stats['working_area_warnings_count']}")
     print(f"\nOutput files:")
     print(f"  Tables: {csv_file_path}")
     print(f"  Log: {log_file_path}")

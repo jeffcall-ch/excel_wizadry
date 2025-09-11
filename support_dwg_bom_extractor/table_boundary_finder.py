@@ -91,6 +91,10 @@ class NoKKSSUCodesFoundWarning(KKSCodeWarning):
     """Warning when no KKS/SU codes are found on the page"""
     pass
 
+class NoWorkingAreaCodesFoundWarning(KKSCodeWarning):
+    """Warning when no working area codes are found on the page"""
+    pass
+
 # -----------------------
 # Data Structures
 # -----------------------
@@ -354,26 +358,29 @@ def find_table_content(page_dict: dict, avg_char_length: float, table_bounds: Tu
         raise EmptyTableRegionError("No text content found within calculated table boundaries")
 
 
-def extract_kks_codes_from_page_dict(page_dict: dict) -> Tuple[List[str], List[str]]:
+def extract_kks_codes_from_page_dict(page_dict: dict) -> Tuple[List[str], List[str], List[str]]:
     """
-    Extract KKS codes and KKS codes with "/SU" postfix from a page dictionary.
+    Extract KKS codes, KKS codes with "/SU" postfix, and working area codes from a page dictionary.
     Now returns empty lists and issues warnings instead of raising exceptions.
 
     Args:
         page_dict (dict): The page dictionary containing text blocks.
 
     Returns:
-        tuple: A tuple containing two lists:
+        tuple: A tuple containing three lists:
             - List of KKS codes (empty list if none found).
             - List of KKS codes with "/SU" postfix (empty list if none found).
+            - List of working area codes (empty list if none found).
     """
     import re
 
     kks_pattern = r"\b\d[A-Z]{3}\d{2}BQ\d{3}\b"
     kks_su_pattern = r"\b\d[A-Z]{3}\d{2}BQ\d{3}/SU\b"
+    working_area_pattern = r"\b\d[A-Z]{3}\d{2}RC\d{3}\b"
 
     kks_codes = []
     kks_su_codes = []
+    working_area_codes = []
 
     # Iterate through the text spans in the page dictionary
     for block in page_dict.get("blocks", []):
@@ -387,6 +394,9 @@ def extract_kks_codes_from_page_dict(page_dict: dict) -> Tuple[List[str], List[s
                 # Find all KKS codes with "/SU" postfix in the text
                 kks_su_codes.extend(re.findall(kks_su_pattern, text))
 
+                # Find all working area codes in the text
+                working_area_codes.extend(re.findall(working_area_pattern, text))
+
     # Issue warnings instead of raising exceptions
     if not kks_codes:
         warning_msg = "No KKS codes were found on this page"
@@ -398,7 +408,12 @@ def extract_kks_codes_from_page_dict(page_dict: dict) -> Tuple[List[str], List[s
         warnings.warn(warning_msg, NoKKSSUCodesFoundWarning)
         logging.warning(warning_msg)
 
-    return kks_codes, kks_su_codes
+    if not working_area_codes:
+        warning_msg = "No working area codes were found on this page"
+        warnings.warn(warning_msg, NoWorkingAreaCodesFoundWarning)
+        logging.warning(warning_msg)
+
+    return kks_codes, kks_su_codes, working_area_codes
 
 # Example usage in process_pdf
 def process_pdf(pdf_path: str, anchor_text="POS"):  # Removed search_string parameter
@@ -498,7 +513,7 @@ def get_table_boundaries(pdf_path: str, anchor_text="POS"):
 
 
 
-def get_table_boundaries_for_page(pdf_path: str, page_num: int) -> Tuple[Tuple[float, float, float, float], Tuple[List[str], List[str]]]:
+def get_table_boundaries_for_page(pdf_path: str, page_num: int) -> Tuple[Tuple[float, float, float, float], Tuple[List[str], List[str], List[str]]]:
     """
     Get table boundaries for a specific page using hardcoded "POS" anchor.
     
@@ -509,7 +524,7 @@ def get_table_boundaries_for_page(pdf_path: str, page_num: int) -> Tuple[Tuple[f
     Returns:
         Tuple containing:
             - Table boundaries (x0, y0, x1, y1)
-            - Tuple of (kks_codes_list, kks_su_codes_list)
+            - Tuple of (kks_codes_list, kks_su_codes_list, working_area_codes_list)
         
     Raises:
         PDFFileError: If PDF cannot be opened or processed.
@@ -530,8 +545,8 @@ def get_table_boundaries_for_page(pdf_path: str, page_num: int) -> Tuple[Tuple[f
             page = doc[page_num - 1]  # Convert to 0-based indexing
             page_dict = page.get_text("dict")
 
-            # Get KKS codes and KKS/SU codes as two lists (warnings only, no exceptions)
-            kks_codes_and_kks_su_codes = extract_kks_codes_from_page_dict(page_dict)
+            # Get KKS codes, KKS/SU codes, and working area codes as three lists (warnings only, no exceptions)
+            kks_codes_and_kks_su_codes_and_working_area_codes = extract_kks_codes_from_page_dict(page_dict)
 
             # Use original detect_table_structure function with hardcoded "POS" anchor
             anchor_bbox, text_elements, avg_char_length, table_bounds = detect_table_structure(page_dict, "POS")
@@ -548,7 +563,7 @@ def get_table_boundaries_for_page(pdf_path: str, page_num: int) -> Tuple[Tuple[f
                 raise TableBoundaryCalculationError(f"Invalid table boundary coordinates on page {page_num}: left={x0}, top={y0}, right={x1}, bottom={y1}")
             
             logging.debug(f"Successfully detected table boundaries on page {page_num}: {table_boundaries}")
-            return table_boundaries, kks_codes_and_kks_su_codes
+            return table_boundaries, kks_codes_and_kks_su_codes_and_working_area_codes
             
     except fitz.FileDataError as e:
         raise PDFCorruptedError(f"Cannot open PDF file {pdf_path}: {str(e)}")
