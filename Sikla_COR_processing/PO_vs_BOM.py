@@ -7,9 +7,9 @@ from openpyxl.styles import PatternFill
 
 def clean_and_convert_baseline(df):
     """Clean and convert baseline tab data according to specifications"""
-    # Strip whitespace from all text columns
+    # Strip whitespace from all text columns (except original_position)
     for col in df.columns:
-        if df[col].dtype == 'object':
+        if df[col].dtype == 'object' and col != 'original_position':
             df[col] = df[col].astype(str).str.strip()
             df[col] = df[col].replace('nan', np.nan)
     
@@ -60,6 +60,31 @@ def infer_item_category(description, baseline_df):
     
     # Default category if no match found
     return 'Unknown'
+
+def find_insertion_position(new_item_category, new_corrosion_category, baseline_df):
+    """Find the best position to insert a new item based on category groupings"""
+    # Look for items with same category and corrosion category
+    exact_matches = baseline_df[
+        (baseline_df['Item Category'] == new_item_category) & 
+        (baseline_df['Corrosion category'] == new_corrosion_category)
+    ]
+    
+    if not exact_matches.empty:
+        # Insert after the last item of the same category/corrosion combination
+        max_position = exact_matches['original_position'].max()
+        return max_position + 0.1
+    
+    # Look for items with same category but different corrosion
+    category_matches = baseline_df[baseline_df['Item Category'] == new_item_category]
+    
+    if not category_matches.empty:
+        # Insert after the last item of the same category
+        max_position = category_matches['original_position'].max()
+        return max_position + 0.1
+    
+    # No category match found, append at the end
+    max_position = baseline_df['original_position'].max()
+    return max_position + 1.0
 
 def check_baseline_duplicates(baseline_df):
     """Check for duplicate item numbers within same corrosion category in baseline"""
@@ -113,9 +138,9 @@ def check_update_duplicates(update_df):
 def process_po_vs_bom(baseline_df, update_df):
     """Process the comparison between baseline and update data"""
     results = []
-    new_items = []  # Collect new items separately for proper insertion
+    new_item_counter = 0  # Counter for new items to ensure unique positions
     
-    # Process each baseline item
+    # Process each baseline item in original order
     for _, baseline_row in baseline_df.iterrows():
         result_row = baseline_row.copy()
         
@@ -138,15 +163,20 @@ def process_po_vs_bom(baseline_df, update_df):
             # Item not found in update - mark as deleted
             result_row['Qty Difference'] = -baseline_row['Qty PO'] if pd.notna(baseline_row['Qty PO']) else 0
             result_row['Deleted'] = True
+            results.append(result_row)
         else:
             # Handle multiple matches (special items)
             if len(matches) > 1:
                 # Multiple matches - handle special items
-                for _, match in matches.iterrows():
+                for idx, (_, match) in enumerate(matches.iterrows()):
                     special_row = result_row.copy()
                     special_row['Qty BOM update'] = match['Qty']
                     special_row['Total Weight [kg] BOM update'] = match['Total Weight [kg]']
                     special_row['Remarks BOM update'] = match['Remarks']
+                    
+                    # Adjust position for multiple matches to maintain order
+                    if idx > 0:
+                        special_row['original_position'] = baseline_row['original_position'] + (idx * 0.01)
                     
                     # Handle special remarks
                     if pd.notna(match['Remarks']) and 'special' in str(match['Remarks']).lower():
@@ -173,12 +203,6 @@ def process_po_vs_bom(baseline_df, update_df):
                     result_row['Qty Difference'] = match['Qty'] - baseline_row['Qty PO']
                 
                 results.append(result_row)
-        
-        # Add single match or deleted item if not already added
-        if matches.empty or len(matches) == 1:
-            if len(matches) == 0:
-                # Only add deleted items once
-                results.append(result_row)
     
     # Find new items in update that are not in baseline
     for _, update_row in update_df.iterrows():
@@ -203,6 +227,15 @@ def process_po_vs_bom(baseline_df, update_df):
             new_row['Remarks'] = np.nan
             new_row['Corrosion category'] = update_row['Corrosion Category']
             
+            # Find the best insertion position
+            insertion_pos = find_insertion_position(
+                new_row['Item Category'], 
+                new_row['Corrosion category'], 
+                baseline_df
+            )
+            new_row['original_position'] = insertion_pos + (new_item_counter * 0.001)
+            new_item_counter += 1
+            
             # Fill update columns
             new_row['Qty BOM update'] = update_row['Qty']
             new_row['Total Weight [kg] BOM update'] = update_row['Total Weight [kg]']
@@ -220,73 +253,21 @@ def process_po_vs_bom(baseline_df, update_df):
             
             results.append(new_row)
     
-    # Convert results to DataFrame and sort appropriately
+    # Convert results to DataFrame and sort by original position to maintain baseline order
     results_df = pd.DataFrame(results)
     
-    # Sort by corrosion category, item category, then item number for proper grouping
-    results_df = results_df.sort_values(['Corrosion category', 'Item Category', 'Item Number']).reset_index(drop=True)
+    # Sort by original position to preserve baseline order with strategic insertions
+    results_df = results_df.sort_values('original_position').reset_index(drop=True)
     
     return results_df
 
-def insert_new_items_by_category(results_df, new_items):
-    """Insert new items at the bottom of their respective Item Category and Corrosion Category groups"""
-    # Convert new_items to DataFrame
-    new_items_df = pd.DataFrame(new_items)
-    
-    # Sort results by Item Category and Corrosion Category to group them
-    results_df = results_df.sort_values(['Item Category', 'Corrosion category', 'Item Number']).reset_index(drop=True)
-    
-    # Group new items by their category and corrosion category
-    new_items_grouped = new_items_df.groupby(['Item Category', 'Corrosion category'])
-    
-    final_results = []
-    current_category = None
-    current_corrosion = None
-    
-    # Process each row in the sorted results
-    for idx, row in results_df.iterrows():
-        row_category = row['Item Category']
-        row_corrosion = row['Corrosion category']
-        
-        # Check if we're moving to a new category/corrosion combination
-        if (current_category != row_category or current_corrosion != row_corrosion):
-            # Insert any new items that belong to the previous category before moving on
-            if current_category is not None and current_corrosion is not None:
-                if (current_category, current_corrosion) in new_items_grouped.groups:
-                    new_group = new_items_grouped.get_group((current_category, current_corrosion))
-                    for _, new_row in new_group.iterrows():
-                        final_results.append(new_row)
-            
-            current_category = row_category
-            current_corrosion = row_corrosion
-        
-        # Add the current baseline/existing row
-        final_results.append(row)
-    
-    # Add any remaining new items for the last category
-    if current_category is not None and current_corrosion is not None:
-        if (current_category, current_corrosion) in new_items_grouped.groups:
-            new_group = new_items_grouped.get_group((current_category, current_corrosion))
-            for _, new_row in new_group.iterrows():
-                final_results.append(new_row)
-    
-    # Handle new items with categories that don't exist in baseline
-    for (category, corrosion), group in new_items_grouped:
-        # Check if this combination was already processed
-        existing_combo = results_df[
-            (results_df['Item Category'] == category) & 
-            (results_df['Corrosion category'] == corrosion)
-        ]
-        
-        if existing_combo.empty:
-            # This is a completely new category/corrosion combination
-            for _, new_row in group.iterrows():
-                final_results.append(new_row)
-    
-    return pd.DataFrame(final_results).reset_index(drop=True)
-
 def save_to_excel_with_formatting(df, filename):
     """Save DataFrame to Excel with conditional formatting, filters, and freeze panes"""
+    # Create a copy and remove the original_position column for output
+    output_df = df.copy()
+    if 'original_position' in output_df.columns:
+        output_df = output_df.drop('original_position', axis=1)
+    
     # Create workbook and worksheet
     wb = Workbook()
     ws = wb.active
@@ -297,12 +278,12 @@ def save_to_excel_with_formatting(df, filename):
     blue_fill = PatternFill(start_color="CCE5FF", end_color="CCE5FF", fill_type="solid")  # Light blue
     
     # Write headers
-    headers = df.columns.tolist()
+    headers = output_df.columns.tolist()
     for col_idx, header in enumerate(headers, 1):
         ws.cell(row=1, column=col_idx, value=header)
     
     # Write data with formatting
-    for row_idx, (_, row) in enumerate(df.iterrows(), 2):
+    for row_idx, (_, row) in enumerate(output_df.iterrows(), 2):
         # Determine row color based on New/Deleted status
         is_new = row.get('New', False)
         is_deleted = row.get('Deleted', False)
@@ -351,6 +332,10 @@ def main():
         
         print(f"Baseline data: {baseline_df.shape[0]} rows")
         print(f"Update data: {update_df.shape[0]} rows")
+        
+        # Add original position tracking before cleaning
+        print("Adding position tracking...")
+        baseline_df['original_position'] = range(len(baseline_df))
         
         # Clean and convert data
         print("Cleaning and converting data...")
