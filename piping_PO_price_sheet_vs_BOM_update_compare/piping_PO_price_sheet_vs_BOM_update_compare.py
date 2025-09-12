@@ -386,6 +386,34 @@ def compare_po_vs_bom(po_file_path, bom_file_path, output_dir=None):
                             for c in range(1, ws.max_column + 1):
                                 ws.cell(row=row, column=c).fill = red_fill
 
+            # Format columns F..N (6..14) as numeric with two decimals
+            try:
+                num_format = '#,##0.00'
+                first_data_row = 2
+                for col_idx in range(6, 15):  # F=6 .. N=14
+                    if col_idx > ws.max_column:
+                        break
+                    for row in range(first_data_row, ws.max_row + 1):
+                        cell = ws.cell(row=row, column=col_idx)
+                        # Attempt to convert cell value to float if possible
+                        if cell.value is None:
+                            continue
+                        try:
+                            # If already numeric, just set format
+                            if isinstance(cell.value, (int, float)):
+                                cell.number_format = num_format
+                            else:
+                                # Try to coerce string to float
+                                v = str(cell.value).replace(',', '')
+                                fv = float(v)
+                                cell.value = fv
+                                cell.number_format = num_format
+                        except Exception:
+                            # leave as-is if conversion fails
+                            pass
+            except Exception:
+                pass
+
             # Save workbook
             try:
                 wb.save(xlsx_path)
