@@ -1,0 +1,304 @@
+<?xml version='1.0' encoding='utf-8'?>
+<exchange xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://download.autodesk.com/us/navisworks/schemas/nw-exchange-12.0.xsd" units="m" filename="" filepath="">
+  <findspec mode="all" disjoint="0">
+    <conditions>
+      <condition test="contains" flags="10">
+        <property>
+          <name internal="LcOaSceneBaseUserName">Name</name>
+        </property>
+        <value>
+          <data type="wstring">0EGB15BR110</data>
+        </value>
+      </condition>
+      <condition test="contains" flags="74">
+        <property>
+          <name internal="LcOaSceneBaseUserName">Name</name>
+        </property>
+        <value>
+          <data type="wstring">0EGB15BR710</data>
+        </value>
+      </condition>
+      <condition test="contains" flags="74">
+        <property>
+          <name internal="LcOaSceneBaseUserName">Name</name>
+        </property>
+        <value>
+          <data type="wstring">0EGC01BR100</data>
+        </value>
+      </condition>
+      <condition test="contains" flags="74">
+        <property>
+          <name internal="LcOaSceneBaseUserName">Name</name>
+        </property>
+        <value>
+          <data type="wstring">0EGC01BR550</data>
+        </value>
+      </condition>
+      <condition test="contains" flags="74">
+        <property>
+          <name internal="LcOaSceneBaseUserName">Name</name>
+        </property>
+        <value>
+          <data type="wstring">0EGC02BR100</data>
+        </value>
+      </condition>
+      <condition test="contains" flags="74">
+        <property>
+          <name internal="LcOaSceneBaseUserName">Name</name>
+        </property>
+        <value>
+          <data type="wstring">0EGC02BR550</data>
+        </value>
+      </condition>
+      <condition test="contains" flags="74">
+        <property>
+          <name internal="LcOaSceneBaseUserName">Name</name>
+        </property>
+        <value>
+          <data type="wstring">0EGC02BR700</data>
+        </value>
+      </condition>
+      <condition test="contains" flags="74">
+        <property>
+          <name internal="LcOaSceneBaseUserName">Name</name>
+        </property>
+        <value>
+          <data type="wstring">0EGC10BR110</data>
+        </value>
+      </condition>
+      <condition test="contains" flags="74">
+        <property>
+          <name internal="LcOaSceneBaseUserName">Name</name>
+        </property>
+        <value>
+          <data type="wstring">0EGC20BR540</data>
+        </value>
+      </condition>
+      <condition test="contains" flags="74">
+        <property>
+          <name internal="LcOaSceneBaseUserName">Name</name>
+        </property>
+        <value>
+          <data type="wstring">0EGC51BR540</data>
+        </value>
+      </condition>
+      <condition test="contains" flags="74">
+        <property>
+          <name internal="LcOaSceneBaseUserName">Name</name>
+        </property>
+        <value>
+          <data type="wstring">0EGC52BR540</data>
+        </value>
+      </condition>
+      <condition test="contains" flags="74">
+        <property>
+          <name internal="LcOaSceneBaseUserName">Name</name>
+        </property>
+        <value>
+          <data type="wstring">0EGC60BR110</data>
+        </value>
+      </condition>
+      <condition test="contains" flags="74">
+        <property>
+          <name internal="LcOaSceneBaseUserName">Name</name>
+        </property>
+        <value>
+          <data type="wstring">0EGC60BR530</data>
+        </value>
+      </condition>
+      <condition test="contains" flags="74">
+        <property>
+          <name internal="LcOaSceneBaseUserName">Name</name>
+        </property>
+        <value>
+          <data type="wstring">0EGD20BR110</data>
+        </value>
+      </condition>
+      <condition test="contains" flags="74">
+        <property>
+          <name internal="LcOaSceneBaseUserName">Name</name>
+        </property>
+        <value>
+          <data type="wstring">0EGD20BR120</data>
+        </value>
+      </condition>
+      <condition test="contains" flags="74">
+        <property>
+          <name internal="LcOaSceneBaseUserName">Name</name>
+        </property>
+        <value>
+          <data type="wstring">0EGD20BR610</data>
+        </value>
+      </condition>
+      <condition test="contains" flags="74">
+        <property>
+          <name internal="LcOaSceneBaseUserName">Name</name>
+        </property>
+        <value>
+          <data type="wstring">0EGD20BR710</data>
+        </value>
+      </condition>
+      <condition test="contains" flags="74">
+        <property>
+          <name internal="LcOaSceneBaseUserName">Name</name>
+        </property>
+        <value>
+          <data type="wstring">0EGD60BR110</data>
+        </value>
+      </condition>
+      <condition test="contains" flags="74">
+        <property>
+          <name internal="LcOaSceneBaseUserName">Name</name>
+        </property>
+        <value>
+          <data type="wstring">0EGD60BR112</data>
+        </value>
+      </condition>
+      <condition test="contains" flags="74">
+        <property>
+          <name internal="LcOaSceneBaseUserName">Name</name>
+        </property>
+        <value>
+          <data type="wstring">0EGD60BR120</data>
+        </value>
+      </condition>
+      <condition test="contains" flags="74">
+        <property>
+          <name internal="LcOaSceneBaseUserName">Name</name>
+        </property>
+        <value>
+          <data type="wstring">0EGD60BR610</data>
+        </value>
+      </condition>
+      <condition test="contains" flags="74">
+        <property>
+          <name internal="LcOaSceneBaseUserName">Name</name>
+        </property>
+        <value>
+          <data type="wstring">0EGD60BR620</data>
+        </value>
+      </condition>
+      <condition test="contains" flags="74">
+        <property>
+          <name internal="LcOaSceneBaseUserName">Name</name>
+        </property>
+        <value>
+          <data type="wstring">0EGD60BR630</data>
+        </value>
+      </condition>
+      <condition test="contains" flags="74">
+        <property>
+          <name internal="LcOaSceneBaseUserName">Name</name>
+        </property>
+        <value>
+          <data type="wstring">0EGD60BR640</data>
+        </value>
+      </condition>
+      <condition test="contains" flags="74">
+        <property>
+          <name internal="LcOaSceneBaseUserName">Name</name>
+        </property>
+        <value>
+          <data type="wstring">0EGD60BR710</data>
+        </value>
+      </condition>
+      <condition test="contains" flags="74">
+        <property>
+          <name internal="LcOaSceneBaseUserName">Name</name>
+        </property>
+        <value>
+          <data type="wstring">1HJF10BR100</data>
+        </value>
+      </condition>
+      <condition test="contains" flags="74">
+        <property>
+          <name internal="LcOaSceneBaseUserName">Name</name>
+        </property>
+        <value>
+          <data type="wstring">1HJF10BR610</data>
+        </value>
+      </condition>
+      <condition test="contains" flags="74">
+        <property>
+          <name internal="LcOaSceneBaseUserName">Name</name>
+        </property>
+        <value>
+          <data type="wstring">1HJF10BR700</data>
+        </value>
+      </condition>
+      <condition test="contains" flags="74">
+        <property>
+          <name internal="LcOaSceneBaseUserName">Name</name>
+        </property>
+        <value>
+          <data type="wstring">1HJF20BR100</data>
+        </value>
+      </condition>
+      <condition test="contains" flags="74">
+        <property>
+          <name internal="LcOaSceneBaseUserName">Name</name>
+        </property>
+        <value>
+          <data type="wstring">1HJF20BR610</data>
+        </value>
+      </condition>
+      <condition test="contains" flags="74">
+        <property>
+          <name internal="LcOaSceneBaseUserName">Name</name>
+        </property>
+        <value>
+          <data type="wstring">1HJF20BR700</data>
+        </value>
+      </condition>
+      <condition test="contains" flags="74">
+        <property>
+          <name internal="LcOaSceneBaseUserName">Name</name>
+        </property>
+        <value>
+          <data type="wstring">2HJF10BR100</data>
+        </value>
+      </condition>
+      <condition test="contains" flags="74">
+        <property>
+          <name internal="LcOaSceneBaseUserName">Name</name>
+        </property>
+        <value>
+          <data type="wstring">2HJF10BR610</data>
+        </value>
+      </condition>
+      <condition test="contains" flags="74">
+        <property>
+          <name internal="LcOaSceneBaseUserName">Name</name>
+        </property>
+        <value>
+          <data type="wstring">2HJF10BR700</data>
+        </value>
+      </condition>
+      <condition test="contains" flags="74">
+        <property>
+          <name internal="LcOaSceneBaseUserName">Name</name>
+        </property>
+        <value>
+          <data type="wstring">2HJF20BR100</data>
+        </value>
+      </condition>
+      <condition test="contains" flags="74">
+        <property>
+          <name internal="LcOaSceneBaseUserName">Name</name>
+        </property>
+        <value>
+          <data type="wstring">2HJF20BR610</data>
+        </value>
+      </condition>
+      <condition test="contains" flags="74">
+        <property>
+          <name internal="LcOaSceneBaseUserName">Name</name>
+        </property>
+        <value>
+          <data type="wstring">2HJF20BR700</data>
+        </value>
+      </condition>
+    </conditions>
+    <locator>/</locator>
+  </findspec>
+</exchange>
