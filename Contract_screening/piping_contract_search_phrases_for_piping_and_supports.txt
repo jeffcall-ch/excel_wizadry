@@ -1,0 +1,177 @@
+Category	Keyword
+General Piping & Scope	piping
+General Piping & Scope	general piping
+General Piping & Scope	piping system
+General Piping & Scope	piping layout
+General Piping & Scope	piping installation
+General Piping & Scope	piping scope
+General Piping & Scope	interconnection
+General Piping & Scope	interface
+General Piping & Scope	tie-in
+General Piping & Scope	battery limit
+Supports & Hangers	pipe support
+Supports & Hangers	pipe hanger
+Supports & Hangers	spring support
+Supports & Hangers	anchor support
+Supports & Hangers	pipe rack
+Materials & Components	piping material
+Materials & Components	valves
+Materials & Components	flanges
+Materials & Components	fittings
+Materials & Components	gaskets
+Materials & Components	bolts
+Materials & Components	nuts
+Materials & Components	expansion joint
+Fabrication & Welding	fabrication
+Fabrication & Welding	welding
+Fabrication & Welding	WPS
+Fabrication & Welding	PQR
+Fabrication & Welding	NDT
+Fabrication & Welding	hydrotest
+Fabrication & Welding	pressure test
+Standards & Codes	ASME B31.1
+Standards & Codes	ASME B31.3
+Standards & Codes	EN 13480
+Standards & Codes	PED
+Standards & Codes	ISO 9001
+Standards & Codes	ISO 14001
+Standards & Codes	ISO 45001
+BoP & Utility Systems	BoP
+BoP & Utility Systems	balance of plant
+BoP & Utility Systems	utility piping
+BoP & Utility Systems	compressed air
+BoP & Utility Systems	cooling water
+BoP & Utility Systems	demineralized water
+BoP & Utility Systems	potable water
+BoP & Utility Systems	fire water
+BoP & Utility Systems	fuel oil
+BoP & Utility Systems	condensate
+BoP & Utility Systems	steam tracing
+Quality & Inspection	QA/QC
+Quality & Inspection	inspection
+Quality & Inspection	test pack
+Quality & Inspection	punch list
+Quality & Inspection	flushing
+Quality & Inspection	cleaning
+Commissioning & Maintenance	commissioning
+Commissioning & Maintenance	pre-commissioning
+Commissioning & Maintenance	start-up
+Commissioning & Maintenance	O&M manual
+Commissioning & Maintenance	spare parts
+General Piping & Scope	piping
+General Piping & Scope	general piping
+General Piping & Scope	piping system
+General Piping & Scope	piping layout
+General Piping & Scope	piping installation
+General Piping & Scope	piping scope
+General Piping & Scope	interconnection
+General Piping & Scope	interface
+General Piping & Scope	tie-in
+General Piping & Scope	battery limit
+General Piping & Scope	process piping
+General Piping & Scope	utility lines
+General Piping & Scope	service piping
+General Piping & Scope	piping network
+General Piping & Scope	piping routing
+General Piping & Scope	piping isometric
+General Piping & Scope	piping drawing
+General Piping & Scope	piping class
+General Piping & Scope	line list
+Supports & Hangers	pipe support
+Supports & Hangers	pipe hanger
+Supports & Hangers	spring support
+Supports & Hangers	anchor support
+Supports & Hangers	pipe rack
+Supports & Hangers	hanger rod
+Supports & Hangers	pipe clamp
+Supports & Hangers	pipe shoe
+Supports & Hangers	pipe guide
+Supports & Hangers	support bracket
+Supports & Hangers	trapeze support
+Supports & Hangers	spring hanger
+Supports & Hangers	snubber
+Materials & Components	piping material
+Materials & Components	valves
+Materials & Components	flanges
+Materials & Components	fittings
+Materials & Components	gaskets
+Materials & Components	bolts
+Materials & Components	nuts
+Materials & Components	expansion joint
+Materials & Components	pipe spool
+Materials & Components	elbows
+Materials & Components	tees
+Materials & Components	reducers
+Materials & Components	couplings
+Materials & Components	nipples
+Materials & Components	strainers
+Materials & Components	spectacle blind
+Materials & Components	orifice plate
+Fabrication & Welding	fabrication
+Fabrication & Welding	welding
+Fabrication & Welding	WPS
+Fabrication & Welding	PQR
+Fabrication & Welding	NDT
+Fabrication & Welding	hydrotest
+Fabrication & Welding	pressure test
+Fabrication & Welding	weld map
+Fabrication & Welding	weld log
+Fabrication & Welding	weld inspection
+Fabrication & Welding	PWHT
+Fabrication & Welding	hardness test
+Fabrication & Welding	PMI
+Standards & Codes	ASME B31.1
+Standards & Codes	ASME B31.3
+Standards & Codes	EN 13480
+Standards & Codes	EN 10204
+Standards & Codes	EN 1092
+Standards & Codes	EN 10216
+Standards & Codes	EN 10217
+Standards & Codes	EN 10253
+Standards & Codes	EN 10255
+Standards & Codes	EN 10220
+Standards & Codes	EN 10224
+Standards & Codes	EN 10226
+Standards & Codes	EN 10289
+Standards & Codes	EN 10305
+Standards & Codes	PED
+Standards & Codes	ISO 9001
+Standards & Codes	ISO 14001
+Standards & Codes	ISO 45001
+BoP & Utility Systems	BoP
+BoP & Utility Systems	balance of plant
+BoP & Utility Systems	utility piping
+BoP & Utility Systems	compressed air
+BoP & Utility Systems	cooling water
+BoP & Utility Systems	demineralized water
+BoP & Utility Systems	potable water
+BoP & Utility Systems	fire water
+BoP & Utility Systems	fuel oil
+BoP & Utility Systems	condensate
+BoP & Utility Systems	steam tracing
+BoP & Utility Systems	lube oil piping
+BoP & Utility Systems	seal oil piping
+BoP & Utility Systems	nitrogen
+BoP & Utility Systems	instrument tubing
+BoP & Utility Systems	condensate return
+BoP & Utility Systems	blowdown line
+Quality & Inspection	QA/QC
+Quality & Inspection	inspection
+Quality & Inspection	test pack
+Quality & Inspection	punch list
+Quality & Inspection	flushing
+Quality & Inspection	cleaning
+Quality & Inspection	leak test
+Quality & Inspection	pneumatic test
+Quality & Inspection	hydrostatic test
+Quality & Inspection	pressure relief
+Quality & Inspection	calibration
+Commissioning & Maintenance	commissioning
+Commissioning & Maintenance	pre-commissioning
+Commissioning & Maintenance	start-up
+Commissioning & Maintenance	O&M manual
+Commissioning & Maintenance	spare parts
+Commissioning & Maintenance	flushing and blowing
+Commissioning & Maintenance	chemical cleaning
+Commissioning & Maintenance	drying
+Commissioning & Maintenance	inerting
