@@ -33,7 +33,8 @@ class Colors:
     BLUE = "0000FF"      # RGB(0, 0, 255) - Blue background
     GREEN = "00FF00"     # RGB(0, 255, 0) - Green background  
     YELLOW = "FFFF00"    # RGB(255, 255, 0) - Yellow background
-    RED = "FF0000"       # RGB(255, 0, 0) - Red font color
+    RED = "FFC0C0"       # RGB(255, 192, 192) - Light red/pink for deleted items
+    LIGHT_BLUE = "C0C0FF"  # RGB(192, 192, 255) - Light blue/cyan (&HC0C0FF from VBA)
 
 
 @dataclass
@@ -174,7 +175,7 @@ class ExcelTableComparator:
         base_key_to_idx = {row['_unique_key']: idx for idx, row in base_df.iterrows()}
         
         # Set base background color for all cells (VBA: UsedRange.Interior.Color)
-        base_color = Colors.BLUE if is_old_base else Colors.GREEN
+        base_color = Colors.LIGHT_BLUE if is_old_base else Colors.GREEN
         for row_idx in range(len(result.data)):
             for col_name in self.column_names:
                 result.colors[(row_idx, col_name)] = base_color
@@ -264,39 +265,50 @@ class ExcelTableComparator:
                            is_old_base: bool) -> Tuple[str, str]:
         """
         Analyze cell change and return change type with color (matches VBA change logic).
+        VBA logic depends on which table is the base!
         """
         # Both empty - no change
         if not base_value and not compare_value:
             return "No Change", ""
         
-        # Value added (was empty, now has value)
+        # Base cell is empty AND compare cell has value
         if not base_value and compare_value:
-            return "Added", Colors.YELLOW
+            if is_old_base:  # OLD is base, NEW has value = Added to NEW
+                return "Added", Colors.GREEN  # "N"
+            else:  # NEW is base, OLD has value = Deleted from NEW  
+                return "Deleted", Colors.RED  # "D"
         
-        # Value deleted (had value, now empty)
+        # Base cell has value AND compare cell is empty
         if base_value and not compare_value:
-            return "Deleted", Colors.YELLOW
+            if is_old_base:  # OLD is base, NEW empty = Deleted in NEW
+                return "Deleted", Colors.RED  # "D"
+            else:  # NEW is base, OLD empty = Added in NEW
+                return "Added", Colors.GREEN  # "N"
         
-        # Value changed (different non-empty values)
+        # Both have different non-empty values = Changed
         if base_value != compare_value:
-            return "Changed", Colors.YELLOW
+            return "Changed", Colors.YELLOW  # "Ch"
         
         return "No Change", ""
     
     def _combine_change_markers(self, changes: List[str]) -> str:
-        """Combine multiple change types into a single marker."""
-        unique_changes = list(set(changes))
+        """Combine multiple change types into descriptive text."""
+        unique_changes = set(changes)
+        unique_changes.discard("No Change")
         
-        if len(unique_changes) == 1:
-            return unique_changes[0]
+        if not unique_changes:
+            return ""
         
-        # Multiple change types - create combined marker
-        priority_order = ["Changed", "Added", "Deleted"]
-        for change_type in priority_order:
-            if change_type in unique_changes:
-                return change_type
-        
-        return "Changed"
+        # Convert to descriptive text
+        descriptions = []
+        if "Deleted" in unique_changes:
+            descriptions.append("Deleted")
+        if "Changed" in unique_changes:
+            descriptions.append("Changed") 
+        if "Added" in unique_changes:
+            descriptions.append("Added")
+            
+        return ", ".join(descriptions)
     
     def generate_excel_output(self, new_base_result: ComparisonResult) -> None:
         """Generate Excel output file with comparison results."""
@@ -335,20 +347,15 @@ class ExcelTableComparator:
     
     def _format_header_row(self, worksheet, is_old_base: bool) -> None:
         """Format the header row with title and legend."""
-        # Main title
-        base_text = self._get_localized_text("OLD", "ALT") if is_old_base else self._get_localized_text("NEW", "NEU")
-        title = f"Comparison, base is the {base_text} table"
-        worksheet.cell(1, 2, title)
+        # Clean header row with only the three change type labels
+        worksheet.cell(1, 4, self._get_localized_text("Changed", "Geändert"))
+        worksheet.cell(1, 5, self._get_localized_text("Added", "Hinzugefügt"))  
+        worksheet.cell(1, 6, self._get_localized_text("Deleted", "Gelöscht"))
         
-        # Legend
-        worksheet.cell(1, 5, self._get_localized_text("Changed", "Geändert"))
-        worksheet.cell(1, 6, self._get_localized_text("Added", "Hinzugefügt"))
-        worksheet.cell(1, 7, self._get_localized_text("Deleted", "Gelöscht"))
-        
-        # Apply legend colors
-        worksheet.cell(1, 5).fill = PatternFill(start_color=Colors.YELLOW, end_color=Colors.YELLOW, fill_type='solid')
-        worksheet.cell(1, 6).fill = PatternFill(start_color=Colors.YELLOW, end_color=Colors.YELLOW, fill_type='solid')
-        worksheet.cell(1, 7).fill = PatternFill(start_color=Colors.YELLOW, end_color=Colors.YELLOW, fill_type='solid')
+        # Apply background colors to match the change types
+        worksheet.cell(1, 4).fill = PatternFill(start_color=Colors.YELLOW, end_color=Colors.YELLOW, fill_type='solid')
+        worksheet.cell(1, 5).fill = PatternFill(start_color=Colors.GREEN, end_color=Colors.GREEN, fill_type='solid')
+        worksheet.cell(1, 6).fill = PatternFill(start_color=Colors.RED, end_color=Colors.RED, fill_type='solid')
     
     def _write_data_headers(self, worksheet) -> None:
         """Write column headers in row 2."""
