@@ -153,6 +153,10 @@ class ExcelTableComparator:
         
         # NEW base comparison
         new_base_result = self._compare_single_pass(new_with_keys, old_with_keys, is_old_base=False)
+        
+        # Post-processing: Check for rows where all cells are green (completely new rows)
+        self._post_process_all_green_rows(new_base_result)
+        
         return new_base_result
     
     def _compare_single_pass(self, base_df: pd.DataFrame, compare_df: pd.DataFrame,
@@ -237,6 +241,36 @@ class ExcelTableComparator:
                 result.markers[base_idx] = self._combine_change_markers(changes_in_row)
         
         return result
+    
+    def _post_process_all_green_rows(self, result: ComparisonResult) -> None:
+        """
+        Post-processing step: If all cells in a row are green (completely new row),
+        then mark the entire row as 'Added' in the change marker column.
+        """
+        self.logger.info("Post-processing: Checking for rows with all green cells...")
+        
+        for row_idx in range(len(result.data)):
+            # Check if all cells in this row have green background
+            all_cells_green = True
+            cells_with_colors = 0
+            
+            for col_name in self.column_names:
+                color_key = (row_idx, col_name)
+                if color_key in result.colors:
+                    cells_with_colors += 1
+                    if result.colors[color_key] != Colors.GREEN:
+                        all_cells_green = False
+                        break
+                else:
+                    # If a cell has no color, it's not green
+                    all_cells_green = False
+                    break
+            
+            # If all cells in the row are green, mark the row as "Added"
+            if all_cells_green and cells_with_colors == len(self.column_names):
+                added_text = self._get_localized_text("Added", "Hinzugefügt")
+                result.markers[row_idx] = added_text
+                self.logger.debug(f"Row {row_idx}: All cells green -> marked as '{added_text}'")
     
     def _get_cell_text_value_fast(self, value) -> str:
         """Fast cell value to text conversion (optimized version)."""
