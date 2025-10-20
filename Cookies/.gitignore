@@ -1,0 +1,6 @@
+# Sensitive cookie data - DO NOT COMMIT
+raw_cookie.txt
+cookies.txt
+
+# But keep the empty template for reference
+!raw_cookie.txt.template
