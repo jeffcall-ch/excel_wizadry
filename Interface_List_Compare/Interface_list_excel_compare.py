@@ -131,6 +131,9 @@ class ExcelTableComparator:
         self.old_data = self._remove_added_deleted_rows_sections(self.old_data)
         self.new_data = self._remove_added_deleted_rows_sections(self.new_data)
         
+        # Enrich NEW data with status columns from OLD data if missing
+        self.new_data, self.old_data = self._enrich_new_with_status_columns(self.old_data, self.new_data)
+        
         # Get column names (assuming both tables have same structure)
         self.column_names = list(self.new_data.columns)
         
@@ -184,6 +187,145 @@ class ExcelTableComparator:
             df = df.iloc[:first_empty_idx].copy()
         
         return df
+    
+    def _enrich_new_with_status_columns(self, old_df: pd.DataFrame, new_df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
+        """
+        Enrich NEW data with status columns from OLD data if they are missing in NEW.
+        
+        Status columns are:
+        - "PIPEN - Name\n[Family, Given]"
+        - "PIPEN - Comment\n[text]"
+        - "PIPEN - Date\n[dd/mm/yyyy]"
+        
+        These columns contain engineer status records that should be preserved 
+        when NEW data is a fresh database export without status tracking.
+        
+        Args:
+            old_df: OLD DataFrame (may contain status columns)
+            new_df: NEW DataFrame (may be missing status columns)
+            
+        Returns:
+            Tuple of (enriched_new_df, updated_old_df) with matching column structure
+        """
+        # Define status column names (with newline characters as they appear in Excel)
+        status_columns = [
+            "PIPEN - Name\n[Family, Given]",
+            "PIPEN - Comment\n[text]",
+            "PIPEN - Date\n[dd/mm/yyyy]"
+        ]
+        
+        # Check if Interface No. column exists in both dataframes
+        if 'Interface No.' not in old_df.columns or 'Interface No.' not in new_df.columns:
+            self.logger.warning("Interface No. column missing - cannot enrich status columns")
+            return new_df
+        
+        # Check which status columns are missing in NEW but present in OLD
+        missing_in_new = []
+        for col in status_columns:
+            if col in old_df.columns and col not in new_df.columns:
+                missing_in_new.append(col)
+        
+        # If no status columns are missing, return both DataFrames as-is
+        if not missing_in_new:
+            self.logger.info("All status columns present in NEW data - no enrichment needed")
+            return new_df, old_df
+        
+        self.logger.info(f"Status columns missing in NEW: {missing_in_new}")
+        self.logger.info("Enriching NEW data with status values from OLD...")
+        
+        # Create a copy to avoid modifying original
+        enriched_new = new_df.copy()
+        
+        # Add empty status columns to NEW
+        for col in missing_in_new:
+            enriched_new[col] = None
+        
+        # Create lookup dictionary: Interface No. -> list of row indices in OLD
+        old_interface_to_indices = defaultdict(list)
+        for idx, interface_no in enumerate(old_df['Interface No.']):
+            if pd.notna(interface_no) and str(interface_no).strip() != '':
+                old_interface_to_indices[interface_no].append(idx)
+        
+        # Track statistics
+        enriched_count = 0
+        duplicate_count = 0
+        
+        # For each row in NEW, find matching row(s) in OLD and copy status values
+        new_interface_to_indices = defaultdict(list)
+        for idx, interface_no in enumerate(enriched_new['Interface No.']):
+            if pd.notna(interface_no) and str(interface_no).strip() != '':
+                new_interface_to_indices[interface_no].append(idx)
+        
+        # Process each unique Interface No. in NEW
+        for interface_no, new_indices in new_interface_to_indices.items():
+            if interface_no in old_interface_to_indices:
+                old_indices = old_interface_to_indices[interface_no]
+                
+                # Handle 1-to-1 matching in order (same as comparison logic)
+                num_matches = min(len(new_indices), len(old_indices))
+                
+                for i in range(num_matches):
+                    new_idx = new_indices[i]
+                    old_idx = old_indices[i]
+                    
+                    # Copy status column values from OLD to NEW
+                    for col in missing_in_new:
+                        old_value = old_df.iloc[old_idx][col]
+                        enriched_new.at[new_idx, col] = old_value
+                    
+                    enriched_count += 1
+                    
+                    if num_matches > 1:
+                        duplicate_count += 1
+        
+        self.logger.info(f"Enriched {enriched_count} rows with status data from OLD")
+        if duplicate_count > 0:
+            self.logger.info(f"  {duplicate_count} rows involved duplicate Interface No. (1-to-1 matching)")
+        
+        # Reorder columns to match OLD column order if possible
+        # Put status columns in the same position as they were in OLD
+        old_columns = list(old_df.columns)
+        new_columns = list(enriched_new.columns)
+        
+        # Find where status columns should be inserted
+        reordered_columns = []
+        status_inserted = False
+        
+        for old_col in old_columns:
+            if old_col in new_columns:
+                reordered_columns.append(old_col)
+                new_columns.remove(old_col)
+            elif old_col in missing_in_new and not status_inserted:
+                # Insert all missing status columns at first occurrence
+                for status_col in missing_in_new:
+                    if status_col in enriched_new.columns:
+                        reordered_columns.append(status_col)
+                        if status_col in new_columns:
+                            new_columns.remove(status_col)
+                status_inserted = True
+        
+        # Add any remaining columns from NEW that weren't in OLD
+        reordered_columns.extend(new_columns)
+        
+        # Reorder the dataframe
+        enriched_new = enriched_new[reordered_columns]
+        
+        self.logger.info(f"Column order adjusted to match OLD sheet structure")
+        
+        # Ensure OLD DataFrame also has the same column structure as enriched NEW
+        # This is needed for comparison to work correctly
+        old_reordered = old_df.copy()
+        
+        # Add any columns that are in enriched_new but not in old (shouldn't happen with status columns, but handle other columns)
+        for col in enriched_new.columns:
+            if col not in old_reordered.columns:
+                old_reordered[col] = None
+                self.logger.info(f"Added missing column to OLD: {col}")
+        
+        # Reorder OLD to match NEW column order
+        old_reordered = old_reordered[enriched_new.columns]
+        
+        return enriched_new, old_reordered
     
     def _remove_legend_row_if_present(self, df: pd.DataFrame) -> pd.DataFrame:
         """

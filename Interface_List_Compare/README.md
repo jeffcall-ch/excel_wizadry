@@ -31,6 +31,7 @@ python Interface_list_excel_compare.py path/to/your_file.xlsx
 - **Formatting preservation** - Copies all formatting from OLD sheet
 - **Intelligent cleanup** - Removes legend rows and previous comparison artifacts
 - **Duplicate handling** - 1-to-1 in-order matching with dark red font
+- **Status column enrichment** - Preserves engineer status records from OLD to NEW
 - **Localization support** - Handles English/German column names
 
 ## 📊 Sheet Selection Logic
@@ -92,7 +93,43 @@ Before comparison, the script automatically removes:
 
 This ensures clean comparisons even when running on previous output files.
 
-## 🔑 Unique Key: Interface No.
+## � Status Column Enrichment
+
+### The Problem
+Engineers use status columns to track work progress:
+- **"PIPEN - Name [Family, Given]"** - Who is working on it
+- **"PIPEN - Comment [text]"** - Progress notes
+- **"PIPEN - Date [dd/mm/yyyy]"** - Last update date
+
+However, when exporting fresh data from the database (NEW sheet), these status columns are **missing** because the database doesn't store user records. This would cause **loss of all engineer status data** during comparison.
+
+### The Solution
+The script automatically detects when status columns are missing in NEW but present in OLD, and **enriches** NEW with status data:
+
+1. **Detection** - Checks if NEW is missing status columns that OLD has
+2. **Matching** - For each Interface No. in NEW, finds matching row in OLD
+3. **Transfer** - Copies status column values from OLD → NEW
+4. **Preservation** - All engineer status records are preserved in comparison result
+
+### Behavior
+- **Only when columns are completely missing** in NEW (not when empty)
+- **1-to-1 in-order matching** for duplicate Interface No. (same as comparison logic)
+- **New rows** (no OLD match): Status columns remain empty
+- **Deleted rows**: Keep their status in the deleted section
+- **Column ordering**: Status columns positioned as they were in OLD
+
+### Example Log Output
+```
+Status columns missing in NEW: ['PIPEN - Name\n[Family, Given]', 'PIPEN - Comment\n[text]', 'PIPEN - Date\n[dd/mm/yyyy]']
+Enriching NEW data with status values from OLD...
+Enriched 691 rows with status data from OLD
+  4 rows involved duplicate Interface No. (1-to-1 matching)
+Column order adjusted to match OLD sheet structure
+```
+
+This feature ensures **no loss of engineer work** when comparing database exports against tracked interface lists.
+
+## �🔑 Unique Key: Interface No.
 
 The comparison uses **"Interface No."** as the unique identifier. The script supports:
 - English: "Interface No.", "interface no.", "INTERFACE NO."
