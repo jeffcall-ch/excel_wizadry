@@ -108,6 +108,39 @@ class ExcelTableComparator:
         """Return localized text based on system language."""
         return german if self.is_german else english
     
+    def _ensure_interface_no_as_string(self) -> None:
+        """
+        Ensure Interface No. values are properly formatted as strings.
+        This handles cases where Excel might have converted "0100" to 100.
+        We need to preserve the original string format including leading zeros.
+        """
+        def format_interface_no(value):
+            if pd.isna(value):
+                return ""
+            
+            # If already a string, return as-is
+            if isinstance(value, str):
+                return value
+            
+            # If it's a number that might have lost leading zeros,
+            # we need to preserve the original format.
+            # Since we can't recover lost leading zeros from a number,
+            # we'll convert to string and log a warning
+            if isinstance(value, (int, float)):
+                str_value = str(int(value)) if isinstance(value, float) and value.is_integer() else str(value)
+                return str_value
+            
+            return str(value)
+        
+        # Apply to both dataframes
+        if 'Interface No.' in self.old_data.columns:
+            self.old_data['Interface No.'] = self.old_data['Interface No.'].apply(format_interface_no)
+        
+        if 'Interface No.' in self.new_data.columns:
+            self.new_data['Interface No.'] = self.new_data['Interface No.'].apply(format_interface_no)
+        
+        self.logger.info("Interface No. columns formatted as strings to preserve leading zeros")
+    
     def validate_files_and_load_data(self) -> None:
         """Load and validate Excel files."""
         self.logger.info("Validating files and loading data...")
@@ -120,8 +153,18 @@ class ExcelTableComparator:
         old_sheet_name = self.old_workbook.sheetnames[0]
         new_sheet_name = self.new_workbook.sheetnames[0]
         
-        self.old_data = pd.read_excel(self.old_file, sheet_name=old_sheet_name)
-        self.new_data = pd.read_excel(self.new_file, sheet_name=new_sheet_name)
+        # Read Excel data with 'Interface No.' column as string to preserve leading zeros
+        # Use dtype to ensure Interface No. is read as string
+        try:
+            self.old_data = pd.read_excel(self.old_file, sheet_name=old_sheet_name, dtype={'Interface No.': str})
+            self.new_data = pd.read_excel(self.new_file, sheet_name=new_sheet_name, dtype={'Interface No.': str})
+        except (KeyError, ValueError):
+            # Fallback: read normally and then convert Interface No. column
+            self.old_data = pd.read_excel(self.old_file, sheet_name=old_sheet_name)
+            self.new_data = pd.read_excel(self.new_file, sheet_name=new_sheet_name)
+        
+        # Ensure Interface No. values are properly formatted as strings (preserve leading zeros)
+        self._ensure_interface_no_as_string()
         
         # Remove "Changed" column and any "Unnamed" columns (from previous comparisons)
         self.old_data = self._remove_comparison_columns(self.old_data)
@@ -565,6 +608,10 @@ class ExcelTableComparator:
         if pd.isna(value):
             return ""
         
+        # If it's already a string, return as-is to preserve leading zeros
+        if isinstance(value, str):
+            return value
+        
         # Match Excel's .Text property behavior (optimized)
         if isinstance(value, float) and value.is_integer():
             return str(int(value))  # Remove .0 from whole numbers
@@ -576,6 +623,10 @@ class ExcelTableComparator:
         value = df.iloc[row_idx][col_name]
         if pd.isna(value):
             return ""
+        
+        # If it's already a string, return as-is to preserve leading zeros
+        if isinstance(value, str):
+            return value
         
         # Match Excel's .Text property behavior
         if isinstance(value, float) and value.is_integer():
@@ -774,7 +825,16 @@ class ExcelTableComparator:
             
             for col_idx, col_name in enumerate(self.column_names, start=1):
                 cell = worksheet.cell(row=excel_row, column=col_idx)
-                cell.value = result.data.iloc[row_idx][col_name]
+                cell_value = result.data.iloc[row_idx][col_name]
+                
+                # Special handling for Interface No. to preserve leading zeros
+                if col_name == 'Interface No.' and pd.notna(cell_value):
+                    # Ensure Interface No. is written as text to preserve leading zeros
+                    cell.value = str(cell_value)
+                    # Set number format to text to prevent Excel from converting to number
+                    cell.number_format = '@'
+                else:
+                    cell.value = cell_value
                 
                 # Apply formatting from old sheet data row (row 3 as template)
                 if (3, col_idx) in formatting.get('cell_formats', {}):
@@ -853,7 +913,14 @@ class ExcelTableComparator:
             for col_idx, col_name in enumerate(self.column_names, start=1):
                 cell = worksheet.cell(excel_row, col_idx)
                 value = row_data.get(col_name, "")
-                cell.value = value
+                
+                # Special handling for Interface No. to preserve leading zeros
+                if col_name == 'Interface No.' and pd.notna(value) and value != "":
+                    cell.value = str(value)
+                    cell.number_format = '@'
+                else:
+                    cell.value = value
+                
                 # Apply GREEN background to added rows
                 cell.fill = PatternFill(start_color=Colors.GREEN, end_color=Colors.GREEN, fill_type='solid')
     
@@ -893,7 +960,14 @@ class ExcelTableComparator:
             for col_idx, col_name in enumerate(self.column_names, start=1):
                 cell = worksheet.cell(excel_row, col_idx)
                 value = row_data.get(col_name, "")
-                cell.value = value
+                
+                # Special handling for Interface No. to preserve leading zeros
+                if col_name == 'Interface No.' and pd.notna(value) and value != "":
+                    cell.value = str(value)
+                    cell.number_format = '@'
+                else:
+                    cell.value = value
+                
                 # Apply RED background to deleted rows
                 cell.fill = PatternFill(start_color=Colors.RED, end_color=Colors.RED, fill_type='solid')
     
@@ -1033,12 +1107,28 @@ def extract_sheets_and_compare(compare_file, output_file=None):
             print(f"  ⚠️  Legend row detected in '{old_sheet_name}' - skipping first row")
             start_row = 1
         
+        # Find Interface No. column index for special handling
+        interface_no_col = None
+        if rows_to_copy:
+            header_row = rows_to_copy[start_row] if start_row < len(rows_to_copy) else rows_to_copy[0]
+            for cell in header_row:
+                if cell.value == 'Interface No.':
+                    interface_no_col = cell.column
+                    break
+        
         # Copy data and formatting from compare.xlsx old sheet (skipping legend if present)
         for row_idx, row in enumerate(rows_to_copy[start_row:], start=1):
             for cell in row:
                 # Map to new position (row_idx instead of original row number)
                 new_cell = old_sheet.cell(row=row_idx, column=cell.column)
-                new_cell.value = cell.value
+                
+                # Special handling for Interface No. column to preserve leading zeros
+                if cell.column == interface_no_col and cell.value is not None:
+                    # Preserve as string and set text format
+                    new_cell.value = str(cell.value)
+                    new_cell.number_format = '@'
+                else:
+                    new_cell.value = cell.value
                 
                 # Copy cell formatting
                 if cell.has_style:
@@ -1078,11 +1168,26 @@ def extract_sheets_and_compare(compare_file, output_file=None):
             print(f"  ⚠️  Legend row detected in '{new_sheet_name}' - skipping first row")
             start_row_new = 1
         
+        # Find Interface No. column index for special handling in new sheet
+        interface_no_col_new = None
+        if rows_to_copy_new:
+            header_row_new = rows_to_copy_new[start_row_new] if start_row_new < len(rows_to_copy_new) else rows_to_copy_new[0]
+            for cell in header_row_new:
+                if cell.value == 'Interface No.':
+                    interface_no_col_new = cell.column
+                    break
+        
         # Copy only data from compare.xlsx new sheet (formatting comes from old)
         for row_idx, row in enumerate(rows_to_copy_new[start_row_new:], start=1):
             for cell in row:
                 new_cell = new_sheet.cell(row=row_idx, column=cell.column)
-                new_cell.value = cell.value
+                
+                # Special handling for Interface No. column to preserve leading zeros
+                if cell.column == interface_no_col_new and cell.value is not None:
+                    new_cell.value = str(cell.value)
+                    new_cell.number_format = '@'
+                else:
+                    new_cell.value = cell.value
         
         wb_new.save("temp_new.xlsx")
         
