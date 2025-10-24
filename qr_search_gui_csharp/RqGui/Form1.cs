@@ -58,13 +58,19 @@ public partial class Form1 : Form
             return;
         }
 
-        var settings = SettingsManager.LoadSettings();
-        if (string.IsNullOrWhiteSpace(settings.RqExePath) || !File.Exists(settings.RqExePath))
+        // Get rq.exe path - will use embedded version if no custom path configured
+        string rqExePath;
+        try
         {
-            MessageBox.Show("Please configure the rq.exe path in Tools  Settings first.", "Configuration Required", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            rqExePath = EmbeddedResourceHelper.GetRqExePath();
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Failed to locate rq.exe: {ex.Message}", "Configuration Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             return;
         }
 
+        var settings = SettingsManager.LoadSettings();
         settings.LastSearchPath = searchPath;
         SettingsManager.SaveSettings(settings);
 
@@ -92,7 +98,7 @@ public partial class Form1 : Form
 
         try
         {
-            var executor = new RqExecutor(settings.RqExePath);
+            var executor = new RqExecutor(rqExePath);
             var result = await executor.ExecuteSearchAsync(searchPath, searchTerm, options, CancellationToken.None);
 
             if (result.ExitCode == 0)
