@@ -18,6 +18,9 @@ partial class Form1
         this.menuStrip1 = new MenuStrip();
         this.toolsToolStripMenuItem = new ToolStripMenuItem();
         this.settingsToolStripMenuItem = new ToolStripMenuItem();
+        this.clearHistoryToolStripMenuItem = new ToolStripMenuItem();
+        this.btnSearchHistory = new Button();
+        this.historyContextMenu = new ContextMenuStrip();
         this.txtSearchPath = new TextBox();
         this.btnBrowse = new Button();
         this.txtSearchTerm = new TextBox();
@@ -62,7 +65,7 @@ partial class Form1
         this.menuStrip1.Size = new System.Drawing.Size(1200, 24);
         
         // toolsToolStripMenuItem
-        this.toolsToolStripMenuItem.DropDownItems.AddRange(new ToolStripItem[] { this.settingsToolStripMenuItem });
+        this.toolsToolStripMenuItem.DropDownItems.AddRange(new ToolStripItem[] { this.settingsToolStripMenuItem, this.clearHistoryToolStripMenuItem });
         this.toolsToolStripMenuItem.Name = "toolsToolStripMenuItem";
         this.toolsToolStripMenuItem.Text = "&Tools";
         
@@ -71,6 +74,23 @@ partial class Form1
         this.settingsToolStripMenuItem.Text = "&Settings...";
         this.settingsToolStripMenuItem.Click += new EventHandler(this.settingsToolStripMenuItem_Click);
         
+        // clearHistoryToolStripMenuItem
+        this.clearHistoryToolStripMenuItem.Name = "clearHistoryToolStripMenuItem";
+        this.clearHistoryToolStripMenuItem.Text = "Clear Search &History";
+        this.clearHistoryToolStripMenuItem.Click += new EventHandler(this.clearHistoryToolStripMenuItem_Click);
+        
+        // btnSearchHistory
+        this.btnSearchHistory.Location = new System.Drawing.Point(80, 32);
+        this.btnSearchHistory.Name = "btnSearchHistory";
+        this.btnSearchHistory.Size = new System.Drawing.Size(140, 25);
+        this.btnSearchHistory.Text = "Recent Searches ▼";
+        this.btnSearchHistory.TextAlign = System.Drawing.ContentAlignment.MiddleLeft;
+        this.btnSearchHistory.Click += new EventHandler(this.btnSearchHistory_Click);
+        
+        // historyContextMenu
+        this.historyContextMenu.Name = "historyContextMenu";
+        this.historyContextMenu.Size = new System.Drawing.Size(180, 70);
+        
         // lblDirectory
         lblDirectory.AutoSize = true;
         lblDirectory.Location = new System.Drawing.Point(12, 35);
@@ -78,10 +98,11 @@ partial class Form1
         lblDirectory.Text = "Directory:";
         
         // txtSearchPath
-        this.txtSearchPath.Location = new System.Drawing.Point(80, 32);
+        this.txtSearchPath.Location = new System.Drawing.Point(230, 32);
         this.txtSearchPath.Name = "txtSearchPath";
-        this.txtSearchPath.Size = new System.Drawing.Size(900, 23);
+        this.txtSearchPath.Size = new System.Drawing.Size(750, 23);
         this.txtSearchPath.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+        this.txtSearchPath.KeyDown += new KeyEventHandler(this.txtSearchPath_KeyDown);
         
         // btnBrowse
         this.btnBrowse.Location = new System.Drawing.Point(990, 30);
@@ -103,6 +124,7 @@ partial class Form1
         this.txtSearchTerm.Size = new System.Drawing.Size(900, 23);
         this.txtSearchTerm.Text = "*";
         this.txtSearchTerm.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+        this.txtSearchTerm.KeyDown += new KeyEventHandler(this.txtSearchTerm_KeyDown);
         
         // btnSearch
         this.btnSearch.Location = new System.Drawing.Point(990, 63);
@@ -310,12 +332,15 @@ partial class Form1
         this.Controls.Add(lblSearchTerm);
         this.Controls.Add(this.btnBrowse);
         this.Controls.Add(this.txtSearchPath);
+        this.Controls.Add(this.btnSearchHistory);
         this.Controls.Add(lblDirectory);
         this.Controls.Add(this.menuStrip1);
         this.MainMenuStrip = this.menuStrip1;
         this.Name = "Form1";
         this.Text = "RQ File Search";
         this.MinimumSize = new System.Drawing.Size(1200, 600);
+        this.AcceptButton = this.btnSearch;
+        this.KeyPreview = true;
         
         this.statusStrip1.ResumeLayout(false);
         this.menuStrip1.ResumeLayout(false);
@@ -328,6 +353,9 @@ partial class Form1
     private MenuStrip menuStrip1;
     private ToolStripMenuItem toolsToolStripMenuItem;
     private ToolStripMenuItem settingsToolStripMenuItem;
+    private ToolStripMenuItem clearHistoryToolStripMenuItem;
+    private Button btnSearchHistory;
+    private ContextMenuStrip historyContextMenu;
     private TextBox txtSearchPath;
     private Button btnBrowse;
     private TextBox txtSearchTerm;

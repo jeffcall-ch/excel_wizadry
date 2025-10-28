@@ -17,12 +17,208 @@ public partial class Form1 : Form
 
         InitializeContextMenu();
         InitializeListViewSorting();
+        InitializeHistoryContextMenu();
+        LoadSearchHistory();
     }
 
     private void settingsToolStripMenuItem_Click(object? sender, EventArgs e)
     {
         using var settingsForm = new SettingsForm();
         settingsForm.ShowDialog();
+    }
+
+    private void clearHistoryToolStripMenuItem_Click(object? sender, EventArgs e)
+    {
+        var result = MessageBox.Show(
+            "Are you sure you want to clear all search history?",
+            "Clear History",
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Question
+        );
+
+        if (result == DialogResult.Yes)
+        {
+            SettingsManager.ClearSearchHistory();
+            LoadSearchHistory();
+            statusLabel.Text = "Search history cleared";
+        }
+    }
+
+    private void InitializeHistoryContextMenu()
+    {
+        // Context menu is now built dynamically in LoadSearchHistory
+    }
+
+    private void DeleteSearchHistoryItem(SearchHistoryItem item)
+    {
+        try
+        {
+            SettingsManager.RemoveFromSearchHistory(item);
+            LoadSearchHistory();
+            statusLabel.Text = "Search removed from history";
+            Logger.LogInfo($"Removed search from history: {item.GetDisplayText()}");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogException("Failed to delete search from history", ex);
+            MessageBox.Show(
+                $"Failed to delete search from history: {ex.Message}",
+                "Error",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error
+            );
+        }
+    }
+
+    private void txtSearchPath_KeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.KeyCode == Keys.Enter)
+        {
+            e.SuppressKeyPress = true; // Prevents the "ding" sound
+            btnSearch_Click(sender, e);
+        }
+    }
+
+    private void txtSearchTerm_KeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.KeyCode == Keys.Enter)
+        {
+            e.SuppressKeyPress = true; // Prevents the "ding" sound
+            btnSearch_Click(sender, e);
+        }
+    }
+
+    private void LoadSearchHistory()
+    {
+        try
+        {
+            var settings = SettingsManager.LoadSettings();
+            historyContextMenu.Items.Clear();
+            
+            if (settings.SearchHistory.Count == 0)
+            {
+                var emptyItem = new ToolStripMenuItem("No search history");
+                emptyItem.Enabled = false;
+                historyContextMenu.Items.Add(emptyItem);
+            }
+            else
+            {
+                foreach (var item in settings.SearchHistory)
+                {
+                    var menuItem = new ToolStripMenuItem(item.ToString());
+                    menuItem.Tag = item;
+                    
+                    // Main click to load the search AND execute it
+                    menuItem.Click += (s, e) =>
+                    {
+                        var historyItem = (s as ToolStripMenuItem)?.Tag as SearchHistoryItem;
+                        if (historyItem != null)
+                        {
+                            // Close the menu first
+                            historyContextMenu.Close();
+                            
+                            RestoreSearchFromHistory(historyItem);
+                            // Automatically trigger the search
+                            btnSearch_Click(this, EventArgs.Empty);
+                        }
+                    };
+                    
+                    // Add a delete option as a submenu (accessible via right-click or hover)
+                    var deleteSubItem = new ToolStripMenuItem("🗑️ Delete");
+                    deleteSubItem.Click += (s, e) =>
+                    {
+                        DeleteSearchHistoryItem(item);
+                    };
+                    
+                    menuItem.DropDownItems.Add(deleteSubItem);
+                    historyContextMenu.Items.Add(menuItem);
+                }
+                
+                historyContextMenu.Items.Add(new ToolStripSeparator());
+                
+                var clearAllItem = new ToolStripMenuItem("Clear All History");
+                clearAllItem.Click += (s, e) =>
+                {
+                    var result = MessageBox.Show(
+                        "Are you sure you want to clear all search history?",
+                        "Clear History",
+                        MessageBoxButtons.YesNo,
+                        MessageBoxIcon.Question
+                    );
+
+                    if (result == DialogResult.Yes)
+                    {
+                        SettingsManager.ClearSearchHistory();
+                        LoadSearchHistory();
+                        statusLabel.Text = "Search history cleared";
+                    }
+                };
+                historyContextMenu.Items.Add(clearAllItem);
+            }
+            
+            Logger.LogInfo($"Loaded {settings.SearchHistory.Count} search history items");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogException("Failed to load search history", ex);
+        }
+    }
+
+    private void btnSearchHistory_Click(object? sender, EventArgs e)
+    {
+        historyContextMenu.Show(btnSearchHistory, 0, btnSearchHistory.Height);
+    }
+
+    private void RestoreSearchFromHistory(SearchHistoryItem selectedItem)
+    {
+        try
+        {
+            // Restore all search parameters
+            txtSearchPath.Text = selectedItem.SearchPath;
+            txtSearchTerm.Text = selectedItem.SearchTerm;
+            
+            chkGlob.Checked = selectedItem.UseGlob;
+            chkRegex.Checked = selectedItem.UseRegex;
+            chkCaseSensitive.Checked = selectedItem.CaseSensitive;
+            chkIncludeHidden.Checked = selectedItem.IncludeHidden;
+            
+            chkExtensions.Checked = selectedItem.ExtensionsEnabled;
+            txtExtensions.Text = selectedItem.Extensions;
+            
+            chkFileType.Checked = selectedItem.FileTypeEnabled;
+            txtFileType.Text = selectedItem.FileType;
+            
+            chkSize.Checked = selectedItem.SizeEnabled;
+            txtSize.Text = selectedItem.Size;
+            
+            chkDateAfter.Checked = selectedItem.DateAfterEnabled;
+            dtpDateAfter.Value = selectedItem.DateAfter;
+            
+            chkDateBefore.Checked = selectedItem.DateBeforeEnabled;
+            dtpDateBefore.Value = selectedItem.DateBefore;
+            
+            chkMaxDepth.Checked = selectedItem.MaxDepthEnabled;
+            txtMaxDepth.Text = selectedItem.MaxDepth;
+            
+            chkThreads.Checked = selectedItem.ThreadsEnabled;
+            txtThreads.Text = selectedItem.Threads;
+            
+            chkTimeout.Checked = selectedItem.TimeoutEnabled;
+            txtTimeout.Text = selectedItem.Timeout;
+            
+            statusLabel.Text = $"Loaded search from history: {selectedItem.GetDisplayText()}";
+            Logger.LogInfo($"Restored search from history: {selectedItem.GetDisplayText()}");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogException("Failed to restore search from history", ex);
+            MessageBox.Show(
+                $"Failed to restore search from history: {ex.Message}",
+                "Error",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error
+            );
+        }
     }
 
     private void btnBrowse_Click(object? sender, EventArgs e)
@@ -73,6 +269,34 @@ public partial class Form1 : Form
         var settings = SettingsManager.LoadSettings();
         settings.LastSearchPath = searchPath;
         SettingsManager.SaveSettings(settings);
+
+        // Create search history item
+        var historyItem = new SearchHistoryItem
+        {
+            SearchPath = searchPath,
+            SearchTerm = searchTerm,
+            UseGlob = chkGlob.Checked,
+            UseRegex = chkRegex.Checked,
+            CaseSensitive = chkCaseSensitive.Checked,
+            IncludeHidden = chkIncludeHidden.Checked,
+            ExtensionsEnabled = chkExtensions.Checked,
+            Extensions = txtExtensions.Text,
+            FileTypeEnabled = chkFileType.Checked,
+            FileType = txtFileType.Text,
+            SizeEnabled = chkSize.Checked,
+            Size = txtSize.Text,
+            DateAfterEnabled = chkDateAfter.Checked,
+            DateAfter = dtpDateAfter.Value,
+            DateBeforeEnabled = chkDateBefore.Checked,
+            DateBefore = dtpDateBefore.Value,
+            MaxDepthEnabled = chkMaxDepth.Checked,
+            MaxDepth = txtMaxDepth.Text,
+            ThreadsEnabled = chkThreads.Checked,
+            Threads = txtThreads.Text,
+            TimeoutEnabled = chkTimeout.Checked,
+            Timeout = txtTimeout.Text,
+            Timestamp = DateTime.Now
+        };
 
         var options = new SearchOptions
         {
@@ -128,6 +352,10 @@ public partial class Form1 : Form
 
                 statusLabel.Text = $"Found {result.FilePaths.Count} file(s) in {stopwatch.ElapsedMilliseconds} ms";
                 Logger.LogInfo($"Search completed: {result.FilePaths.Count} files found in {stopwatch.ElapsedMilliseconds} ms");
+                
+                // Save to search history
+                SettingsManager.AddToSearchHistory(historyItem);
+                LoadSearchHistory();
             }
             else
             {
