@@ -6,12 +6,12 @@
     <Nullable>enable</Nullable>
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
-    <ApplicationIcon>app.ico</ApplicationIcon>
+    <ApplicationIcon>search_c_app.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
     <EmbeddedResource Include="Resources\rq.exe" />
-    <EmbeddedResource Include="app.ico" />
+    <EmbeddedResource Include="search_c_app.ico" />
   </ItemGroup>
 
 </Project>
