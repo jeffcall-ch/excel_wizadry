@@ -1,0 +1,9 @@
+## ShortcutLauncher - .NET Project
+bin/
+obj/
+*.user
+*.suo
+*.cache
+.vs/
+publish/
+*.pubxml

@@ -1,0 +1,44 @@
+<Window x:Class="ShortcutLauncher.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Shortcut Launcher"
+        Width="400"
+        Height="300"
+        WindowStartupLocation="CenterScreen"
+        ResizeMode="CanMinimize"
+        ShowInTaskbar="True"
+        Loaded="Window_Loaded"
+        StateChanged="Window_StateChanged"
+        Closing="Window_Closing"
+        KeyDown="Window_KeyDown">
+    
+    <Grid>
+        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Margin="20">
+            <TextBlock Text="🚀 Shortcut Launcher" FontSize="24" FontWeight="Bold" 
+                       HorizontalAlignment="Center" Margin="0,0,0,20"/>
+            <TextBlock Text="Click a button below or minimize to taskbar:" 
+                       FontSize="14" HorizontalAlignment="Center" Margin="0,0,0,20"/>
+            
+            <Button x:Name="ShowMenuButton" Content="📋 Show Shortcuts Menu" 
+                    Height="40" Margin="0,5" FontSize="14" Click="ShowMenuButton_Click"/>
+            <Button x:Name="OpenFolderButton" Content="📁 Open Shortcuts Folder" 
+                    Height="40" Margin="0,5" FontSize="14" Click="OpenFolderButton_Click"/>
+            <Button x:Name="MinimizeButton" Content="➖ Minimize to Taskbar" 
+                    Height="40" Margin="0,5" FontSize="14" Click="MinimizeButton_Click"/>
+            <Button x:Name="ExitButton" Content="❌ Exit Application" 
+                    Height="40" Margin="0,5" FontSize="14" Click="ExitButton_Click"/>
+            
+            <TextBlock Text="💡 Tip: When minimized, click the taskbar icon to show the shortcuts menu" 
+                       FontSize="11" Foreground="Gray" HorizontalAlignment="Center" 
+                       Margin="0,20,0,0" TextWrapping="Wrap" TextAlignment="Center"/>
+        </StackPanel>
+    </Grid>
+    
+    <Window.ContextMenu>
+        <ContextMenu x:Name="ShortcutMenu" 
+                     Closed="ShortcutMenu_Closed"
+                     Placement="Mouse"
+                     StaysOpen="True">
+        </ContextMenu>
+    </Window.ContextMenu>
+</Window>
