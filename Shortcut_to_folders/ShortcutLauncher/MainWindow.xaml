@@ -12,6 +12,27 @@
         Closing="Window_Closing"
         KeyDown="Window_KeyDown">
     
+    <Window.Resources>
+        <!-- Style for scrollable MenuItem popups -->
+        <Style TargetType="MenuItem">
+            <Setter Property="ItemsPanel">
+                <Setter.Value>
+                    <ItemsPanelTemplate>
+                        <VirtualizingStackPanel/>
+                    </ItemsPanelTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Resources>
+                <Style TargetType="ScrollViewer">
+                    <Setter Property="MaxHeight" Value="450"/>
+                    <!-- 15 items * ~30px per item -->
+                    <Setter Property="VerticalScrollBarVisibility" Value="Auto"/>
+                    <Setter Property="HorizontalScrollBarVisibility" Value="Disabled"/>
+                </Style>
+            </Style.Resources>
+        </Style>
+    </Window.Resources>
+    
     <Grid>
         <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Margin="20">
             <TextBlock Text="🚀 Shortcut Launcher" FontSize="24" FontWeight="Bold" 

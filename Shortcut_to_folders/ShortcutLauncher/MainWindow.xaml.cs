@@ -16,6 +16,9 @@ namespace ShortcutLauncher
     {
         private readonly string _shortcutsFolder;
         private readonly int _maxItems;
+        private readonly int _maxSubfolders;
+        private readonly int _maxDepth;
+        private readonly int _visibleItemsBeforeScroll;
         private bool _menuIsOpen = false;
 
         public MainWindow()
@@ -29,6 +32,9 @@ namespace ShortcutLauncher
                 Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Shortcuts_to_folders")
             );
             _maxItems = int.TryParse(config["MaxItems"], out int max) ? max : 50;
+            _maxSubfolders = int.TryParse(config["MaxSubfolders"], out int maxSub) ? maxSub : 50;
+            _maxDepth = int.TryParse(config["MaxDepth"], out int maxDepth) ? maxDepth : 10;
+            _visibleItemsBeforeScroll = int.TryParse(config["VisibleItemsBeforeScroll"], out int visItems) ? visItems : 15;
 
             // Ensure the folder exists
             if (!Directory.Exists(_shortcutsFolder))
@@ -60,6 +66,9 @@ namespace ShortcutLauncher
 
                     config["ShortcutsFolder"] = configuration["ShortcutsFolder"] ?? "";
                     config["MaxItems"] = configuration["MaxItems"] ?? "50";
+                    config["MaxSubfolders"] = configuration["MaxSubfolders"] ?? "50";
+                    config["MaxDepth"] = configuration["MaxDepth"] ?? "10";
+                    config["VisibleItemsBeforeScroll"] = configuration["VisibleItemsBeforeScroll"] ?? "15";
                 }
                 catch (Exception ex)
                 {
@@ -210,18 +219,77 @@ namespace ShortcutLauncher
                                 Tag = shortcut.FullName
                             };
 
-                            // Try to get the target path for tooltip
+                            // Try to get the target path for tooltip and check if it's a folder
+                            string targetPath = "";
+                            bool isFolder = false;
                             try
                             {
-                                string targetPath = GetShortcutTarget(shortcut.FullName);
+                                targetPath = GetShortcutTarget(shortcut.FullName);
                                 if (!string.IsNullOrEmpty(targetPath))
                                 {
                                     menuItem.ToolTip = targetPath;
+                                    isFolder = Directory.Exists(targetPath);
                                 }
                             }
                             catch { }
 
-                            menuItem.Click += ShortcutItem_Click;
+                            // If the shortcut points to a folder, enable cascading submenus
+                            if (isFolder)
+                            {
+                                // Capture targetPath in local variable to avoid closure issues
+                                var capturedPath = targetPath;
+                                
+                                // Add a placeholder item to show the submenu arrow
+                                menuItem.Items.Add(new MenuItem { Header = "Loading...", IsEnabled = false });
+
+                                // Store the target path for later use
+                                menuItem.Tag = new { Path = capturedPath, Depth = 0, IsShortcut = true };
+
+                                // Add PreviewMouseDown handler to open the folder on click
+                                menuItem.PreviewMouseDown += (s, e) =>
+                                {
+                                    // Only handle left mouse button clicks on THIS menu item (not child items)
+                                    if (e.LeftButton == MouseButtonState.Pressed && 
+                                        s is MenuItem item && 
+                                        e.Source == s)  // Critical: only if THIS item is the source
+                                    {
+                                        try
+                                        {
+                                            Process.Start(new ProcessStartInfo("explorer.exe", $"\"{capturedPath}\"")
+                                            {
+                                                UseShellExecute = true
+                                            });
+                                            ShortcutMenu.IsOpen = false;
+                                            e.Handled = true;
+                                        }
+                                        catch (Exception ex)
+                                        {
+                                            MessageBox.Show($"Failed to open folder:\n{ex.Message}", "Error",
+                                                MessageBoxButton.OK, MessageBoxImage.Error);
+                                        }
+                                    }
+                                };
+
+                                // Lazy-load subfolders when submenu opens (via hover or right arrow key)
+                                menuItem.SubmenuOpened += (s, e) =>
+                                {
+                                    if (s is MenuItem senderItem && 
+                                        senderItem.Items.Count == 1 && 
+                                        senderItem.Items[0] is MenuItem placeholder && 
+                                        placeholder.Header.ToString() == "Loading...")
+                                    {
+                                        var tagData = (dynamic)senderItem.Tag;
+                                        PopulateSubMenu(senderItem, tagData.Path, tagData.Depth);
+                                    }
+                                    e.Handled = true;
+                                };
+                            }
+                            else
+                            {
+                                // For non-folder shortcuts, use the standard click handler
+                                menuItem.Click += ShortcutItem_Click;
+                            }
+
                             ShortcutMenu.Items.Add(menuItem);
 
                             itemCount++;
@@ -372,6 +440,190 @@ namespace ShortcutLauncher
         private void ExitItem_Click(object sender, RoutedEventArgs e)
         {
             Application.Current.Shutdown();
+        }
+
+        private List<DirectoryInfo> GetSubfolders(string folderPath, int maxCount)
+        {
+            try
+            {
+                if (!Directory.Exists(folderPath))
+                    return new List<DirectoryInfo>();
+
+                return new DirectoryInfo(folderPath)
+                    .GetDirectories()
+                    .OrderBy(d => d.Name)
+                    .Take(maxCount)
+                    .ToList();
+            }
+            catch (UnauthorizedAccessException)
+            {
+                Debug.WriteLine($"Access denied to folder: {folderPath}");
+                return new List<DirectoryInfo>();
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error reading subfolders from {folderPath}: {ex.Message}");
+                return new List<DirectoryInfo>();
+            }
+        }
+
+        private List<FileInfo> GetFiles(string folderPath, int maxCount)
+        {
+            try
+            {
+                if (!Directory.Exists(folderPath))
+                    return new List<FileInfo>();
+
+                return new DirectoryInfo(folderPath)
+                    .GetFiles()
+                    .OrderBy(f => f.Name)
+                    .Take(maxCount)
+                    .ToList();
+            }
+            catch (UnauthorizedAccessException)
+            {
+                Debug.WriteLine($"Access denied to folder: {folderPath}");
+                return new List<FileInfo>();
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error reading files from {folderPath}: {ex.Message}");
+                return new List<FileInfo>();
+            }
+        }
+
+        private void PopulateSubMenu(MenuItem parentItem, string folderPath, int currentDepth)
+        {
+            // Check if we've reached max depth
+            if (currentDepth >= _maxDepth)
+                return;
+
+            // Clear any placeholder items
+            parentItem.Items.Clear();
+
+            var subfolders = GetSubfolders(folderPath, _maxSubfolders);
+            var files = GetFiles(folderPath, _maxSubfolders);
+
+            if (subfolders.Count == 0 && files.Count == 0)
+            {
+                var emptyItem = new MenuItem
+                {
+                    Header = "(Empty folder)",
+                    IsEnabled = false
+                };
+                parentItem.Items.Add(emptyItem);
+                return;
+            }
+
+            // Add folders first
+            foreach (var subfolder in subfolders)
+            {
+                // Capture the folder path in a local variable to avoid closure issues
+                var subfolderPath = subfolder.FullName;
+                var folderDepth = currentDepth + 1;
+                
+                var subMenuItem = new MenuItem
+                {
+                    Header = subfolder.Name,
+                    Tag = new { Path = subfolderPath, Depth = folderDepth }
+                };
+
+                // Add PreviewMouseDown handler to open the folder on click
+                subMenuItem.PreviewMouseDown += (s, e) =>
+                {
+                    // Only handle left mouse button clicks on THIS menu item (not from child items)
+                    if (e.LeftButton == MouseButtonState.Pressed && 
+                        s is MenuItem clickedItem && 
+                        e.Source == s)  // Critical: only if THIS item is the source
+                    {
+                        try
+                        {
+                            Process.Start(new ProcessStartInfo("explorer.exe", $"\"{subfolderPath}\"")
+                            {
+                                UseShellExecute = true
+                            });
+                            ShortcutMenu.IsOpen = false;
+                            e.Handled = true;
+                        }
+                        catch (Exception ex)
+                        {
+                            MessageBox.Show($"Failed to open folder:\n{ex.Message}", "Error",
+                                MessageBoxButton.OK, MessageBoxImage.Error);
+                        }
+                    }
+                };
+
+                // Check if this folder has subfolders
+                var hasSubfolders = GetSubfolders(subfolder.FullName, 1).Count > 0;
+                var hasFiles = GetFiles(subfolder.FullName, 1).Count > 0;
+                
+                if ((hasSubfolders || hasFiles) && currentDepth + 1 < _maxDepth)
+                {
+                    // Add a placeholder item to show the arrow
+                    subMenuItem.Items.Add(new MenuItem { Header = "Loading...", IsEnabled = false });
+
+                    // Lazy-load subfolders when submenu opens (via hover or right arrow key)
+                    subMenuItem.SubmenuOpened += (s, e) =>
+                    {
+                        if (subMenuItem.Items.Count == 1 && 
+                            subMenuItem.Items[0] is MenuItem placeholder && 
+                            placeholder.Header.ToString() == "Loading...")
+                        {
+                            var tagData = (dynamic)subMenuItem.Tag;
+                            PopulateSubMenu(subMenuItem, tagData.Path, tagData.Depth);
+                        }
+                        e.Handled = true;
+                    };
+                }
+
+                parentItem.Items.Add(subMenuItem);
+            }
+
+            // Add separator between folders and files if both exist
+            if (subfolders.Count > 0 && files.Count > 0)
+            {
+                parentItem.Items.Add(new Separator());
+            }
+
+            // Add files
+            foreach (var file in files)
+            {
+                // Capture the file path in a local variable to avoid closure issues
+                var filePath = file.FullName;
+                
+                var fileMenuItem = new MenuItem
+                {
+                    Header = file.Name, // This includes the extension
+                    Tag = new { Path = filePath, IsFile = true }
+                };
+
+                // Add PreviewMouseDown handler to open the file
+                fileMenuItem.PreviewMouseDown += (s, e) =>
+                {
+                    // Only handle left mouse button clicks on THIS menu item (not from child items)
+                    if (e.LeftButton == MouseButtonState.Pressed && 
+                        s is MenuItem clickedItem && 
+                        e.Source == s)  // Critical: only if THIS item is the source
+                    {
+                        try
+                        {
+                            Process.Start(new ProcessStartInfo(filePath)
+                            {
+                                UseShellExecute = true
+                            });
+                            ShortcutMenu.IsOpen = false;
+                            e.Handled = true;
+                        }
+                        catch (Exception ex)
+                        {
+                            MessageBox.Show($"Failed to open file:\n{ex.Message}", "Error",
+                                MessageBoxButton.OK, MessageBoxImage.Error);
+                        }
+                    }
+                };
+
+                parentItem.Items.Add(fileMenuItem);
+            }
         }
     }
 }
