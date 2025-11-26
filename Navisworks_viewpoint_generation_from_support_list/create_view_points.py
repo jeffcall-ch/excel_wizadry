@@ -11,10 +11,10 @@ EXCEL_FILE = r"C:\Users\szil\Repos\excel_wizadry\Navisworks_viewpoint_generation
 TEMPLATE_XML = r"C:\Users\szil\Repos\excel_wizadry\Navisworks_viewpoint_generation_from_support_list\TBY_Thameside_ERF_20251117_viewpoints_251125_.xml"
 OUTPUT_XML = r"C:\Users\szil\Repos\excel_wizadry\Navisworks_viewpoint_generation_from_support_list\generated_viewpoints.xml"
 
-# Camera offset from target point (from reference analysis)
-CAMERA_OFFSET_X = 3.4516658778  # meters
-CAMERA_OFFSET_Y = 2.9757158425  # meters
-CAMERA_OFFSET_Z = 2.5844675346  # meters
+# Camera offset from target point (adjusted for closer zoom)
+CAMERA_OFFSET_X = 1.5  # meters - reduced from 3.45 for closer view
+CAMERA_OFFSET_Y = 1.5  # meters - reduced from 2.98 for closer view
+CAMERA_OFFSET_Z = 1.5  # meters - reduced from 2.58 for closer view
 
 # Reference quaternion for camera rotation (looking at target from oblique angle)
 CAMERA_ROTATION = {
