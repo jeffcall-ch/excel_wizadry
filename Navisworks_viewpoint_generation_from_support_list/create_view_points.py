@@ -57,6 +57,13 @@ def extract_subfolder_name(su_ref):
     return str(su_ref)[:7]
 
 
+def extract_bq_subfolder_name(bq_name):
+    """Extract first 6 characters from BQ Name for subfolder name."""
+    if pd.isna(bq_name):
+        return ""
+    return str(bq_name)[:6]
+
+
 def strip_numeric_prefix(zone_name):
     """Strip /[0-9] prefix from zone name to create parent folder.
     E.g., '/0AUX-P/PW' -> 'AUX-P/PW'
@@ -68,6 +75,26 @@ def strip_numeric_prefix(zone_name):
     if zone_str.startswith('/') and len(zone_str) > 1 and zone_str[1].isdigit():
         return zone_str[2:]  # Strip /[0-9]
     return zone_str
+
+
+def handle_bq_duplicates(df):
+    """Handle duplicate BQ Names by appending _1, _2, etc. to viewpoint names."""
+    # Count occurrences of each BQ Name
+    bq_counts = defaultdict(int)
+    unique_names = []
+    
+    for bq_name in df['BQ Name']:
+        if pd.isna(bq_name):
+            unique_names.append(bq_name)
+            continue
+        
+        bq_counts[bq_name] += 1
+        if bq_counts[bq_name] == 1:
+            unique_names.append(bq_name)
+        else:
+            unique_names.append(f"{bq_name}_{bq_counts[bq_name]}")
+    
+    return unique_names
 
 
 def generate_deterministic_guid(seed_string):
@@ -246,50 +273,109 @@ def main():
     
     print(f"Total rows: {len(df)}")
     
-    # Filter to unique values in column D
-    df_unique = df.drop_duplicates(subset=['SU/STEEL ref'])
-    print(f"Unique SU/STEEL ref rows: {len(df_unique)}")
+    # Separate into two groups: with SU and without SU
+    df_with_su = df[df['SU/STEEL ref'] != '-'].copy()
+    df_without_su = df[df['SU/STEEL ref'] == '-'].copy()
     
-    # Parse coordinates from column O
+    print(f"Rows with SU/STEEL ref (not '-'): {len(df_with_su)}")
+    print(f"Rows without SU/STEEL ref ('-'): {len(df_without_su)}")
+    
+    # ==================== PROCESS GP_SU GROUP (EXISTING LOGIC) ====================
+    print("\n=== Processing GP_SU group ===")
+    
+    # Filter to unique combinations of SU/STEEL ref + BQ Zone
+    # (Same SU can appear in multiple zones)
+    df_su_unique = df_with_su.drop_duplicates(subset=['SU/STEEL ref', 'BQ Zone']).copy()
+    print(f"Unique SU/STEEL ref + BQ Zone combinations: {len(df_su_unique)}")
+    
+    # Parse coordinates
     print("Parsing coordinates...")
-    df_unique[['X', 'Y', 'Z']] = df_unique['POS WRT /*'].apply(
+    df_su_unique[['X', 'Y', 'Z']] = df_su_unique['POS WRT /*'].apply(
         lambda x: pd.Series(parse_coordinates(x))
     )
     
     # Remove rows with missing coordinates
-    df_clean = df_unique.dropna(subset=['X', 'Y', 'Z'])
-    print(f"Rows with valid coordinates: {len(df_clean)}")
+    df_su_clean = df_su_unique.dropna(subset=['X', 'Y', 'Z']).copy()
+    print(f"GP_SU rows with valid coordinates: {len(df_su_clean)}")
     
-    # Extract subfolder names
-    df_clean['Subfolder'] = df_clean['SU/STEEL ref'].apply(extract_subfolder_name)
+    # Extract subfolder names (first 7 chars)
+    df_su_clean['Subfolder'] = df_su_clean['SU/STEEL ref'].apply(extract_subfolder_name)
     
-    # Extract parent folder from column H (BQ Zone) - strip /[0-9] prefix
-    df_clean['ParentFolder'] = df_clean['BQ Zone'].apply(strip_numeric_prefix)
+    # Extract parent folder from BQ Zone
+    df_su_clean['ParentFolder'] = df_su_clean['BQ Zone'].apply(strip_numeric_prefix)
     
-    # Sort by ParentFolder, BQ Zone, Subfolder, SU/STEEL ref
-    df_sorted = df_clean.sort_values(by=['ParentFolder', 'BQ Zone', 'Subfolder', 'SU/STEEL ref'])
-    print(f"Sorted {len(df_sorted)} items")
+    # Sort
+    df_su_sorted = df_su_clean.sort_values(by=['ParentFolder', 'BQ Zone', 'Subfolder', 'SU/STEEL ref'])
+    print(f"Sorted {len(df_su_sorted)} GP_SU items")
     
-    # Build hierarchical structure: parent -> zone -> subfolder -> items
-    print("Building folder structure...")
-    hierarchy = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
+    # Build hierarchy for GP_SU
+    hierarchy_su = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
     
-    for _, row in df_sorted.iterrows():
+    for _, row in df_su_sorted.iterrows():
         parent = row['ParentFolder']
         zone = row['BQ Zone']
         subfolder = row['Subfolder']
         su_ref = row['SU/STEEL ref']
         x, y, z = int(row['X']), int(row['Y']), int(row['Z'])
         
-        hierarchy[parent][zone][subfolder].append({
+        hierarchy_su[parent][zone][subfolder].append({
             'name': su_ref,
             'x': x,
             'y': y,
             'z': z
         })
     
-    # Create XML root with proper Navisworks schema
-    print("Generating XML...")
+    # ==================== PROCESS GP_BQ_without_SU GROUP (NEW LOGIC) ====================
+    print("\n=== Processing GP_BQ_without_SU group ===")
+    
+    # Filter to unique combinations of BQ Name + BQ Zone
+    # (Same BQ Name can appear in multiple zones)
+    df_bq_unique = df_without_su.drop_duplicates(subset=['BQ Name', 'BQ Zone']).copy()
+    print(f"Unique BQ Name + BQ Zone combinations: {len(df_bq_unique)}")
+    
+    # Parse coordinates
+    print("Parsing coordinates...")
+    df_bq_unique[['X', 'Y', 'Z']] = df_bq_unique['POS WRT /*'].apply(
+        lambda x: pd.Series(parse_coordinates(x))
+    )
+    
+    # Remove rows with missing coordinates
+    df_bq_clean = df_bq_unique.dropna(subset=['X', 'Y', 'Z']).copy()
+    print(f"GP_BQ rows with valid coordinates: {len(df_bq_clean)}")
+    
+    # Handle duplicates in BQ Name by appending _1, _2, etc.
+    # Note: This handles cases where same BQ Name appears multiple times within same processing batch
+    df_bq_clean['UniqueViewpointName'] = handle_bq_duplicates(df_bq_clean)
+    
+    # Extract subfolder names (first 6 chars of BQ Name)
+    df_bq_clean['Subfolder'] = df_bq_clean['BQ Name'].apply(extract_bq_subfolder_name)
+    
+    # Extract parent folder from BQ Zone
+    df_bq_clean['ParentFolder'] = df_bq_clean['BQ Zone'].apply(strip_numeric_prefix)
+    
+    # Sort
+    df_bq_sorted = df_bq_clean.sort_values(by=['ParentFolder', 'BQ Zone', 'Subfolder', 'BQ Name'])
+    print(f"Sorted {len(df_bq_sorted)} GP_BQ items")
+    
+    # Build hierarchy for GP_BQ
+    hierarchy_bq = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
+    
+    for _, row in df_bq_sorted.iterrows():
+        parent = row['ParentFolder']
+        zone = row['BQ Zone']
+        subfolder = row['Subfolder']
+        viewpoint_name = row['UniqueViewpointName']
+        x, y, z = int(row['X']), int(row['Y']), int(row['Z'])
+        
+        hierarchy_bq[parent][zone][subfolder].append({
+            'name': viewpoint_name,
+            'x': x,
+            'y': y,
+            'z': z
+        })
+    
+    # ==================== CREATE XML WITH BOTH HIERARCHIES ====================
+    print("\n=== Generating XML ===")
     root = ET.Element('exchange')
     root.set('xmlns:xsi', 'http://www.w3.org/2001/XMLSchema-instance')
     root.set('xsi:noNamespaceSchemaLocation', 'http://download.autodesk.com/us/navisworks/schemas/nw-exchange-12.0.xsd')
@@ -299,28 +385,24 @@ def main():
     
     viewpoints = ET.SubElement(root, 'viewpoints')
     
-    # Create top-level GP_SU folder
+    # ==================== CREATE GP_SU FOLDER ====================
     gp_su_guid = generate_deterministic_guid("GP_SU_top_folder")
     gp_su_folder = ET.SubElement(viewpoints, 'viewfolder', name="GP_SU", guid=gp_su_guid)
     
-    # Sort parent folders alphabetically
-    for parent in sorted(hierarchy.keys()):
-        parent_guid = generate_deterministic_guid(f"parent_{parent}")
+    for parent in sorted(hierarchy_su.keys()):
+        parent_guid = generate_deterministic_guid(f"su_parent_{parent}")
         parent_folder = ET.SubElement(gp_su_folder, 'viewfolder', name=str(parent), guid=parent_guid)
         
-        # Sort zones alphabetically within each parent
-        for zone in sorted(hierarchy[parent].keys()):
-            zone_guid = generate_deterministic_guid(f"zone_{parent}_{zone}")
+        for zone in sorted(hierarchy_su[parent].keys()):
+            zone_guid = generate_deterministic_guid(f"su_zone_{parent}_{zone}")
             zone_folder = ET.SubElement(parent_folder, 'viewfolder', name=str(zone), guid=zone_guid)
             
-            # Sort subfolders alphabetically within each zone
-            for subfolder in sorted(hierarchy[parent][zone].keys()):
-                subfolder_guid = generate_deterministic_guid(f"subfolder_{parent}_{zone}_{subfolder}")
+            for subfolder in sorted(hierarchy_su[parent][zone].keys()):
+                subfolder_guid = generate_deterministic_guid(f"su_subfolder_{parent}_{zone}_{subfolder}")
                 subfolder_elem = ET.SubElement(zone_folder, 'viewfolder', name=str(subfolder), guid=subfolder_guid)
                 
-                # Add viewpoints
-                for item in hierarchy[parent][zone][subfolder]:
-                    guid_seed = f"view_{parent}_{zone}_{subfolder}_{item['name']}_{item['x']}_{item['y']}_{item['z']}"
+                for item in hierarchy_su[parent][zone][subfolder]:
+                    guid_seed = f"su_view_{parent}_{zone}_{subfolder}_{item['name']}_{item['x']}_{item['y']}_{item['z']}"
                     view = create_viewpoint_element(
                         item['name'],
                         item['x'],
@@ -330,23 +412,51 @@ def main():
                     )
                     subfolder_elem.append(view)
     
-    # Write to file with proper XML declaration
+    # ==================== CREATE GP_BQ_without_SU FOLDER ====================
+    gp_bq_guid = generate_deterministic_guid("GP_BQ_without_SU_top_folder")
+    gp_bq_folder = ET.SubElement(viewpoints, 'viewfolder', name="GP_BQ_without_SU", guid=gp_bq_guid)
+    
+    for parent in sorted(hierarchy_bq.keys()):
+        parent_guid = generate_deterministic_guid(f"bq_parent_{parent}")
+        parent_folder = ET.SubElement(gp_bq_folder, 'viewfolder', name=str(parent), guid=parent_guid)
+        
+        for zone in sorted(hierarchy_bq[parent].keys()):
+            zone_guid = generate_deterministic_guid(f"bq_zone_{parent}_{zone}")
+            zone_folder = ET.SubElement(parent_folder, 'viewfolder', name=str(zone), guid=zone_guid)
+            
+            for subfolder in sorted(hierarchy_bq[parent][zone].keys()):
+                subfolder_guid = generate_deterministic_guid(f"bq_subfolder_{parent}_{zone}_{subfolder}")
+                subfolder_elem = ET.SubElement(zone_folder, 'viewfolder', name=str(subfolder), guid=subfolder_guid)
+                
+                for item in hierarchy_bq[parent][zone][subfolder]:
+                    guid_seed = f"bq_view_{parent}_{zone}_{subfolder}_{item['name']}_{item['x']}_{item['y']}_{item['z']}"
+                    view = create_viewpoint_element(
+                        item['name'],
+                        item['x'],
+                        item['y'],
+                        item['z'],
+                        guid_seed
+                    )
+                    subfolder_elem.append(view)
+    
+    # ==================== WRITE XML ====================
     print(f"Writing XML to {OUTPUT_XML}...")
     tree = ET.ElementTree(root)
     ET.indent(tree, space="  ")
     
-    # Write with UTF-8 encoding and XML declaration
     with open(OUTPUT_XML, 'wb') as f:
         f.write(b'<?xml version="1.0" encoding="UTF-8" ?>\n\n')
         tree.write(f, encoding='utf-8', xml_declaration=False)
     
-    # Count statistics
-    total_parents = len(hierarchy)
-    total_zones = sum(len(zones) for zones in hierarchy.values())
+    # ==================== STATISTICS ====================
+    total_su_parents = len(hierarchy_su)
+    total_su_zones = sum(len(zones) for zones in hierarchy_su.values())
+    total_bq_parents = len(hierarchy_bq)
+    total_bq_zones = sum(len(zones) for zones in hierarchy_bq.values())
     
-    print(f"\n✓ Successfully generated {len(df_sorted)} viewpoints")
-    print(f"✓ Organized into {total_parents} parent folders")
-    print(f"✓ Containing {total_zones} zone folders")
+    print(f"\n✓ Successfully generated viewpoints:")
+    print(f"  - GP_SU: {len(df_su_sorted)} viewpoints in {total_su_parents} parent folders, {total_su_zones} zone folders")
+    print(f"  - GP_BQ_without_SU: {len(df_bq_sorted)} viewpoints in {total_bq_parents} parent folders, {total_bq_zones} zone folders")
     print(f"✓ Output file: {OUTPUT_XML}")
 
 
