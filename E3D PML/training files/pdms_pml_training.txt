@@ -1,0 +1,1682 @@
+--- Page 1 ---
+VPD
+Programmable Macro 
+Language 
+PML & PML 2
+
+--- Page 2 ---
+2
+Agenda
+Introductions
+Objectives
+Course Format
+Prerequisites
+
+--- Page 3 ---
+3
+Introductions
+Who am I?
+Who are you?
+–Company
+–Job Description
+–Knowledge of PDMS
+–Expectation of course
+
+--- Page 4 ---
+4
+Prerequisites 
+Text editor
+–Notepad
+–UltraEdit
+–Emacs
+PDMS Environment
+–PMLLIB work area
+–PDMS project
+Knowledge of PDMS
+PDMS 11.4 or above
+
+--- Page 5 ---
+5
+Objectives
+Broad overview of the PML language
+Basic coding practices and conventions
+How PML interacts with the Design model
+How Forms and Menus work with PML
+
+--- Page 6 ---
+6
+Course Format
+Overview of language syntax
+Terminology
+Examples
+Practical Exercises
+
+--- Page 7 ---
+7
+Course Contents
+Day 1-PML Overview and Program Flow Control
+Day 2-PML2Overview -Functions , Forms and Objects
+Day 3-Form Creation
+Day 4-More Form Creation and User Defined Objects
+Day 5–Collections and View Gadgets
+
+--- Page 8 ---
+8
+Day 1
+PML Overview and Program 
+Flow Control
+
+--- Page 9 ---
+9
+PML Overview
+Macros  -What macros are and how to use them
+PML       -Programmable Macro Language (two parts )
+PML1-First version of PML including loops , if 
+statements , string handling , labels etc.
+PML2-Object orientated language builds on PML1
+and extends the facilities to be like other 
+object based languages (VB, Smalltalk )
+Forms Most applications are driven by forms and 
+menus . Most PML will be based on a form.
+
+--- Page 10 ---
+10
+PML Programmable Macro Language
+Macros are text files containing PDMS commands in 
+sequence
+PML1macros are text files containing program statements 
+such as IF statements and DO loops
+Macros & PML1Macros are run in PDMS by $m/FILENAME
+Arguments may be passed to a macro on the command line:
+$M/BUILDBOX 100200300means that the extra 3values 
+after the macro name are treated as arguments 1, 2and 3
+These can be used within the macro to set PDMS attributes 
+or to perform calculations
+
+--- Page 11 ---
+11
+PML2is an Object Oriented Language
+PML2is more like other modern languages
+Typically , fewer lines of code needed with PML2
+Designed to be easier to read and easier to write
+PML2allows more powerful and sophisticated applications to 
+be written
+
+--- Page 12 ---
+12
+PML 2Jargon
+OOP
+METHODS
+ObjectsFunctions
+Object Blocks
+PMLLIB
+Variable Types
+TooltipsFramesRgroups
+.pmlfnc
+.pmlfrm .pmlobj
+
+--- Page 13 ---
+13
+Features Of PML2
+Variable Types -STRING , REAL , BOOLEAN &
+ARRAY
+Built in methods for commonly used actions
+Functions –accept arguments and return results
+User Defined Object Types
+PML Search Path (%PMLLIB %)
+Dynamic Loading of Forms , Functions and Objects
+New Aid objects for geometric modelling
+
+--- Page 14 ---
+14
+PML1: A Simple Macro
+NEW EQUIP NEW EQUIP //FREDFRED
+NEW BOX NEW BOX
+XLEN XLEN 300300YLEN YLEN 400400ZLEN ZLEN 600600
+NEW CYL DIA NEW CYL DIA 400400HEI HEI 600600
+CONN P CONN P11TO PTO P22OF PREVOF PREVText file
+‘myFile .mac’
+To run a macro 
+use the PDMS 
+command line
+
+--- Page 15 ---
+15
+NEW EQUIP / $1
+NEW BOX
+XLEN $2YLEN $3ZLEN $4
+NEW CYL DIA $3HEI $4
+CONN P1TO P2OF PREVMacros can be parameterised :
+To run a macro 
+with parameters :  text file
+myFile .mac
+$M/myFile .mac V1001 300400600PML1: A Simple Macro with Parameters
+
+--- Page 16 ---
+16
+PML1: More on macros
+Macros may have up to 9parameters separated by space
+$M/FRED HELLO HOW ARE YOU 5566778899
+1 2 3 456789
+text strings may be entered as a single parameter using 
+$<and $>to enclose the string :
+$M/FRED $< HELLO HOW ARE YOU $>5566778899
+1 23456
+$< $>act as delimiters and anything in between is interpreted 
+as a single parameter
+
+--- Page 17 ---
+17
+PML1: Synonyms
+Synonyms are abbreviations of longer commands they are 
+created as follows :
+$SXXX=NEW ELBO SELECT WITH STYP LR ORI P1IS N
+Synonyms can be parameterised
+$SYYY=NEW BOX XLEN $S1YLEN $S2ZLEN $S3
+To call this: YYY 1003002000
+This would expand the command YYY to the new box 
+command and interpret the three input values as parameters 
+just like a macro
+
+--- Page 18 ---
+18
+PML1: More on Synonyms
+Synonyms may be recursive
+Example -To change parameter number 6on a range of 
+components :
+$SXXX =PARAM N6462$/NEXT $/XXX
+NOTE :$/ACTS AS A RETURN CHARACTER
+To kill a synonym $SXXX =
+To kill all synonyms $sk –BEWARE : this will stop the 
+AVEVA applications from working properly !
+To switch synonyms off and on $S-and $S+
+
+--- Page 19 ---
+19
+Exercise 1
+Before starting this exercise copy the pmllib 
+directory identified by your trainer to your C: drive . 
+Then edit the evars .bat file in the %pdmsexe % 
+directory to include your c:\pmllib directory in the 
+%pmllib % environment variable .
+You can now enter PDMS
+
+--- Page 20 ---
+20
+PML1: Numbered Variables
+Numbered Variable types .
+–var1 name 
+–var2 ‘hello ’
+–var3 (99) 
+–var4(99* 3/ 6+ 0.5)
+–var 117pos in site
+–var 118(name of owner of owner )
+–var 119‘hello ’+  ‘world ‘+  ‘how are you’
+
+--- Page 21 ---
+21
+PML1& PML2: Named Variables
+Named variables
+–!variablename or !!variablename
+–single ! Means a local variable
+–double !!Means a global variable
+variable names may be up to 16characters long and the 
+names can contain alpha and numeric characters
+NEVER start a variable name with a number
+NEVER use ‘.’(dot or period )In variable names
+
+--- Page 22 ---
+22
+PML1: Setting Named Variables
+VAR !FRED NAME
+Takes the current element ’s (ce) name  
+VAR !POS POS IN WORLD
+Takes ce position relative to world coordinates  
+ 
+VAR !x ‘NAME ’
+Sets the variable to the text string NAME  
+ 
+NOTE : Quotes ‘‘or vertical bars | | may be used as text 
+delimiters  
+ 
+ 
+ 
+
+--- Page 23 ---
+23
+VAR !temp (23* 1.8+ 32)
+Calculate a value using the expression  
+ 
+VAR !list collect all ELBOW for CE
+Makes a string array of database references  
+ 
+ 
+ PML1: Setting Named Variables (Cont ’d)
+
+--- Page 24 ---
+24
+PML2: Variable Data Types
+There are four basic variable data types :
+–STRING ‘ANY ALPHA NUMERIC CHARACTERS ’
+–REAL ANY REAL NUMERIC VALUE
+–BOOLEAN TRUE or FALSE
+–ARRAY ANY COMBINATION OF THE ABOVE
+Arrays in PML are sparsely populated and heterogeneous  
+
+--- Page 25 ---
+25
+PML2: Setting Variables
+To create a LOCAL , STRING variable
+!Name = ‘Fred’
+To create a GLOBAL , REAL variable : 
+!!Answer = 42
+To create a GLOBAL , BOOLEAN variable : 
+!!Flag = TRUE
+To create a LOCAL empty ARRAY
+!Values = ARRAY ()
+To create a LOCAL ARRAY with one entry
+!newarray .append (‘xxx’)
+
+--- Page 26 ---
+26
+PML1: Example of LOCAL –vs-GLOBAL 
+Variables
+Run this macro on the command line and see the effect :
+$m/c:\pmllib \mac1
+
+
+--- Page 27 ---
+27
+PML1& PML2: Using Variables in PDMS 
+Command Syntax
+To expand PML variables in a PDMS command you need to 
+use a‘$’infront of the variable name :
+!XLEN = 1000
+!YLEN = !XLEN + 100
+!ZLEN = !XLEN + 1000
+NEW BOX XLEN $!XLEN YLEN $!YLEN ZLEN $!ZLEN
+
+--- Page 28 ---
+28
+PML1& PML2: Expressions
+Expressions are calculations using PML variables
+Using PML1:
+VAR !Z ( ‘$!X’+ ‘$!Y’) 
+NOTE : all PML1variables are STRING data types
+Using PML2:
+!Z = !X + !Y
+
+--- Page 29 ---
+29
+PML2: Expression Examples
+Expression operators
+–+ -/ *
+–LT GT EQ NE LE GE
+–NOT AND OR
+–SIN COS TAN SQR POW NEGATE ASIN ACOS 
+ATAN LOG ALOG ABS INT NINT
+!s = 30* sin(45)
+!t  =pow(20,2)-raise 20to the power of 2
+!f = (match (name of owner ,’LPX’)gt0)
+
+--- Page 30 ---
+30
+PML1& PML2: Operator Precedence
+()
+* /
++ -
+EQ NE GT LT GE LE
+NOT 
+AND
+OR
+Example :
+(60* 2/ 3+ 5) = 45
+
+--- Page 31 ---
+31
+PML2: Expressions (Cont ’d)
+May be of any complexity
+May contain calls to PML Functions and Object Methods
+May include Form gadget values ,object members and 
+methods . 
+For example :
+!NewVal = !!MyFunc (!x) * !!Form .length .val/ !MyArray .size()
+
+--- Page 32 ---
+32
+PML2: Using Variables in Expressions
+$ and quotes ‘’are not necessary when using the value of a 
+variable in a PML2expression :
+!X = 64 instead of VAR VAR !!X X ((6464))  
+!Y = 32
+!Z = !X + !Y
+!Z would be set the the REAL value 96
+The same expression PML1:
+VAR !Z ( $!X + $!Y )
+Remember all PML 1 variables are STRINGs so in the above example !Z would be the 
+STRING value ’96’not a REAL
+
+--- Page 33 ---
+33
+Arrays
+!x[1] = ‘Hello ’
+!x[2] = ‘World ’
+!y[1] = ‘fred’
+!y[2] = ‘cup’
+!z[1] = !x
+!z[2] = !y
+q var !z[1][2]
+<string > ‘World ’
+qvar!z[2][2]
+<string > ‘cup’An ARRAY variable can contain 
+many values , each of which
+is called an array element
+An array is created automatically
+by creating one of its array elements
+An array element may itself be an array : 
+Multi -dimensional Arrays
+
+--- Page 34 ---
+34
+Exercise 2
+
+--- Page 35 ---
+35
+DO !ppoint FROM 1TO 6
+PDMS /PML Syntax
+ENDDO
+Open Do Loops :
+DO 
+PDMS /PML Syntax
+‘Break condition ’
+ENDDODo loops
+BREAK IF (!COUNT GT 12)
+IF (!X EQ !Y) THEN
+BREAK
+ENDIF
+
+--- Page 36 ---
+36
+Do loops (cont’d)
+It is possible to skip part of the do loop using the skip
+command
+DO 
+PDMS /PML Syntax
+‘SKIP condition ’
+ENDDOIF(!X = !Y)THEN
+SKIP
+ENDIFSKIP IF (!COUNT GT 12)
+
+--- Page 37 ---
+37
+‘Do Index ’and ‘Do Values ’are ways of looping 
+through arrays
+DO !X values !ARRAY
+!X takes each ARRAY element value
+ENDDO
+DO !X  Index !ARRAY
+!X takes a number from 1to !ARRAY size
+ENDDODo loops (cont’d)
+
+--- Page 38 ---
+38
+Do Loops Examples
+var!Zones collect all zones for site
+var!name evaluate (Name ) for all from !Zones
+DO !x values !name OR DO !x index !name
+$!x $!name [$!x]
+new text name $!x-AAA new text name $!name [$!x]-AAA
+ENDDO ENDDO
+
+--- Page 39 ---
+39
+IFStatements
+The IFstatement is a construct for conditional execution 
+of commands
+The simplest form of the IFconstruct is:
+IF (‘expression ’) THEN
+PDMS /PML Syntax
+ENDIF
+
+--- Page 40 ---
+40
+IFStatements
+IF (‘expression ’) THEN
+PDMS /PML Syntax
+ELSEIF (‘expression ’) THEN
+PDMS /PML Syntax
+ELSE
+PDMS /PML Syntax
+ENDIFThe ELSEIF statements 
+allow for further conditions 
+to be tested . Once the IF
+or one of the ELSEIF
+statements has been 
+found to be TRUE , any 
+remaining ones are 
+ignored .
+The ELSE statement is 
+used as a ‘catch -all’, if 
+none of the IF/ELSEIF
+statements was satisfied 
+the commands in the 
+ELSE block are used .
+
+--- Page 41 ---
+41
+Branching 
+PML provides a way of jumping from one part of a program to 
+another using golabel
+The next line to be executed will be the line following
+LABEL /FRED ,which could be before or after the
+GOLABEL command . PDMS /PML Syntax
+GOLABEL /FRED
+ PDMS /PML Syntax
+LABEL /FRED
+ PDMS /PML Syntax  
+
+--- Page 42 ---
+42
+Conditional Branching 
+If the expression is TRUE there will be a jump to 
+LABEL /FRED
+if the expression is FALSE , PML will execute
+the‘More PDMS /PML Syntax ’ PDMS /PML Syntax
+GOLABEL /FRED IF (!x.eq(100)) 
+ More PDMS /PML Syntax
+LABEL /FRED
+ PDMS /PML Syntax  
+
+--- Page 43 ---
+43
+Conditional Branching (Cont ’d) 
+Do !A
+$P Processing $!A
+do !B to 10
+!C = !A * !B
+golabel /finished if (!C.gt(100))
+$P Product $!C
+enddo
+enddo
+label /finished
+$P Finished with processing = $!A Product = $!C
+
+--- Page 44 ---
+44
+Errors & Error Handling
+An error condition can occur because a command could 
+not complete successfully or because of a syntax error in a 
+macro or function . An error normally has three effects :
+An Alert form appears which the user must acknowledge .
+An error message is output to the commands /requests 
+form with a trace -back of any calling macros or functions .
+Any current running or nested PML macros and functions 
+are terminated
+
+--- Page 45 ---
+45
+Format of an Error Code
+This example of an error is caused by an attempt to use a 
+PML variable which does not exist:
+(46,28 ) ERROR -Variable FRED not defined .
+The46is the ‘Module ’or program section which identified 
+the error and 28is the Error Code itself.
+
+--- Page 46 ---
+46
+Error Handling
+If the input line was part of a PML macro or function the 
+error may optionally be HANDLED .
+e.g. Checking if a named element exists in PDMS :
+/FRED  
+Handle (2,109 ) $* Undefined name  
+ -- pmlcode executed when /FRED does not exist 
+Elsehandle NONE  
+ -- pmlcode executed when /FRED does exist and no error occurs  
+Endhandle  
+
+--- Page 47 ---
+47
+Error Handling (Cont ’d)
+An example containing multiple error handle , handle ANY and handle NONE :
+$!ItemNameOrRef
+Handle (2,107 ) (2,109 ) $* Undefined name or reference
+--code to take action if these errors occur
+elsehandle any
+--An ANY Handle Block is processed for any errors . 
+--In this situation it would handle ANY errors other than (2,107 ) and (2,109 ) 
+elsehandle NONE
+--A NONE Handle Block is processed only if there were no errors
+endhandle
+
+--- Page 48 ---
+48
+Day 2
+PML2Overview -Functions , 
+Forms and Objects
+
+--- Page 49 ---
+49
+The ‘&’STRING Concatenation Operator
+Values to be concatenated are automatically converted to STRING
+by the ‘&’operator . 
+This example sets !Z to the STRING ’64mmx 32mm’
+!X = 64
+!Y = 32
+!m = ‘mm’
+!Z = !X &!m &‘x’&!Y &!m
+Compare this which sets !Z to the REAL value 96
+!X = 64
+!Y = 32
+!Z = !X + !Y
+
+--- Page 50 ---
+50
+PML1: PDMSUI Macro Hierarchy
+PDMSUI environment variable
+setenv PDMSUI ‘c:\AVEVA \PDMS 11.5\pdmsui ’
+$SCALLP =$M/%PDMSUI %/DES/PIPE /$s1
+CALLP MPIPEDES
+GEN ADMIN PIPE EQUI ….DRA ADMIN CLIB ….
+MPIPE
+
+--- Page 51 ---
+51
+PMLLIB environment variable
+Pml.index file contains list of functions , forms & objects
+3 New file extensions .pmlfnc .pmlfrm .pmlobj
+NOTE : All file names must be lower case !
+The pml.index file is created using the syntax :
+PML REHASH and PML REHASH ALLPML2: PMLLIB Hierarchy 
+pmllib
+functions forms
+xxx.pmlfnc  xxx.pmlfrm  objects
+xxx.pmlobj  
+
+--- Page 52 ---
+52
+The !!CE Object
+A special GLOBAL PML variable !!CEalways points to the 
+current PDMS element and its attributes :
+!BranchHeadBore = !!CE.Hbore
+!HeadPosition = !!CE.Hposition
+!Easting = !HeadPosition .East
+To find a position with respect to another element you can use 
+the .wrt()method for position object :
+!PosWRTValve = !HeadPosition .WRT (!Valve )
+
+--- Page 53 ---
+53
+The !!CE Object (Cont ’d)
+You can set attributes using the PML2dot syntax . 
+The format of the command is:
+ dbref .attributeName = PMLvariable 
+For example : !!ce.poss = !pos
+    !dbref.name = '/PIPE -100'
+!!CE.Built = TRUE
+You can even assign a PML object , such as POSITION , 
+where this corresponds to the type of the attribute :
+!!CE .Position = !NewPosition
+
+--- Page 54 ---
+54
+The !!CE Object (Cont ’d)
+Note that where the type of an attribute is a PML object , it is 
+not possible to set an object member value directly –it must 
+be done in two stages :
+!Pos = !!CE.Position
+!Pos.Up = 2000
+!!CE.Position = !Pos
+
+--- Page 55 ---
+55
+PML2 Functions
+Functions are new style macros which are called by name -
+call !!FunctionName ()
+Functions can have arguments and may return a result 
+value :
+define function !!Area (!Radius is REAL ) is REAL
+!CircleArea = !Radius .Power (2) * 3.142 or ( PI)
+return !CircleArea
+endfunction
+Functions can be used in expressions :
+!CylinderVolume = !!Area (2.3) * !Height
+NOTE : Synonyms are disabled inside functions
+
+--- Page 56 ---
+56
+Dynamic loading of Objects , Forms and 
+Functions
+PML will automatically load an Object or FORM from file when 
+first used :
+!Person = object PRIMEMINISTER ()
+show !!MyInputForm
+To redefine an object once loaded :
+pmlreload form !!MyInputForm 
+pmlreload object PRIMEMINISTER ()
+To recognise new files added after entering PDMS :
+pmlrehash –build index for first path in %PMLLIB %
+or  pml rehash all -build index for all paths in %PMLLIB %
+
+--- Page 57 ---
+57
+Exercise 4
+
+--- Page 58 ---
+58
+Using Methods 
+Once created , variables cannot change type.
+To translate one variable type into another , methods are 
+used .
+!x = ‘56’ creates a string variable
+!y = (!x.real() * 2) creates a real using !x
+methods can also be used in a comparison .
+If (!x.real().eq(56)) then
+…
+Other translation methods are string ()andboolean ()
+!z = !y.string ()
+Creates a new string variable !zfrom the real variable !x
+
+--- Page 59 ---
+59
+Method Concatenation
+Any number of methods can be combined providing the 
+passed data is valid at each stage .
+!line = 'hello ,world ,how,are,you'
+!newline = !line.upcase ().split(‘,’).sort()
+q var!newline
+<ARRAY >
+[1] <STRING > 'ARE'
+[2] <STRING > 'HELLO ' 
+[3] <STRING > 'HOW '
+[4] <STRING > 'WORLD '
+[5] <STRING > 'YOU '
+
+--- Page 60 ---
+60
+Boolean Expressions and IF Statements
+Expressions based on the logical methods such as EQ and GT 
+give a BOOLEAN result which can be used directly in a PML if 
+expression .
+if ( !Value .ge(99)) then
+--if !value is greater than or equal to 999then
+--execute this block of PML code
+else
+--otherwise execute this block of PML code
+endif
+
+--- Page 61 ---
+61
+Boolean Expressions and IF Statements
+The expression can be a simple variable provided it is a 
+BOOLEAN type variable :
+!GreaterThanZero = !SomeValue .gt(0)
+if (!GreaterThanZero ) then
+--some PML code is executed if !SomeValue is greater --than zero
+endif
+The expression could be a user-defined PML function that 
+returns a BOOLEAN result :
+if ( !!MyFunction () ) then…
+
+--- Page 62 ---
+62
+Converting a value to BOOLEAN
+There is a built-in PML method for converting a value to a 
+BOOLEAN :
+!MyString = ‘TRUE ’
+if ( !MyString .Boolean () ) then ...
+
+--- Page 63 ---
+63
+Alert Forms
+
+
+--- Page 64 ---
+64
+Alert Forms (Cont ’d)
+There are 3types of alert to display text to the user in an Alert 
+form:
+!!Alert.Error ( ’You cannot do this!’)
+!!Alert.Message ( ‘Saving your data now' )
+!!Alert.Warning ( ‘Do not press this button again !' )
+By default , all alert forms appear with the relevant button as 
+near to the cursor as possible . To position an alert 
+specifically , X and Y values can be specified as a proportion 
+of the screen size
+!!Alert.Error ( ’You cannot do this!’, 0.25, 0.1)
+
+--- Page 65 ---
+65
+Alert Forms (Cont ’d)
+There are 2types of alert which return a result , confirm , and 
+question :
+Confirm Alerts
+!Answer = !!Alert.Confirm ( ‘Are you sure!’)
+Confirm alerts return ‘YES’or ‘NO’as strings
+Question Alerts
+!Answer = !!Alert.Question ( ‘OK to delete Site?’)
+Answer alerts return ‘YES’or ‘NO’or ‘CANCEL ’as strings
+
+--- Page 66 ---
+66
+Forms Are Global Objects
+Forms are global variables and are referenced using the 
+double exclamation mark ‘!!’
+Querying a forms members can be done by:
+qvar!!formname
+Try Q var !!cdcmember on the command line…
+Querying a gadget can be done in a similar way:
+qvar!!formname .gadgetname
+qvar!!formname .gadgetname .val
+
+--- Page 67 ---
+67
+Form Definition
+setup form !!myform
+!this.formTitle = ‘My Form Title’
+!!myform .initcall = ‘!this.init()’
+..…
+exit
+define method .init()
+.....
+endmethod
+
+--- Page 68 ---
+68
+Showing and Hiding Forms
+The PMLLIB search -path mechanism means that pre-loading 
+each form is not necessary .
+To show a form use:
+show !!formname    This will load the form   
+   definition and show it in one operation ! 
+Sometimes it is useful to have the form loaded so you can 
+use the forms gadgets to store data without the form being 
+shown or used directly by the user (a hidden admin form)
+To load a form and not show it:
+loadform !!secretAdminForm
+
+--- Page 69 ---
+69
+Built-in Methods for Forms
+A variety of useful method have been provided :
+To show a form:
+!!Myform .Show ()
+To hide a form:
+!!Myform .Hide()
+To query whether a form is currently shown :
+if ( !!Myform .Shown () ) then
+:
+endif
+
+--- Page 70 ---
+70
+Form Gadgets
+There are many kinds of form gadgets as you will see on the 
+following slides .
+When you are defining gadgets on a form, there are two 
+common aims . 
+–Define the area to be taken up on the form
+–Define the action to be taken if the gadget is selected
+Each gadget size and position determines the area taken up
+The action is defined by the gadget ’s CALLBACK
+
+--- Page 71 ---
+71
+Built-in Methods for Gadgets
+Gadgets are form member objects each with their own 
+members (attributes ) and a variety of useful built-in methods :
+To grey-out a button set the ‘Active ’member to FALSE :
+!!Myform .myButton .Active = FALSE
+To move the keyboard focus to a gadget use the .setFocus ()
+method :
+!!Myform .myTextField .setFocus ()
+
+--- Page 72 ---
+72
+Callbacks
+Any selectable gadget has a callback which is defined at the 
+time the gadget is created . 
+The callback can do one of three things :
+–show a form
+–execute a command directly
+–run a function or method
+button .opt |Options …| call |show !!optionsform | 
+button .del |Delete | call |delete equipment |
+button .apply |Apply | call |!!Myfunction ()|
+button .apply |Apply | call |!this.MyMethod ()|
+
+--- Page 73 ---
+73
+Form Callbacks (Initcall )
+The form’s initialisation callback allows the form’s gadgets to 
+be initialised to reflect the current state of the application . This 
+callback is used each time the form is shown .
+You can set the callback by assigning to the form’s initcall 
+member :
+!this.initcall = ‘Callbackstring ’
+Note : The callback must NOT attempt to display another form! 
+ 
+
+--- Page 74 ---
+74
+Form OK Callback
+A form’s OK callback is typically used when the form 
+interaction is complete and the user hits the ‘OK’button .
+You can assign to the form’s OKCALL member using the 
+syntax :
+!this.OKCALL = ‘!this.myFormOK ()’
+The above example calls a form method .myFormOK () 
+This callback would be actioned from a button defined with 
+the ‘ok’syntax in it’s definition :
+button .ok ‘OK ‘at xmax ymin ok 
+
+--- Page 75 ---
+75
+Form CANCEL Callback
+A form’s CANCEL callback is typically used when the form is 
+no longer required and the user hits the ‘Cancel ’button .
+You can assign to the form’s CANCELCALL member using 
+the syntax :
+!this.CANCELCALL = ‘!this.myFormCancel ()’
+The above example calls a form method .myFormCancel () 
+This callback would be actioned from a button defined with 
+the ‘cancel ’syntax in it’s definition :
+button .cancel ‘Cancel ‘at xmax ymin cancel
+
+--- Page 76 ---
+76
+A Simple Form
+setup form !!hello
+!this.formTitle = ‘myFirstForm ’
+paragraph .Message text ‘Hello 
+world ’
+button .bye ‘Goodbye ’ok
+exit
+File: 
+c:\pmllib \hello .pmlfrm
+
+
+--- Page 77 ---
+77
+Gadget Positioning
+Gadgets are positioned on a form from top left
+Form Origin
+Gadget Origin
+
+
+--- Page 78 ---
+78
+Each Gadget has four label points 
+–XMIN , XMAX YMIN YMAX
+These can be used for positioning
+At Xmin  .apply Ymax -0.5
+at ymin
+at xmax .frame 1+ 4
+To position a gadget in the bottom right of the form, use-
+at xmax form -sizeGadget Positioning (Cont ’d)
+YMIN
+YMAXXMIN
+XMAX
+
+--- Page 79 ---
+79
+Relative to the Last Gadget 
+Toggle .OnOff at XMIN YMAX +1Relative Gadget Positioning
+
+
+--- Page 80 ---
+80
+Relative to Specific Prevoius Gadgets 
+Toggle .OnOff at XMIN .Gadget 1-size YMAX .Gadget 1+1Relative Gadget Positioning (Cont ’d)
+
+
+--- Page 81 ---
+81
+Gadget Positioning : Path and Align
+The path command can be used to define the logical position 
+of subsequent gadgets .
+PATH DOWN means that the next gadget will be below the 
+current one, PATH RIGHT means that the next gadget will be 
+to the right of the current one.
+The spacing between gadgets is controlled by VDIST and 
+HDIST for vertical and horizontal spacing .
+There are settings of HALIGN andVALIGN which can set the 
+alignment LEFT ,RIGHT ,TOP andBOTTOM .
+
+--- Page 82 ---
+82
+Gadget Positioning Example
+
+
+--- Page 83 ---
+83
+Paragraph Gadgets
+Paragraph gadgets are simple named gadgets which allow 
+a piece of text or a PIXMAP to be displayed on a form.
+Para .cwdat X0Y0Text 'Current directory '
+
+
+--- Page 84 ---
+84
+Button Gadgets
+Button .Button ‘Pop Form ’FORM !!PopForm 
+Button .Calculate ‘Calculate ’Callback ‘!!MyFunctionName ()’
+Button .Apply ‘Apply ’Callback ‘!!MyFunction ()’
+Button .ok ‘OK’Callback ‘!!MyFunction ()’OK
+Button .cancel ‘Cancel ’Callback ‘!!MyFunction ()’CANCEL
+Button .reset ‘Reset ’Callback ‘!!MyFunction ()’RESET
+Button .help ‘Help’Callback ‘!!MyFunction ()’HELP
+Button .dismiss ‘Dismiss ’OK
+
+
+--- Page 85 ---
+85
+Button Gadgets (Cont ’d)
+Change the background colour of a button :
+!!ex5.Apply .Background = 2
+Add a picture to a button :
+Button .Apply  pixmap /c:/pmllib /aveva .bmp
+
+
+--- Page 86 ---
+86
+Frame Gadgets
+A Frame is a cosmetic gadget which is used to surround a 
+group of similar gadgets .
+The syntax is:
+frame .myFrame ‘My Frame ’at X0Y3
+button .b1‘Press Here ’
+button .b2‘Or Press Here ’
+exit
+
+
+--- Page 87 ---
+87
+Text Gadgets
+A text input gadget provides a place on a form into which the user 
+may type a value .
+Text .DirName callback '!This.TopDir ()' AT X 0Width 50is String
+
+
+--- Page 88 ---
+88
+List Gadgets
+A list gadget allows the user to make a single or multiple choice 
+from many alternatives .
+List .SubDirs 'Sub Dirs’CallBack '!This.SDirs ()’Width 60Hei4
+
+
+--- Page 89 ---
+89
+Textpane Gadgets
+A TEXTPANE gadget provides an area on a form into which a 
+user may type and edit multiple lines of text. This gadget 
+could also be used to display the contents of a text file. 
+Textpane .textp ‘Table ’at x3y6 width 50 hei 6
+
+
+--- Page 90 ---
+90
+Exercise 5
+
+--- Page 91 ---
+91
+Day 3
+Form Creation
+
+--- Page 92 ---
+92
+Exercise 6
+
+--- Page 93 ---
+93
+Form INITIALISATION and 
+CONSRUCTOR Methods
+Form initialisation and gadget callbacks as methods :
+Setup form !!myform
+!this.initcall = ‘!this.init()’
+.....
+Exit
+Define method .myform () --Constructor Method
+..… --(called ONCE on form definition )
+Endmethod
+Define method .init() --Initialisation Method
+….. --(called EACH TIME form is shown )
+Endmethod
+
+--- Page 94 ---
+94
+Form INITIALISATION and 
+CONSRUCTOR Methods 
+Example :
+setup form !!myform
+!!myform .initcall = '!!myform .init()'
+button .but 'Press me' Call ' ' at x 0
+exit
+define method .myform ()
+$P The Form is now defined ready for use, but not visible
+endmethod
+define method .init()
+$P The Form is displayed to the user
+Endmethod
+
+--- Page 95 ---
+95
+Array Declaration
+It is not possible to create a new array using the append 
+mechanism . The array must be declared  
+!MyArray .append (‘Hello ’) would not work unless the 
+array had been declared !
+!MyArray = Array () declare array first
+!MyArray .append (‘Hello ’) now you can append an 
+element to the array
+
+--- Page 96 ---
+96
+Methods for PML Arrays
+Array methods are a powerful feature , they are 
+built-in functions for performing a variety of operations on the 
+array or returning information from the array
+!NumberOfNames = !NameStrings .Size()
+This method sets !NumberOfNames to the number of 
+elements currently in the array . This is an example of a  
+NO EFFECT method which does not alter the array but 
+returns a REAL result assigned to !NumberOfNames .
+
+--- Page 97 ---
+97
+Methods for PML Arrays (Cont ’d)
+Here is a method which does change the array :
+!MyArray .Clear ()
+This method MODIFIES the array by deleting all the array 
+elements but returns NO RESULT , so there is nothing to 
+assign to another variable .
+
+--- Page 98 ---
+98
+Methods for PML Arrays (Cont ’d)
+Here is a method which both changes the array and returns a 
+result :
+!NewArray = !OldArray .RemoveFrom (5,10)
+The method result MODIFIES the array by removing 10 
+elements , starting at element 5. The ARRAY RESULT value 
+!NewArray contains the 10removed elements .
+
+--- Page 99 ---
+99
+Methods for PML Arrays (Cont ’d)
+If not required , the result can be simply discarded by invoking 
+the method as a command and not assigning the result to a 
+variable :
+!OldArray .RemoveFrom (5,10)
+Always use an ARRAY METHOD , if one is available , in 
+preference to constructing a DO LOOP as it is far more 
+efficient .
+
+--- Page 100 ---
+100
+Exercise 7
+
+--- Page 101 ---
+101
+Methods for Objects 
+A large number of methods have been provided for the built-in 
+PML data types : For example , for STRING objects , you will 
+find a method named Length .
+!Name = ‘Nicole Kidman ’
+!NumberOfLetters = !Name .Length ()
+This method returns a REAL value (the number of characters 
+in the string ), but has NO EFFECT on the variable itself.
+
+--- Page 102 ---
+102
+Methods for Objects (Cont ’d) 
+Notice the dot‘.’separator between the name of the variable 
+and the name of the method .
+Also note the brackets ()following the name of the method . 
+The brackets are used to enclose the arguments of the 
+method . If there are no arguments for a method they must be 
+present .
+The following method creates an ARRAY of STRINGS :
+e.g. !NameStrings = !Name .Split()
+!NameStrings = !Name .Split(‘%’)
+
+--- Page 103 ---
+103
+Form Gadget Tooltips
+Tooltips are small help messages which ‘pop-up’when you 
+move the mouse over a form gadget .
+To create atooltip :
+button .modelEditor TOOLTIP TOOLTIP ‘‘Model Editor Model Editor ’’
+Tooltips can be used for BUTTONS , TEXT , TOGGLE and 
+OPTION gadgets only
+
+
+--- Page 104 ---
+104
+Toggle Gadgets
+Toggle gadgets are used for independent on/off settings .
+...
+Toggle .bold  ’Bold’Call '!this.boldSelect ()’
+Toggle .italic ‘Italic’Call '!this.italicSelect ()’
+Toggle .underline ’Underline ' Call '!this.underlineSelect ()’
+…
+
+
+--- Page 105 ---
+105
+Toggle Gadgets (Cont ’d)
+The value of a toggle gadget is set and used via the .val
+member which is a BOOLEAN value :
+if (!this.Bold.val.eq(true)) then
+--some pml code
+endif
+The default value for a toggle is FALSE .
+
+--- Page 106 ---
+106
+Rgroup Gadgets
+A Radio Group (Rgroup ) gadget is used to give the user a 
+single choice between a small fixed number of options . It is 
+displayed as a horizontal or vertical line of toggles each witha 
+tag name displayed to the right of each toggle .
+There is always one 
+current selection for
+The group .
+
+
+--- Page 107 ---
+107
+Rgroup Gadget Callback
+Normally there will be a single callback specified for the 
+radio group as a whole
+rgroup .vert|Alignment | FRAME vertical callback ‘!this.vertSelect ()’
+add tag ’Left’select ’Left’
+add tag ’Centre ’select ’C’
+add tag ’Right ’select ’R’
+exit
+Sometimes you may need separate callback 
+e.g.
+add tag ’Right ’select ’R’callback ‘!this.vertRightSelect ()’
+
+--- Page 108 ---
+108
+Rgroup Select Keyword
+The select keyword in the addcommand for each button 
+defines its replacement text string (Rtext )
+add tag ’Left’select ’Left’
+When you query the current selection using the gadget ’s 
+selection ()method , 
+q var!!Myform .vert.selection ()
+it will return Rtext of the currently selected tag as a STRING .
+You could use this method in an expression like this:
+….
+if ( !this.vert.selection ().eq(‘Left’) ) then
+….
+
+--- Page 109 ---
+109
+Rgroup .valmember
+The .valmember of the Rgroup refers to the currently 
+selected toggle within the group .
+For example : !!Myform .vert.val= 2
+sets toggle 2 to be the Rgroup ’scurrent selection .
+You could use this method in an expression like this:
+….
+if ( !this.vert.val.eq(2) ) then
+….
+
+--- Page 110 ---
+110
+Exercise 9
+
+--- Page 111 ---
+111
+Option Gadgets
+An option gadget offers a single choice from a list of items . 
+The items in the list can be either pixmaps or text strings , but 
+not a mixture . The gadget displays the current choice in the 
+list.
+When the user selects the option gadget , the entire list of 
+options appear as a drop-down list. The user can then select 
+the required option with the cursor .
+
+
+--- Page 112 ---
+112
+Option Gadgets (Cont ’d)
+The width of a text option gadget must be specified . A tag 
+name is optional and is displayed to the left of the gadget . 
+option .Colour ’Colour ’width 10
+The option gadget actually contains two parallel arrays of 
+information . The display strings (Dtext ) and the replacement 
+strings (Rtext ). 
+
+--- Page 113 ---
+113
+Option Gadgets (Cont ’d)
+The list of display values must be supplied by assigning an 
+array of strings to the gadget ’sDtext (Display text) member . 
+This is the list of choices displayed to the user. 
+!ColourArray [1]=’Black ’
+…...
+!ColourArray [5]=’Blue’
+!This.Colour .Dtext = !ColourArray
+
+--- Page 114 ---
+114
+Exercise 10
+
+--- Page 115 ---
+115
+Day 4
+More Form Creation and User 
+Defined Objects
+
+--- Page 116 ---
+116
+Form Member Variables
+A form can have variables associated with the form when it is 
+built. 
+The form variables can be thought of as global variables 
+stored in the form definition . 
+These local variables are called form member variables .
+
+--- Page 117 ---
+117
+Form Member Variables (Cont ’d)
+Form member Variables may be of any data type:
+setup form !!Myform
+member .CE is DBREF
+member .String is STRING
+member .Values is ARRAY
+.
+.
+Exit
+Form members are in effect GLOBAL variables :
+!!Myform .Values .Append (!NewValue )
+
+--- Page 118 ---
+118
+The CE button
+A CE button typically calls the form initialisation method to 
+reset the form for the current element in the database .
+setup form !!myForm
+member .CEREF is DBREF
+!this.initcall = |!this.init()|
+button .ce‘CE ’callback '!this.init()'
+para .cename width 30height 1
+exit
+define method .init()
+!this.CEREF = !!CE
+!this.cename .val=fullname
+endmethod
+
+--- Page 119 ---
+119
+Formatted Text Gadgets
+The FORMAT object controls the display format for REAL text 
+gadget values . An example of this is imperial feet&inch units 
+for distances , or imperial inch units for bores .
+First, you would create a FORMAT object for a specific data 
+type. This would normally be a global PML variable and would 
+be used for all text input gadgets of that type.
+
+--- Page 120 ---
+120
+Formatting Text Gadgets (Cont ’d)
+A text gadget can be automatically formatted using a 
+FORMAT object :
+!!FormatLength = object FORMAT ()
+!!FormatLength .Units = ‘FINCH ’
+setup form !!Format
+text .dist ‘Distance ’is REAL format !!FormatLength
+exit
+
+--- Page 121 ---
+121
+Cadcentre Standard Format Variables
+Cadcentre appware writers use four format objects as global 
+variables . If you need to use a formatted text gadget you are 
+recommended to use these supplied format objects :
+!!DistanceFmt For distance units
+!!BoreFmt For Bore Units
+!!RealFmt To give a consistent level of 
+decimal places on real numbers
+!!IntegerFmt To force real numbers to be 
+integers (0dpRounded )
+Note : Using these global format objects will ensure your forms 
+will work in the project units specified by the settings >Units 
+form.
+
+--- Page 122 ---
+122
+Bar Menus
+Forms may have a bar menu gadget which appears as a row 
+of menus across the top of a form.
+A bar menu is defined within the form definition . There are 
+two reserved menu names : ‘Window ’and‘Help’which 
+reference standard window and help menus respectively .
+Here is an example of a Bar menu definition :
+Setup Form !!Test Dialog size 305
+bar
+!This.bar.add('Choose ','Menu 1')
+!This.bar.add('Window ','')
+!This.bar.add('Help','')
+exit
+
+--- Page 123 ---
+123
+Defining a Menu Object
+Within the form definiton the menu sub-command creates a 
+named menu object . You can then use the menu ’s add 
+method toadd named menu fields . A menu field can do one 
+of three things :
+–Execute a callback
+–Display a form
+–Display a sub-menu
+
+--- Page 124 ---
+124
+Menu Object (Cont ’d)
+You can also add a visual separator between fields .
+menu .menu 1
+!This.menu 1.add(’CALLBACK ’,’Query ’,’q ban’)
+!This.menu 1.add(‘FORM ’,‘Hello …’, ‘hello ’)
+!This.menu 1.add(’SEPARATOR ')
+!This.menu 1.add(’MENU ’,’Pull-right1’,’Pull1’)
+Creates a menu menu 1with 3fields Query , Hello …and Pull-
+right1and a separator between the last two fields
+
+--- Page 125 ---
+125
+Exercise 11
+
+--- Page 126 ---
+126
+Built in PML OBJECT Types
+There are a large number of standard objects within PML2. 
+These are:
+All Variable types , BORE , DIRECTION , DBREF , FORMAT , 
+MDB , ORIENTATION , POSITION , FILE , PROJECT , 
+SESSION , TEAM , USER , ALERT , FORM , all form Gadgets 
+and various graphical aid objects .
+Each object has a set of built in methods for setting or 
+formatting the object contents .
+
+--- Page 127 ---
+127
+PML Built-in Objects
+ARRAY Items underlined have already
+BLOCK been covered in the course
+BOOLEAN
+REAL
+STRING
+DATETIME
+FILE
+FORMAT
+
+--- Page 128 ---
+128
+PDMS Objects
+BORE
+DB
+DBREF
+DIRECTION
+MDB
+ORIENTATION
+POSITION
+PROJECT
+TEAM
+USER
+
+--- Page 129 ---
+129
+Forms and Menus Objects (Gadgets )
+ALERT
+ALPHA
+BAR
+BUTTON
+FORM
+FMSYS
+FRAME
+LIST
+MENUOPTION
+PARAGRAPH
+RGROUP
+TEXT
+TEXTPANE
+TOGGLE
+VIEW
+2D VIEW
+3D VIEW
+
+--- Page 130 ---
+130
+3D Geometry Objects
+ARC
+LINE
+LINEARGRID
+PLANE
+PLANTGRID
+POINTVECTOR
+RADIALGRID
+XYPOSITION
+
+--- Page 131 ---
+131
+The File Object
+The old ‘openfile ’, ‘readfile ’, ‘writefile ’and ‘closefile ’
+syntax has been superseded by a file object .
+You can read or write files in one operation .
+To create a file object :
+!input = object file(‘C:\FileName ’)
+!output = object file(‘C:\FileName .out’)
+To Open a file in WRITE mode :
+!output .open (‘WRITE ’)
+Options are: READ , WRITE , OVERWRITE , APPEND
+
+--- Page 132 ---
+132
+Using File Objects
+To read a line from file:
+!line = !input .ReadRecord ()
+To write a line to file:
+!line = !input .WriteRecord ()
+To read all the input file:
+!filearray = !input .ReadFile ()
+To write all of the data to file
+!output .WriteFile (‘WRITE ’,!filearray )Files must be open
+Files are opened and
+closed automatically
+
+--- Page 133 ---
+133
+File Object Methods
+File objects extend the functionality of PML1, New Features 
+include :
+File type checking -File or Directory
+File open query -Is open ?
+File Owner Query
+File path array
+Files can now be moved to different directories
+File size can now be read
+Plus others ……… .. 
+
+--- Page 134 ---
+134
+Exercise 12
+
+--- Page 135 ---
+135
+User Defined Objects
+User Defined Objects Can contain any variable or object 
+type as members .When an object is defined a variable 
+needs to be set to create an instanceinstance of that object .
+define object VIEWCLIPDATA
+member .Pos is POSITION
+member .XLen  is REAL
+member .YLen is REAL
+member .ZLen  is REAL
+member .Ori   is ORIENTATION
+endobject !fred = object viewclipdata()
+
+--- Page 136 ---
+136
+User Defined Objects
+Example :
+Defining an Object :
+define object ELEMENT
+member .Type is STRING
+member .Material is STRING
+endobject
+Using an Object (creating an instance ):
+!Item = object ELEMENT ()
+!Item.Type = ‘Flange ’
+!Item.Material = ‘Carbon Steel ’
+
+--- Page 137 ---
+137
+User Defined Methods
+Defining an object with a method : 
+define object ELEMENT
+member .Type is STRING
+member .Material is STRING
+endobject
+define method .FullDesc () is string
+return !this.Type & ‘‘& !this.Material
+endmethod
+Using an object method :
+!Item = object ELEMENT () –create an instance of ELEMENT
+! Item .type = ‘FLANGE ’–set the type
+! Item .material = ‘Carbon Steel ’–set the material
+!Name = !Item.FullDesc () –call the method for full description
+
+--- Page 138 ---
+138
+A Constructor METHOD
+A Method with no arguments but the same name as the type 
+of the object is called the default constructor method .
+define object LIFE
+member .Answer is REAL
+endobject
+define method .Life()
+!This.Answer = 0
+endmethod
+Cont ’d over…
+
+--- Page 139 ---
+139
+Method Overloading
+A method of an object have the same name but a different 
+‘signature ’–i.e. different arguments in its definition
+define method .Life()
+!this.answer = 0
+endmethod
+define method .Life(!Value is REAL )
+!this.answer = !Value
+endmethod
+
+--- Page 140 ---
+140
+Using Objects and Methods
+!Marvin = object LIFE ()
+The method .Life() is called automatically and the value 
+!marvin is 0
+!myLife = object LIFE ()
+q var !myLife .Answer
+<REAL >  0
+Create new instance of object with Answer set to a value
+!myLife = object LIFE (40)
+qvar!myLife .Answer
+<REAL >  40
+Answer member is now 40because the 2ndconstructor 
+method was used with a parameter to set the initial value
+
+--- Page 141 ---
+141
+Example User Defined Object
+Take a look at the box.pmlobj file in your pmllib 
+directory
+Create an instance of a BOX
+Create an instance of a BOX with a predefined size
+Try using the volume and surfaceArea methods
+Create a new user defined object for a CYLINDER
+Create methods for volume and surface area
+
+--- Page 142 ---
+142
+Day 5
+Collections and View Gadgets
+
+--- Page 143 ---
+143
+The Collection Syntax
+A very powerful feature of the PDMS database is the ability 
+to collect and evaluate data according to rules .
+Var!zone collect all zones for site
+var!name eval name for all from !zone
+var!elbo coll all elbo with spref eq /A300/EL100
+Var!box coll all box for ce
+var!volume eval (xlen * Ylen * zlen) for all from !box
+Note : Because this uses the var command , all collected 
+items are STRING data types not DBREFs
+
+--- Page 144 ---
+144
+The Compose Command
+It is sometimes necessary to arrange text in multiple 
+columns , reports are an example . The PML1COMPOSE
+command will help you do this.
+Compose always returns an array with at least one element . 
+The number of the array elements depends on the length of 
+the text strings supplied and the width of each column .
+
+--- Page 145 ---
+145
+The Compose Command
+E.gVAR !OUTPUT COMPOSE $
+‘$!name ’WIDTH 20 SPACE 1 $
+‘$!area’WIDTH 14 SPACE 1RIGHT $
+‘$!code ’WIDTH 4LEFT
+The result of a compose is an array !!!!!!
+VAR !X COMPOSE ‘HELLO HOW ARE YOU ’WIDTH 5
+Q VAR !X
+!X[1] ‘HELLO ’
+!X[2] ‘HOW   ‘
+!X[3] ‘ARE  ‘
+!X[4] ‘YOU  ‘
+
+--- Page 146 ---
+146
+View Gadgets
+View gadgets are named gadgets which are used to display 
+graphical data.
+Plot View Volume View (Design ) Area View (Draft )
+
+--- Page 147 ---
+147
+Plot View
+Plot View Example
+setup form !!view 
+View .view1 plot width 41hei25
+exit
+exit
+define method .view()
+!this.view1.borders = false
+!this.view1.add(‘c:/ladder .plt’)
+endmethod
+
+
+--- Page 148 ---
+148
+Exercise 13(part I)
+
+--- Page 149 ---
+149
+Exercise 13(part II)
+Time permitting
+
+--- Page 150 ---
+150
+End of Course

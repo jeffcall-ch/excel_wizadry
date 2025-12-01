@@ -1,0 +1,3859 @@
+--- Page 1 ---
+AVEVA PDMS Programmable Macro Language manual 
+  2016 v.1. Page 101/178  17.5.3. Gadget Alignment 
+To specify horizontal and vertical alignments" of a djacent gadgets, use the HALIGN and 
+VALIGN commands, respectively. The options are: 
+ 
+HALIGN left, HALIGN centre, HALIGN right 
+VALIGN top, VALIGN centre, VALIGN bottom 
+ 
+For the default PATH right the alignments are HALIG N left and VALIGN top. 
+17.5.4. How It All Works 
+ The position of a new gadget relative to the prece ding one depends on the combination of 
+the current path, distance increment and alignment.  For horizontal paths, LEFT and RIGHT, 
+the HDIST and VALIGN apply. For vertical paths, UP and DOWN, the VDIST and HALIGN 
+apply. The following diagram shows the valid alignm ent settings for paths Right, Left, Down 
+and Up, with clearance distances D grid units in ea ch direction. 
+ 
+Picture Nr.12. - Effect of Path and Alignment Setti ngs 
+ Combinations of path, distance and alignment comma nds allow you to set up correctly 
+aligned rows and columns of gadgets without the nee d to calculate any grid coordinates. 
+ 
+button .But1 
+PATH down 
+$* default placement 
+HALIGN centre 
+VDIST 2 
+paragraph .Par2 width 3 height 2 $* auto-placed 
+toggle .Tog3 $* auto-placed 
+PATH right 
+HDIST 3.0 
+VALIGN bottom 
+list .Lis4 width 2 height 3 $* auto-placed 
+PATH up 
+HALIGN right 
+paragraph .Par5 width 3 height 3 $* auto-placed  
+
+
+--- Page 2 ---
+*****  THANK GOD THAT WE HAVE AVEVA PDMS BECAUSE ALL OTHE R PLANT SOFTWARE REALLY SUCK *****  
+Picture Nr.13. - Example Layout of 
+Gadgets   
+ 
+The gadgets are created in numeric order 
+with the arrow direction showing the 
+current path when each new gadget was 
+placed (down, down, right, up). 
+ 
+The arrow positions show the current 
+alignment when each gadget was placed 
+(centre, centre, bottom, right). 
+ 
+ 
+17.5.5. Default Positions in Gadget Containers 
+ For a Form the default position of first gadget is at the form ’s grid origin (0,0). For a 
+Frame , the default position of the first gadget within a  frame depends on the current settings 
+of PATH , HDIST and VDIST . The frame's tag name (if specified) is positioned  on the top 
+border HDIST from the top-left-hand corner. The fir st gadget is placed at the position 
+(HDIST/2, VDIST/2). A similar offset is allowed at the right hand side and the bottom, before 
+the frame's bounding box. 
+17.6. Relative Placement using the AT-syntax 
+17.6.1. Positioning Relative to a Previous Gadget 
+ To specify the position of a new gadget relative t o an extremity of the last placed gadget, 
+use the AT keyword as follows: 
+ 
+toggle .OnOff AT XMIN YMAX+1 
+ 
+This positions the origin of the new toggle gadget with respect to the extremities of the 
+lastcreated gadget (indicated by the absence of an explicit gadget name in the AT 
+command). The new gadget’s origin is at the coordin ates (XMIN, YMAX+1) of the last 
+gadget: 
+ 
+Picture Nr.14. - Positioning Relative to Specific P revious Gadgets 
+The command 
+ 
+toggle .OnOff AT XMIN gadget1 YMAX gadget1+1 
+ 
+positions a new gadget relative to extremities of t he previous gadget gadget1. The effect is 
+similar to that illustrated above. 
+ 
+toggle .OnOff AT XMIN gadget1-2 YMAX gadget1+1 
+ 
+positions the new gadget to the left of gadget1 as the specified X offset is negative.  
+
+
+--- Page 3 ---
+AVEVA PDMS Programmable Macro Language manual 
+  2016 v.1. Page 103/178   
+Picture Nr.15. - Newly Placed Gadget 
+Note: The new gadget need not be adjacent to the referenc ed gadget. You can omit the X or 
+Y co-ordinate. The co-ordinates can be set relative  to different previous gadgets. 
+17.6.2. Positioning Relative to the Form Extremitie s 
+ You can also position a new gadget relative to the  current size of the form, and the 
+current size of the gadget. For example, if you wan t to place an OK button at the extreme 
+right-hand bottom corner of the form, you could use  the commands: 
+ 
+button .OK AT XMAX FORM-SIZE YMAX FORM OK 
+ 
+XMAX FORM and YMAX FORM refer to the maximum X and Y coordinates for the entire 
+form so far. XMAX FORM - SIZE subtracts the current  gadget’s size so that the form will not 
+expand. The net result of the above command is to a dd the OK button so that in the X-
+direction it just finishes at the form’s current ma ximum extent without increasing the form 
+width, and in the Y-direction the gadget’s origin i s placed at the form’s current maximum 
+depth and extends it to include the gadget’s height . The result is: 
+ 
+Picture Nr.16. - Positioning Relative to Form’s Ext remities 
+Typical code to add CANCEL and OK gadgets to a form  would be: 
+ 
+button .CANCEL at xmin form ymax form CANCEL 
+button .OK at xmax form - size OK 
+  
+
+
+--- Page 4 ---
+AVEVA PDMS Programmable Macro Language manual 
+  2016 v.1. Page 104/178  17.7. Mixing Auto and Relative Placement 
+Note that each gadget coordinate is independent wit h respect to auto and explicit placement. 
+All the following are legal constructs: 
+ 
+toggle .t1 AT XMIN.gadget1 YMAX.gadget2 
+places .t1 with respect to XMIN of one gadget and Y MAX of a different gadget. 
+toggle .t2 AT XMAX YMAX.gadget2 + 0.25 
+places .t2 with respect to XMAX of the last placed gadget and YMAX of a specific gadget 
+gadget2. 
+ 
+PATH down 
+toggle .t3 AT xmin.gadget1 
+ 
+places .t2 with respect to XMIN of gadget .gadget2,  whilst the Y coordinate for .t2 is 
+autoplaced at current VDIST value below the last pl aced gadget. 
+17.8. Absolute Gadget Positioning 
+Note: Absolute positioning is not the recommended w ay to define your forms: use relative 
+positioning. For example, each of the commands: 
+ 
+toggle .OnOff at 3 3.5 
+TOGGLE .ONOFF AT X 3 Y 3.5 
+TOGGLE !This.TOGGLENAME AT Y 3.5 X 3 
+17.9. AT Syntax 
+The AT syntax is used to define the position of a g adget’s origin within a form. The position 
+may be specified absolutely (in form layout grid un its) or relative to the extremities of existing 
+gadgets, or relative to the size of the form and th e gadget. The AT syntax graph is the 
+easiest way of illustrating all the possible option s, and so it is included here: 
+ 
+Picture Nr.17. - Syntax Graph -: Gadget positioning  
+where <FGREL>,  shown below, sets the gadget position relative to another gadget or the 
+form’s extent. For example, it can be used to posit ion a gadget half-way across the width of 
+a form: 
+ 
+ 
+ 
+Picture Nr.18. - Syntax Graph -: Relative Placing o f Gadgets  
+
+
+--- Page 5 ---
+AVEVA PDMS Programmable Macro Language manual 
+  2016 v.1. Page 105/178  17.10. Gadget Size Management 
+ Each gadget has a width and height attribute, whic h may be specified in the gadget 
+definition, with values in grid units 
+ 
+• as a literal distance in grid units 
+• as the width or height of a previously placed gadg et 
+• as the distance from the gadget's position to the positional extent of a previously 
+placed gadget 
+ 
+A gadget will have up to three parts which contribu te to the size, enclosed by the gadget 
+box, namely, Tag (to show the gadget title), Data-b ox (to hold the gadget value) and 
+Decoration (e.g. interaction button, pull-down arro w, padding space etc.). 
+17.10.1. Tag Width 
+ All gadgets have a TAG attribute which may be set in the gadget definition or modified 
+after the gadget has been defined. The size of a ga dget is dependent on whether its tag is 
+specified, whether it is displayable, and its value  at the time of definition. 
+ 
+• SLIDER , PARAGRAPH , G3D  and G2D  do not display their tag at all and so it doesn't 
+affect the gadget size. 
+• FRAME  gadgets display their tag as an integral part of t heir data-box, and so the tag, if 
+specified, contributes to the gadget height (but no t the width). 
+• LIST , SELECTOR  and TEXTPANE  gadgets display their tag above the data-box, so i f 
+specified, it affects the gadget height (but not th e width). 
+• OPTION , COMBO , TEXT , TOGGLE  and RADIO_BUTTON  gadgets display their tag 
+horizontally in-line with the decoration and/or dat a-box and so, if specified, affects 
+the width but not the height. 
+• BUTTON  gadgets display their tag inside the decoration, a nd there is no data-box, so 
+width and height directly set the gadget-box size i ndependently of the actual tag 
+string. 
+• ALPHA  gadgets (not in FRAMEs) display their tag above th e data-box, so it affects the 
+gadget height but not the width. ALPHA views within  FRAMES do not display their 
+tag at all, so it has no effect on the size. 
+ 
+Gadgets with an in-line tag support a TagWidth keyw ord, which allows the tag width to be 
+specified in horizontal grid units. 
+ 
+toggle .tog1 tagwid 9 |BBC news 24| 
+toggle .tog2 tagwid 9 |BBC 1| 
+ 
+This is only necessary to: 
+ 
+• Reserve space for a tag, which is to be set or mod ified later. 
+• Ensure alignment of the data-boxes of two or more such gadgets. 
+ 
+Otherwise the tag will be sized directly by the gad get's tag text. 
+  
+
+--- Page 6 ---
+AVEVA PDMS Programmable Macro Language manual 
+  2016 v.1. Page 106/178  17.10.2. The Meaning of Size for the PML Gadget Typ es 
+The WIDTH and HEIGHT settings mean the following fo r the PML gadget set: 
+ 
+• Gadgets with an optional in-line tag.  (TEXT,OPTION,COMBO TOGGLE,RTOGGLE) 
+WIDTH and HEIGHT define the data-box and decoration  in grid units. This excludes 
+the tag. 
+• Boxed gadgets with optional tag above.  (LIST,SELECTOR,TEXTPANE) WIDTH 
+defines the width of the data-box and decoration in  grid units and HEIGHT defines 
+the number of visible data lines. The data-box may include scroll bars to expose 
+data lines that do not fit into the display space d efined. This excludes the tag. 
+• Gadgets with no tag or with an integral (optional) tag.  Gadgets that never display a 
+tag ( SLIDER, G2D, G3D, GM3D, PARAGRAPH ) WIDTH and HEIGHT define the 
+gadget box directly in grid units.  
+• Gadgets with integral (optional) tag:  FRAME, BUTTON . WIDTH and HEIGHT 
+define the gadget box directly in grid units. 
+• ALPHA : a boxed gadget with optional tag above. WIDTH def ines the width of a data-
+box in grid units and HEIGHT defines the number of visible data lines. The data-box 
+may include scroll bars to expose data lines that d o not fit into the display space 
+defined, and may also include a data input line wit h a prompt above. This excludes 
+the tag. 
+17.10.3. Specifying Gadget Size Relative to a Previ ous Gadget 
+A gadget's width and/or height components can be sp ecified relative to the size of previously 
+placed gadgets, e.g. 
+ 
+frame fr1 |Frame 1| ... Width.gad6 Height 
+ 
+The width of fr1 is set to the width of gadget gad6  and its height is set to the height of the 
+last (most recently defined) gadget, where the mean ing of Size is gadget type dependent as 
+explained in the previous section. A gadget's width  and/or height components can also be 
+specified as the distance from its position co-ordi nate to the positional extent of another 
+gadget, e.g. 
+ 
+frame fr2 |Frame 2| ... Width to min.fr1 Height to max 
+ 
+The width of fr2 extends from its specified (or imp lied) X-position to the XMIN-position of 
+gadget fr1, and its height extends from its specifi ed (or implied) Y-position to the 
+YMAXposition of the most recently defined gadget. N ote that the positional extents always 
+refer to the full gadget box. 
+17.10.4. Gadget Size Syntax 
+The full syntax for gadget size (width and height) is as follows: 
+ 
+
+
+--- Page 7 ---
+AVEVA PDMS Programmable Macro Language manual 
+  2016 v.1. Page 107/178   
+Where: 
+1. val is a real value 
+2. <gname> is a gadget dot-name such as .gadgetA 
+3. MIN, CEN, MAX refer to the gadget or FORM limits  
+4. HDIST and VDIST are the horizontal and vertical auto-placement increments for 
+the layout path 
+5. PADDING is the extra spacing that F&M adds to le ft, right, top and bottom of a 
+frame or the form. 
+ 
+The following example is valid syntax, which could be used to construct a frame .fr2 within 
+an existing frame .fr1 (note that the space before and after the * is mandatory): 
+ 
+Frame .fr2 ... wid to max.fr1 * 0.5 + hdist hei to max.fr1 * 0.5 - padding 
+17.11. Intelligent Positioning and Resizing 
+ So far we have considered the static layout of the  form, but often our forms need to be 
+resized by the user at run-time. Most gadgets have DOCK and ANCHOR attributes that 
+allow you to define inteligent position and resize behaviour when the gadget’s container 
+resizes. This allows you to have more than one resi zable gadget on the same form and to 
+have predictable and potentially complex resize beh aviour. 
+ 
+Note: The recommended way to build intelligent resizable forms is to initially design the form 
+as a simple (non-resizable) dialog, and get the sta tic layout correct. Then apply the 
+ANCHOR and DOCK attributes to the static gadgets to  produce the desired dynamic resize 
+effect. 
+ 
+ The DOCK and ANCHOR attributes are mutually exclusive. Setting the DOCK attribute 
+resets the ANCHOR to the default; setting the ANCHOR attribute resets DOCK to none. You 
+can set these attributes only when you define the g adget: you cannot change the setting 
+after the exit from form setup. Thus you are not al lowed to change the resize behaviour at 
+run-time. 
+ ALPHA and VIEW gadgets do not support DOCK or ANCHOR attributes. However, these 
+gadgets expand fully to fit their containers; so yo u should always place them in their own 
+frame, with no other gadgets, and set the frame’s DOCK or ANCHOR attributes to get the 
+behaviour you desire. 
+17.11.1. ANCHOR Attribute 
+ The ANCHOR attribute allows you to control the pos ition of an edge of the gadget relative 
+to the corresponding edge of its container. For exa mple ANCHOR RIGHT specifies that the 
+right hand edge of the gadget will maintain a fixed  distance from the right hand edge of its 
+owning container. 
+  
+
+
+--- Page 8 ---
+AVEVA PDMS Programmable Macro Language manual 
+  2016 v.1. Page 108/178  The ANCHOR attribute may have any combination of th e values LEFT, RIGHT, TOP, or 
+BOTTOM; or it may have the values NONE or ALL. When  the container is resized, the fixed 
+distance is maintained for any anchored edges. 
+17.11.2. DOCK Attribute 
+ The DOCK attribute allows you to dock a gadget to the left, right, top, or bottom edge of 
+its container, typically a form or a frame; or you can cause the gadget to dock to all edges, or 
+to no edges. When the gadget’s container is resized , the docked gadget’s edges will remain 
+‘stuck’ to the corresponding container edge or edge s. Any docked edge will be resized to be 
+the same size as its container’s edge. 
+17.12. Useful Form Layout Quick Checklist 
+The layout for complex dynamic forms can be difficu lt to get right, so the simpler the code 
+the easier it is to adjust. 
+ 
+1. It is rarely necessary to set the form width and  height explicitly. 
+2. Use VarChars - variable spaced text layout mode (current default is FixChars). This gives 
+more accurate layout and where text is explicit for  a gadget it should remove the need to 
+use TagWidth (except where specific alignment of a set of gadgets is needed). Also 
+avoids need to use 'width' for buttons, toggles. 
+3. Use of 'path down' with 'vdist 0,2' removes the need to keep using ‘at ymax + 0.2' etc 
+4. Use of 'path right' with 'hdist 1.0' removes the  need to keep using 'at xmax + 1.0' etc. 
+5. When using 'anchor' for a gadget the default set ting is 'Top + Left' so no need to say 
+anything if this is all you need. 
+6. Minimize the use of literal values for co-ordina te positions and lengths whenever possible 
+- use relative layout, which makes it easier to adj ust the form later, e.g. 
+ 
+frame .page2 Panel anchor all at xmin.page1 width.p age1 
+ 
+7. It is not usually necessary to set the frame wid th and height, except for specific alignment 
+purposes 
+8. You can use the 'form - size' and ‘.gad - size’ constructs to right align gadgets in a 
+dynamic frame, e.g. 
+ 
+button .nextPage linklabel 'Next' anchor bottom + r ight at xmax form-size ymin 
+ 
+9. There are some instances with layout of docking dialogs that sometimes the calculated 
+frame size is slightly smaller than actual, it is a lways useful to compare with a simple 
+dialog (with and without 'resize' set). 
+  
+
+--- Page 9 ---
+AVEVA PDMS Programmable Macro Language manual 
+  2016 v.1. Page 109/178  18. Frame 
+18.1. Types of Frame 
+There are five different types of frame, and each t ype has different constraints on what 
+gadgets it can contain and what it can be used for.  The five types of frame are normal, 
+tabset, toolbar, Panel and Foldup Panel. 
+18.1.1. Normal Frames 
+ A frame of type NORMAL is a container with a visib le border that can contain any type of 
+gadget, including other frames. This simple frame d isplays its tag as a title to describe the 
+gadget group as a whole. Normal frames can be neste d and as an inner frame expands, an 
+outer frame will also expand to accommodate it. The  FRAME has a Radio Group property 
+which operates on the set of RTOGGLE gadgets 
+(radio buttons) owned directly by it. 
+18.1.2. Tabset Frames 
+ The TABSET frame type defines a container for a se t of tabbed page frames. The 
+container has no visible border and no tagtext i.e.  it has no displayed title. Any normal frame 
+defined directly within a TABSET frame will become a tabbed page frame, with its tag text 
+displayed in the tab; selecting a tab will bring th e tabbed page frame to the front, and hide 
+the previously shown tabbed page frame. A page SHOW N event is raised for the tabbed 
+page frame whenever the user interactively selects a new page tab. Handling this event 
+allows the AppWare to modify the content of gadgets  on the selected page before it is 
+displayed to the user. Only one page can be visible  at one time, and one page is always 
+visible. To change the visible page programmaticall y, you have to set the new page visible 
+— setting the current page invisible has no effect.  It’s not possible to remove a tabbed-page 
+from the set, but you can deactivate it, so it is i naccessible to the user. The tabbed page 
+frame may contain any form gadgets including normal  frame gadgets. To create a multi-
+paged tabbed form, you can define a dialog or docum ent form with a single TABSET frame 
+that contains a set of tabbed page frames, with eac h page containing the gadgets for the 
+desired page of the form.  The form will automatica lly resize to take account of the largest 
+tabbed page frame. There is an example showing the definition of tabbed frames in Complex 
+Form Layout You cannot nest TABSET frames. 
+18.1.3. Toolbar Frames 
+ You can create these using toolbar frames. The fra me type TOOLBAR allows you to 
+define formal toolbars that contain all the gadgets  within the frame’s scope. A toolbar frame 
+can contain only a subset of gadget types: BUTTON, TOGGLE, OPTION, TEXT, 
+COMBOBOX, SLIDER and NUMERICINPUT. It must have a n ame and can appear only on 
+main forms; moreover, a toolbar frame is the only k ind of frame a main form can contain. 
+The frame gadget’s visibility attribute allows you to show and hide toolbars, as well as 
+individual gadgets within the toolbar. Note that an y gadgets belonging to a main form and 
+defined outside of a formal toolbar frame definitio n are interpreted as a default toolbar with 
+the name ‘Default’. 
+18.1.4. PANEL Frames 
+This is like a Normal frame but with no enclosing b ox (by default). You can formally follow 
+the PANEL keyword by INDENT to get a 3D indented su rround. The Panel also never 
+displays its tag text. 
+18.1.5. Fold Up Panel Frames 
+This is like a Panel but has a formal title bar, wh ich displays the tag text and provides an 
+icon which can be clicked to fold-up and hide, or u nfold and show the contained gadgets. 
+  
+
+--- Page 10 ---
+AVEVA PDMS Programmable Macro Language manual 
+  2016 v.1. Page 110/178  19. Gadgets and their Attributes 
+As a user, you will already be familiar with forms and their gadgets. The types of gadgets 
+that you can define on the body of the form are sum marised below. 
+ 
+FRAME  A container that groups other gadgets visually and  logically. It also acts as a radio 
+group for all directly included RTOGGLE gadgets. 
+PARAGRAPH  Display-text, for information. 
+BUTTON  Act as visual buttons and are pushed to achieve so me action. The buttons like OK 
+and Apply, which appear on many forms, are examples  of a special type of button, which 
+use form control attributes to control the display of the form and whether it is actioned. 
+COMBOBOX  Similar to a Window Combobox. A combination of a d ropdown list and a single 
+line textbox. 
+LINE  Allows horizontal and vertical lines to be drawn o n a form to assist visual grouping. 
+NUMERIC  INPUT  Allows numeric input within a specific range. 
+TOGGLE  These gadgets have just two settings: on or off. Y ou can have several TOGGLE 
+gadgets on a form, and they will normally all be in dependent. 
+OPTION  Has a pull-down list of options associated with it , from which the user can choose 
+one only. 
+LIST  Displays one or more lines of data from which the user can select one or several. The 
+list can be scrollable if there are too many option s to be displayed at once. 
+CONTAINER  Allows the hosting of an external control inside a  PML defined form. 
+DATABASE  SELECTOR  Used to display a list of database elements, from which the user 
+can choose. 
+TEXT  A text-box where the user can type input. 
+TEXTPANE  An area where the user can type and edit multiple lines of text, or cut and paste 
+text from elsewhere on the screen. 
+VIEW  Used to display alphanumeric or graphical views. T here are several different types, 
+used for displaying different types of information.  
+SLIDER  The SLIDER gadget allows you interactively to gene rate values in a specified 
+range, at specified steps. PML supports both vertic al and horizontal SLIDERS. 
+RTOGGLE  A FRAME  may have a set of RTOGGLE gadgets defined directly  within it which 
+act in concert as a radio group. 
+19.1.  Gadget Definition Commands 
+You can define gadgets only within the form definit ion sequence, 
+setup form... exit. 
+A gadget definition (except for menu bars) has the format: 
+paragraph .mytext at X... Y... width 10 lines 3 
+ 
+Common properties  can appear in any order. These include: 
+position  All gadgets have this 
+tag 
+tooltip 
+callback 
+anchor 
+docking 
+ 
+Specific properties : the order of these commands generally matters. Se e the syntax graphs 
+in the Software Customisation Reference Manual for definitive information about order. Most 
+gadget properties can be changed using the members and methods supported by each 
+gadget object. 
+Note : You cannot change a gadget’s geometry except for a VIEW gadget on a resizable 
+form. 
+
+--- Page 11 ---
+AVEVA PDMS Programmable Macro Language manual 
+  2016 v.1. Page 111/178  19.2. Some Generic Gadget Members and Methods 
+The following members are shared by all gadgets reg ardless of gadget type: 
+ 
+type STRING  Read only Gadget type e.g.'BUTTON, LIST etc. 
+name STRING  Read only User's defined gadget name 
+ 
+The following methods are shared by all gadgets reg ardless of gadget type: 
+ 
+subtype()  STRING Gadget subtype e.g. for Frame gadget return s one of NORMAL, 
+TABSET, FOLDUPPANEL etc. 
+container( )  FMO GADGET or FORM Return reference to the Forms &  Menus object (FMO) 
+which directly contains the gadget. 
+19.3. Gadgets that Support Pixmaps 
+Some gadgets support pixmaps as content as an alter native to text. e.g. Buttons, Toggles, 
+and Paragraphs. Pixmaps are pixelated pictures held  in files of type .png. When pixmaps are 
+required you will need to specify pathnames to the pixmap file and the maximum required 
+size of the image in width and height, both measure d in pixels The default size for pixmaps 
+is assumed to be 32x32 pixels. For example: 
+ 
+button .ButtonName pixmap /buttonpix WIDTH 26 HEIGH T 26 
+19.3.1. Selected and Unselected States 
+BUTTON and TOGGLE gadgets may have two associated p ixmaps for the states 
+SELECTED and UNSELECTED, in that order. 
+ 
+button .B1 pixmap /pix1_sel /pix1_unsel WIDTH 26 HE IGHT 26 
+ 
+• If only one pixmap file is supplied, it will be us ed for all states. 
+• If the Selected pixmap is unset, then it reverts t o the Unselected one. 
+19.3.2. AddPixmap Method 
+The AddPixmap method is the best way of setting or changing a gadget's associated 
+pixmaps. 
+AddPixmap( !pixmap is STRING ) !pixmap  
+ 
+is a string holding the file pathname of the requir ed .png file.  
+AddPixmap( !pixmap1 is STRING, !pixmap2 is STRING )  
+ 
+!pixmap1 corresponds to the Un-selected state of th e gadget, and pixmap2 corresponds to 
+the Selected state. Specifying !pixmap1 as the null  string ' ', will leave the current Selected 
+pixmap unchanged. PARAGRAPH gadgets only have one p ixmap which is represented by 
+the .VAL member, and so can be directly set or chan ged using !this.myPara.val = 
+'<pixmap-pathname> . 
+ 
+Notes: 
+1. The PML function !!PML.GetPathname ('<myPixmap>. png') returns the required pixmap 
+pathname for pixmaps held in the standard PDMS Appw are pixmap directories. 
+2. It is recommended that when you define the gadge t you set its size to encompass the 
+largest pixmap which you will later add. Failure to  do this may give rise to unexpected 
+behaviour. 
+3. Historically you could add a third pixmap which was used when the gadget was 
+deactivated. This practice is no longer necessary a s the gadget pixmapped is automatically 
+greyed-out on de-activation. 
+
+--- Page 12 ---
+AVEVA PDMS Programmable Macro Language manual 
+  2016 v.1. Page 112/178  19.4. De-activating Gadgets: Greying Out 
+You may de-activate a gadget by setting its active status to FALSE: 
+!!MyForm.List.Active = FALSE 
+ 
+You may re-activate a gadget by setting its active status to TRUE: 
+!!MyForm.List.Active = TRUE 
+ 
+When a gadget is de-activated, it has a greyed-out appearance and the user is prevented 
+from interacting with it. 
+19.4.1. Greying Out Gadgets on Forms 
+You can de-activate or re-activate all the gadgets on a form using the form method: 
+ 
+!MyForm.setactive( TRUE ) 
+!MyForm.setactive( FALSE ) 
+ 
+If you want most of the gadgets on the form to be d e-activated, you can de-activate all 
+gadgets on the form (and then activate the ones you  want, individually) using the following 
+form methods: 
+ 
+SetGadgetsActive( active is BOOLEAN ) 
+SetActive( active is BOOLEAN ) 
+ 
+SetActive(false)greys out all gadgets on the form, but doesn’t set their Active status, so that 
+SetActive(true) restores the form to the precise st ate it was in before greyingout, that is, any 
+inactive gadgets will still be inactive. The comman d: 
+ 
+SetGadgetsActive( false ) 
+ 
+Greys-out all gadgets on the form and sets their ac tive status to inactive i.e. their previous 
+active state is lost. Similarly SetGadgetsActive( t rue )greys-in all gadgets and sets their 
+active status to active. 
+19.5. Making Gadgets Visible and Invisible 
+All gadgets have a visibility member attribute that you can access with PML. For example, 
+to make a gadget invisible: 
+ 
+!!myform.mygadget.visible = false 
+ 
+And to check a gadget’s visibility: 
+ 
+!bool = !!myform.mygadget.visible 
+ 
+To make invisible the gadgets owned by a frame, you  can set the visible status of the frame 
+to false. Conversely, to make them visible again yo u can set the visible status to true. The 
+frame’s visible property will automatically apply t o all of its children, but will not overwrite 
+their corresponding property values. So, for exampl e, if frame .f1 contains button .b1 and f1 
+and b1 both have Visible =true. The command: 
+!!form.f1.visible = false 
+ 
+will cause the frame and all its gadgets to be hidd en, but the query: 
+!value = !!form.b1.visible 
+ 
+will still return true. 
+
+--- Page 13 ---
+AVEVA PDMS Programmable Macro Language manual 
+  2016 v.1. Page 113/178  19.6. Setting Keyboard Focus 
+The keyboard focus defines which gadget will receiv e keystrokes. The FORM object has as 
+one of its properties the name of the gadget which will initially have the keyboard focus. This 
+default keyboard focus can be changed by setting th e keyboardfocus member of the form: 
+ 
+!!MyForm.keyboardfocus = !!Myform.gadget 
+ 
+The keyboard focus can be moved at any time to one of the following types of gadget by 
+calling the setfocus() method on the target gadget:  
+ 
+• TEXT 
+• TEXTPANE 
+• BUTTON 
+• TOGGLE 
+• RTOGGLE 
+• SLIDER 
+• LIST 
+• SELECTOR 
+• OPTION 
+• ALPHA VIEW 
+ 
+For example: 
+ 
+!!MyForm.Textfield.Setfocus() 
+19.7. Refreshing Gadgets 
+In general, when a gadget is edited inside a PML ca llback function or macro the visual 
+change is delayed until the entire callback has bee n executed or interactive input is sought. 
+If you want to see the gadget’s appearance change i mmediately it is edited, use the method 
+!Gadget.Refresh() You can also use the command REFR ESH to refresh all gadgets of all 
+displayed forms. REFRESH is required after deleting  PDMS elements in an interactive DO 
+LOOP. The following example, from a DRAFT macro, ca lls a Cursor Function from a DO 
+LOOP to allow the user to interactively select SLAB  elements for deletion, until terminated by 
+pressing the ESC key. 
+ 
+do 
+  id slab@ 
+  handle (61,528) $* Esc to exit 
+    return 
+  endhandle 
+  !result = 'Picked ' + !!ce.name 
+  $p $!result 
+  delete slab 
+  refresh $* Must refresh to force full PDMS update , else macro 
+  fails 
+enddo 
+ 
+Warning: Refreshing gadgets should be used sparingl y, especially for View gadgets, 
+as it will cause their content to be regenerated. 
+  
+
+--- Page 14 ---
+AVEVA PDMS Programmable Macro Language manual 
+  2016 v.1. Page 114/178  19.8. Gadget Background Colour 
+The gadget methods Background() and setBackground(c olourname as STRING) allow you 
+to query and set a gadgets background colour as a c olourname string. See the table in the 
+Customization Reference Manual for definitive list of which gadgets support the methods. 
+The following restrictions apply: 
+ 
+• Some gadgets do not support this property in all c ircumstances, e.g. gadgets showing 
+a pixmap. 
+• Gadgets whose colour has not been set explicitly, may not have a colour with a known 
+colourname. In this case an error is raised.  
+ 
+Gadgets also have the Background property, which al lows query and setting of the integer 
+colour index. The special colour index value, zero,  allows you to reset the color of the gadget 
+to its default value. The default colour will be di fferent according to the type of the form on 
+which the gadget is defined, and in some cases will  not have a colorname string. 
+  
+
+--- Page 15 ---
+AVEVA PDMS Programmable Macro Language manual 
+  2016 v.1. Page 115/178  20. Gadget Set 
+20.1. Examples 
+The following example constructs a fully functional , resizable complex form. 
+20.1.1. Complex Form Layout 
+ The figure below illustrates Tabset frames, Text g adgets, Combobox, Lists, Text Panes, 
+Paragraphs and Buttons. 
+ 
+Note that this is a fully functional, docking form which  illustrates the use of form methods, 
+particularly the Constructor method, and the use of  open callbacks. It also demonstrates the 
+use of the gadget’s dock and anchor attributes to a chieve forms with intelligent resize 
+behaviour. 
+ 
+Picture Nr.19. - Complex Form Layout 
+Within the form definition the TABSET frame is defined and directly contains a frame gadg et 
+for each tabbed page. Note its ANCHOR ALL setting which maintains the distance between 
+each edge of the frame and the corresponding edge o f the form, when the form is resized by 
+the user. This allows the frame to grow and shrink without overwriting gadgets outside of it. 
+Each tabbed page frame contains the definition of a ll the gadgets belonging to the page. 
+Note the use of the DOCK FILL setting which allows each edge of the tabbed page f rame to 
+stick to the corresponding edge of the TABSET frame so that they grow and shrink in 
+unison. Alternatively, when you define a TABSET FRAME , you can specify its DOCK or 
+ANCHOR attributes to determine its resize behaviour within  your form. For each tabbed-
+page frame within the TABSET , it is no longer necessary to specify any DOCK or ANCHOR 
+attribute settings, and any that are specified will  be ignored. Each tabbed-page frame will 
+always fill the available space in its TABSET parent (it exhibits DOCK FILL behaviour). The 
+gadget ANCHOR attribute is used extensively to allow resizable ga dgets to expand in 
+specific directions and not others for. It is also used by non-resizable gadgets, e.g. 
+BUTTON s, to allow them to move with edges of their contai ners and so avoid being overlaid 
+by resizing gadgets. 
+ 
+Note  also, the extensive use of form methods to provide  the intelligence of the form as 
+gadget callbacks. In particular the method listCall back(!list is GADGET, !event is STRING), 
+which just reports details of select and unselect e vents on list fields, has the standard form of 
+an open callback, and is used as such on the list g adgets LI1 and LI2, i.e. !this.Li1.callback = 
+|!this.listCallback(|. 
+
+
+--- Page 16 ---
+AVEVA PDMS Programmable Macro Language manual 
+  2016 v.1. Page 116/178  setup form !!layout2 dialog dock left VarChars NoAl ign 
+  title 'Form !!layout2' 
+  -- define context menus: 
+  -- for colour option gadget 
+  !menu = !this.newmenu( 'ColourActions', 'POPUP' )  
+  !menu.Add( 'CALLBACK', 'Add new colour', 
+  '!this.serviceMenu( ', 'AddColour' ) 
+  !menu.Add( 'TOGGLE' , 'Editable' , '!this.service Menu( ', 
+  'ToggleEdit' ) 
+  !menu.Add( 'CALLBACK', 'Delete Colour', 
+  '!this.serviceMenu( ', 'DelColour' ) 
+  paragraph .Message width 40 lines 3 
+  path DOWN 
+  frame .Tabset TABSET 'tabset' anchor All 
+    --Page 1--------------------------------------- ---------- 
+      frame .page1 |Page 1| dock Fill 
+        frame .frame4 'Frame 4' 
+         paragraph .Message4 text 'This is a ComboB ox gadget' 
+        width 18 
+        combobox .Colour tagwid 5 'Colour' scroll 2 0 width 5 
+        tooltip'set/add colour for paragraph' 
+      exit 
+      frame .frame6 'Frame 6' width.frame4 
+        halign right 
+        paragraph .Message6 text 'These are right a ligned text 
+        gadgets' width 16 lines 2 
+        text .Width tagwid 5 'Width' width 5 is REA L 
+        text .Height tagwid 5 'Height' width 5 is R EAL 
+        text .Area tagwid 5 'Area' width 5 is REAL 
+        halign left 
+        button .b3 |area| tooltip'calculate the are a' 
+      exit 
+      frame .frame5 'Frame 5' at Xmax.frame4+2 Ymin .frame4 anchor All 
+        paragraph .Message5 text 'This is a multi-c hoice list 
+        gadget' wid 12 lines 2 
+        list .Li1 'Select some of these' anchor all  MULTIPLE 
+        width 12 height 11 
+        button .b1 |print| Anchor L + B tooltip'pri nt list 
+        selections' 
+      exit 
+    exit 
+    --Page 2--------------------------------------- ---------- 
+    frame .page2 |Page 2| at 0 0 dock Fill 
+      frame .frame7 'Frame 7' anchor all width 20 h eight 13 
+      --Force use of fixed width font 
+      textpane .text 'Textpane: Fixed width font' F ixChars 
+      dock Fill width 1 height 1 
+    exit 
+    frame .frame8 'Frame 8' at Xmax.frame7 ymin.fra me7 
+      anchor T+B+R wid.frame7 hei.frame7 
+      path down 
+      paragraph .Message8 text 'Multi-column, singl e-choice 
+      list' width 15 lines 2 
+      list .li2 |Cars (zero-select)| anchor T+B+L+R  columns 
+      single zerosel width 15 height 12 
+      button .b2 |print| Anchor L + B tooltip'print  list 
+      selection' 
+      exit 
+    exit 
+  exit 
+
+--- Page 17 ---
+AVEVA PDMS Programmable Macro Language manual 
+  2016 v.1. Page 117/178    path right 
+  button .CANCEL at XMIN form YMAX form anchor L + B CANCEL 
+  button .RESET anchor L + B RESET 
+  button .OK at XMAX form-size anchor R+B OK 
+exit 
+ 
+define method .layout2() 
+  $P************************ 
+  $P !!layout2 CONSTRUCTOR() 
+  $P************************ 
+  -- CONSTRUCTOR - initialise gadget values 
+  !this.firstShownCall = '!this.firstShown()' 
+  -- main form gadgets 
+  -- paragraph 
+  !this.message.val = |Complex form layout 
+  This shows a dockable, resizable form with tabbed  page frames 
+  and use of the gadget Dock and Anchor attributes|  
+  -- tooltips 
+  !this.CANCEL.setTooltip('discard values and hide the form') 
+  !this.RESET.setTooltip('reset to initial values')  
+  !this.OK.setTooltip('accept values and hide the f orm') 
+  --Page 1 
+  -- frame 4 
+  -- option 
+  !ColourArray[1]='White' 
+  !ColourArray[2]='Black' 
+  !ColourArray[3]='Red' 
+  !ColourArray[4]='Green' 
+  !ColourArray[5]='Blue' 
+  !This.Colour.Dtext=!ColourArray 
+  -- set callback 
+  !this.colour.callback = |!this.ServiceColourOptio n( | 
+  -- assign context menu 
+  !this.colour.setPopup(!this.ColourActions) 
+  -- frame 5 
+  -- multi-choice list 
+  do !i from 1 to 20 
+    !Elements[!i] = 'list element $!i' 
+  enddo 
+  !This.Li1.Dtext= !Elements 
+  -- set callbacks 
+  !this.b1.callback = 
+  |!this.printListSelections(!this.li1)| 
+  !this.li1.callback = |!this.listCallback(| 
+  -- frame 6 
+  -- make Area read-only 
+  !this.Area.seteditable( false ) 
+  !this.Width.val = 6.0 
+  !this.Height.val = 3.5 
+  !this.b3.callback = '!this.calcArea()' 
+  !this.b3.background = 'pink' 
+  --Page 2 
+  -- frame 7 
+  -- textpane - add data 
+  !s[1] = 'Try editing the contents of this textpan e 
+  gadget:=' 
+  !s[2] = | 1 2 3 4 5| 
+  !s[3] = 
+  |123456789012345678901234567890123456789012345678 90| 
+  !s[4] = | 4 Ford Escort| 
+
+--- Page 18 ---
+AVEVA PDMS Programmable Macro Language manual 
+  2016 v.1. Page 118/178    !s[5] = | 5 Ford Fiesta| 
+  !s[6] = | 6 Vauxhall Nova| 
+  !s[7] = | 7 Vauxhall Astra| 
+  !s[8] = | 8 Vauxhall Lotus| 
+  !s[9] = | 9 LandRover RangeRover £62000| 
+  !s[10]= |10 LandRover Defender £23999| 
+  do !i from 11 to 99 
+    !s[!i] = '$!i--+---1---+---2---+---3---+---4--- +----5' 
+  enddo 
+  !this.text.val = !s 
+  -- frame 8 
+  -- multi-column list 
+  -- Define headings 
+  !a[1] = 'Make' 
+  !a[2] = 'Model' 
+  !a[3] = ' Price' 
+  !this.li2.setHeadings(!a) 
+  -- set up dtext rows as array of array 
+  !Row1[1] = 'Landrover' 
+  !Row1[2] = 'RangeRover' 
+  !Row1[3] = '£62000' 
+  !Row2[1] = 'Landrover' 
+  !Row2[2] = 'Defender' 
+  !Row2[3] = '£23999' 
+  !Row3[1] = 'Lancia' 
+  !Row3[2] = 'Delta' 
+  !Row3[3] = 'not for sale' 
+  !Row4[1] = 'Fiat' 
+  !Row4[2] = 'Tempra' 
+  !Row4[3] = 'offers' 
+  !Row5[1] = 'VW' 
+  !Row5[2] = 'Golf GTi' 
+  !Row5[3] = 'p.o.a.' 
+  do !i from 1 to 5 
+    !dtext[!i] = !Row$!i 
+  enddo 
+  !this.li2.setRows( !dtext ) 
+  -- Add data 
+  do !i from 1 to !dtext.size() 
+    !rtext[!i] = 'row $!i' 
+  enddo 
+  !this.li2.rtext = !rtext 
+  -- set callbacks 
+  !this.b2.callback = 
+  |!this.printListSelection(!this.li2)| 
+  !this.li2.callback = |!this.listCallback(| 
+  -- Initialise menus 
+  !this.ColourActions.setFieldProperty('ToggleEdit' , 
+  'selected', true) 
+  -- end of CONSTRUCTOR 
+  endmethod 
+ 
+define method .firstShown() 
+  $P************************ 
+  $P !!layout2.firstShown() 
+  $P************************ 
+  -- carry out actions which need form to be shown 
+  !this.message4.background = !this.Colour.selectio n('DTEXT') 
+  endmethod 
+ 
+
+--- Page 19 ---
+AVEVA PDMS Programmable Macro Language manual 
+  2016 v.1. Page 119/178  define method .listCallback(!list is GADGET, !event  is STRING) 
+  -- open callback to report on list events 
+  -- can be used for any list gadget 
+  !name = !list.fullname() 
+  !n = !list.pickedField 
+  if(!n gt 0) then 
+    !sel = !list.dtext[!n] 
+    $P $!event callback on field $!n<$!sel> for lis t $!name 
+  endif 
+endmethod 
+ 
+define method .calcArea() 
+  -- calculate the area 
+  !area = !this.width.val * !this.height.val 
+  !this.Area.val = !area 
+endmethod 
+ 
+define method .printListSelection(!list is GADGET) 
+  -- report single-selection list gadget selection 
+  -- can be used for any single-choice list 
+  !sel = !list.selection('Dtext') 
+  !num = !list.val 
+  !name = !list.fullname() 
+  $P ---------------------------------------------- - 
+  $P selected field for list $!name 
+  $P Field $!num: <$!sel> 
+  $P ---------------------------------------------- - 
+endmethod 
+ 
+define method .printListSelections(!list is GADGET)  
+  -- report multi-selection list gadget selections 
+  -- can be used for any multi-choice list 
+  !sels = !list.selection('Dtext') 
+  !nums = !list.val 
+  !name = !list.fullname() 
+  !nvals = !sels.size() 
+  $P ---------------------------------------------- - 
+  $P $!nvals selected fields for list $!name 
+  do !n from 1 to $!nvals 
+    $P Field $!nums[$!n]: <$!sels[$!n]> 
+  enddo 
+  $P ---------------------------------------------- - 
+endmethod 
+ 
+define method .serviceMenu(!menu is MENU, !event is  STRING ) 
+  -- Service selections on menu fields 
+  !menuname = !menu.name() 
+  !fieldname = !menu.pickedFieldname 
+  -- $P $!event $!menuname > $!fieldname 
+  if( !menuname eq 'ColourActions' ) then 
+    if( !fieldname eq 'AddColour' ) then 
+      if( !event eq 'SELECT' ) then 
+        !this.ServiceColourOption(!this.Colour, 'VA LIDATE') 
+      endif 
+    elseif(!fieldname eq 'ToggleEdit' ) then 
+      !this.Colour.Editable = (!event eq 'SELECT') 
+    elseif(!fieldname eq 'DelColour' ) then 
+      !this.Colour.Clear(!this.Colour.displayText() ) 
+      -- reselect in case its changed 
+      !this.message4.background = 
+
+--- Page 20 ---
+AVEVA PDMS Programmable Macro Language manual 
+  2016 v.1. Page 120/178        !this.Colour.Selection('dtext') 
+      handle (61,620) 
+        return 
+      endhandle 
+    endif 
+  endif 
+endmethod 
+ 
+define method .ServiceColourOption(!option is GADGE T, !event is STRING) 
+  -- Service Colour Option gadget 
+  !name = !option.fullname() 
+  --$P************************ 
+  --$P !!layout2.ServiceColourOption($!name, $!even t) 
+  --$P************************ 
+  if( !event eq 'VALIDATE' ) then 
+    -- add new colour to list, without duplicates 
+    !colnam = !option.displayText().trim() 
+    $p $!name $!event $!colnam 
+    !vals = !option.Dtext 
+    do !i from 1 to !vals.size() 
+      golabel /finished if( !vals[!i] eq !colnam ) 
+     enddo 
+    -- try to use the colour, only add if valid 
+    !this.message4.background = !colnam 
+    handle (61,620) 
+      return error 1 'Colour $!colnam is not in the  Colour 
+      Table' 
+    endhandle 
+    --add to list and make current 
+    !option.add(!colnam) 
+    !option.select('DTEXT', !colnam) 
+    -- 
+    label /finished 
+  elseif( !event eq 'SELECT' ) then 
+    -- change background colour of paragraph 
+    !colnam = !this.colour.selection('dtext') 
+    $p $!name $!event $!colnam 
+    !this.message4.background = !colnam 
+  elseif( !event eq 'UNSELECT' ) then 
+    !fld = !this.colour.pickedField 
+    !colnam = !this.colour.dtext[!fld] 
+    $p $!name $!event $!colnam 
+  endif 
+endmethod 
+  
+
+--- Page 21 ---
+AVEVA PDMS Programmable Macro Language manual 
+  2016 v.1. Page 121/178  20.1.2. Multi-lingual Form 
+ This section shows a multi-lingual form using a Ta bset frame with three Tabbed-page 
+frames and a Fold-up panel. Each page shows essenti ally the same page design but using 
+Russian, Chinese and English (Unicode) characters. The extract from the PML code of the 
+form Unicode.pmlfrm demonstrates the use of multili ngual gadget names, variable names 
+and form method names. 
+ 
+Picture Nr.20. - Unicode characters 
+setup form !!Unicode dialog dock left NoAlign VarCh ars size 41 5 
+  title |Form !!Unicode| 
+  -- set form members to support sharing of the cal lback methods 
+  -- between the different language versions of the  pages 
+  member .EnglishColours is ARRAY 
+  member .RussianColours is ARRAY 
+  member .ChineseColours is ARRAY 
+  member .ColourNames is ARRAY 
+  member .colourPara is GADGET 
+  member .colourCombo is GADGET 
+  member .textField is GADGET 
+  vdist 0.25 
+  hdist 0.5 
+  frame .Tabset TABSET 'tabset' anchor L+R+T wid 41  
+ 
+ 
+Picture Nr.21. - Russian characters in form 
+
+
+--- Page 22 ---
+AVEVA PDMS Programmable Macro Language manual 
+  2016 v.1. Page 122/178   
+Picture Nr.22. - Chinese characters in form 
+ 
+  
+
+
+--- Page 23 ---
+AVEVA PDMS Programmable Macro Language manual 
+  2016 v.1. Page 123/178  20.2. Frame Gadgets 
+ Frame gadgets provide visual grouping of gadgets o n a form, and aid form layout. The 
+grouping is more than visual: a frame is a genuine container and manages the gadgets it 
+contains, so gadgets are positioned relative to the  frame’s origin rather than the form’s 
+origin. When a container resizes it will adjust the  layout of all its children, taking account of 
+their anchor or dock properties. The frame gadget’s  properties visible and active will 
+automatically apply to all of its children, but wil l not overwrite their corresponding property 
+values. So, for example, frame .f1 contains button .b1 and f1 and b1 both have visible = true. 
+The command: 
+ 
+!!form.f1.visible = false 
+ 
+will cause the frame and all its contained gadgets to be hidden, but the query: 
+ 
+!value = !!form.b1.visible 
+ 
+will still return true. 
+20.2.1. Defining a Frame 
+You define a frame using a command sequence beginni ng with the command frame and 
+ending in exit . All the gadgets defined after the frame command and before exit will be 
+included in and contained by the frame. The followi ng example defines Frame1 and its 
+gadget collection. The frame sub-type <frame-type> is either one of the supported types 
+TABSET, TOOLBAR, PANEL, FOLDUPPANEL, or omitted for  a 'normal' or 'tabbed page 
+frame'. 
+ 
+frame .frame1 <frame-type> '<frame-tag>' 
+  paragraph .Message1 text 'This frame contains tog gle 
+  buttons' 
+  PATH DOWN 
+  toggle .Bold 'Bold' 
+  PATH RIGHT 
+  toggle .Italic 'Italic' 
+  toggle .Underline 'Underline' 
+exit 
+ 
+Frame Size 
+During form definition, once a frame is positioned on the form the origin remains fixed but the 
+frame automatically expands downwards and to the ri ght to contain any gadgets added to it. 
+You cannot add gadgets to it at negative coordinate s relative to the frame’s origin. You can 
+optionally declare a minimum size for the frame. Fo r example: 
+ 
+Frame frame1 ‘frame 1’ SIZE 10 20 
+ 
+This is relevant only for NORMAL and TABSET frames; for TOOLBAR frames, the gadgets 
+appear as a single row in the order defined i.e. ga dget positions are ignored. 
+20.2.2. Frame Radio Groups 
+A FRAME may have a set of RTOGGLE gadgets defined d irectly within it which act in 
+concert as a radio group. An example of a FRAME with a directly defined radio group looks 
+like this: 
+ 
+
+--- Page 24 ---
+AVEVA PDMS Programmable Macro Language manual 
+  2016 v.1. Page 124/178   
+Picture Nr.23. - Frame example form 
+The radio group action only applies to FRAME gadgets of type NORMAL, PANEL, 
+FOLDUPPANEL . You can add RTOGGLE to a FRAME with the usual positioning and layout 
+commands. The FRAME has a value member, VAL , which is the index of currently selected 
+RTOGGLE for the radio group. You can use this to change the  selected RTOGGLE . 
+Similarly, you change the value of the FRAME by setting the VAL member of any of the 
+group’s RTOGGLE s to true. Note that the FRAME group value may be set to zero, indicating 
+that there is no selected RTOGGLE . Similarly if the selected RTOGGLE value is set to false, 
+then it becomes deselected and the FRAME value will then be zero. The default value for an 
+RTOGGLE gadget is FALSE , and the default value for a FRAME gadget is zero, i.e. no 
+selected RTOGGLE . Frame Callbacks The FRAME gadget can have an assigned callback, 
+which is executed when the radio group selection is  changed, i.e. whenever the user selects 
+an unselected radio-toggle. As there is only a SELE CT action supported, it can be either a 
+simple callback or an open callback. The form defin ition below is a simple TV and radio 
+station selector, shown above. 
+ 
+setup form !!FRGTest dialog noAlign 
+  title |Select a program| 
+  Frame .rg1 |TV and Radio| 
+    path down 
+    text .choice tagwid 6 |Selection:| width 12 is STRING 
+    rToggle .rad1 tagwid 7 |BBC 1| States '' 'BBC 1 ' 
+    path right 
+    valign centre 
+    rToggle .rad2 tagwid 7 |BBC 2| States '' 'BBC 2 ' 
+    rToggle .rad3 tagwid 7 |Anglia| States '' 'Angl ia' 
+    rToggle .rad4 tagwid 7 |Chan 4| at xmin.rad1 ym ax.rad1 
+    States '' 'Chan 4' 
+    rToggle .rad5 tagwid 7 |Radio:| States '' 'radi o' 
+    option .Radio width 10 
+    button .cancel |Cancel| at xmin form ymax form + 0.2 CANCEL 
+    button .ok | OK | at xmax form - size OK 
+    - set focus to button to ensure to ensure Windo ws does not 
+    set it to first Rtoggle 
+    !this.keyboardFocus = !this.ok 
+  exit 
+exit 
+ 
+Note:  The form’s keyboard focus is initially placed on t he OK button to prevent it being 
+assigned (by Windows) to the first RTOGGLE rad1 (ef fectively the first interactive gadget on 
+the form as the text field Selection is read-only) The form constructor method assigns a 
+simple callback, the form method RGroupSelectionCha nged(), to the frame rg1 (radio 
+group). It then initialises the gadget values and s elects the second RTOGGLE as the default 
+selection.  
+
+
+--- Page 25 ---
+AVEVA PDMS Programmable Macro Language manual 
+  2016 v.1. Page 125/178  define method .FRGTest() 
+  -- Constructor 
+  -- Frame radiogroup with simple callback 
+  !this.rg1.callback = '!this.RGroupSelectionChange d( )' 
+  -- set result field read-only 
+  !this.choice.setEditable(false) 
+  -- Radio choices 
+  !this.rad5.setTooltip(|select your Radio option|)  
+  !radio[1] = 'Q103' 
+  !radio[2] = 'Hereward' 
+  !radio[3] = 'Cambridge' 
+  !radio[4] = 'ClassicFM' 
+  !radio[5] = 'Caroline' 
+  !this.Radio.dtext = !radio 
+  !this.Radio.setTooltip(|change your Radio option| ) 
+  !this.Radio.callback = '!this.selectProgram(!this .rad5)' 
+  -- set initial value 
+  !this.rg1.val = 2 
+    !this.RGroupSelectionChanged( ) 
+endmethod 
+ 
+The group callback uses the FRAME ’s VAL member to get the current selected index and 
+hence the current RTOGGLE and its OnValue member value. If the selected RTOGGLE’S 
+value is ‘radio’ then the selected program is read from the RADIO option gadget. Finally the 
+selected program string is displayed in the Selection (read-only) text gadget. 
+ 
+define method .RGroupSelectionChanged( ) 
+  -- Service radiogroup select event 
+  !Frame = !this.rg1 
+  !index = !Frame.val 
+  !rTog = !Frame.RToggle(!index) 
+  !value = !rTog.onValue 
+  -- Do some application actions 
+  if( !value eq 'radio' ) then 
+    !value = !this.Radio.selection('dtext') 
+    endif 
+  !this.choice.val = !value 
+endmethod 
+ 
+The callback on the RADIO option gadget, detects if the ‘Radio:’ RTOGGLE rad5 is current 
+and if so it deselects it leaving no current select ion, and clears the Selection text field. 
+ 
+define method .selectProgram( !rtog is GADGET ) 
+  -- Select new program from option list 
+  if( !this.rg1.val eq !rtog.index ) then 
+    -- rtog is current, so deselect it within group 
+    !this.rg1.val = 0 
+    !this.choice.clear() 
+  endif 
+endmethod 
+ 
+20.2.3. Managing Pages in Tabset Frames 
+ Within a Tabset frame, whenever the user interacti vely selects a new tab a HIDDEN 
+event is raised for the previous tabbed page frame and then a SHOWN event is raised for 
+the new one, which pops to the front. The HIDDEN an d SHOWN callbacks are only 
+executed for tabbed page frames which provide an Op en callback. If you want to manage 
+tabbed pages that are also radio groups, then you m ust supply an open callback so you can 
+
+--- Page 26 ---
+AVEVA PDMS Programmable Macro Language manual 
+  2016 v.1. Page 126/178  differentiate the SELECT (RTOGGLE) event and the (p age) SHOWN event. Setting a 
+tabbed page frame's VISIBLE property, e.g. !this.Ta bbedPage.visible = true, selects it and 
+gives it focus, but does not raise HIDDEN or SHOWN events. The example below shows a 
+typical form method you could use as a PML open cal lback to handle frame events for any 
+frame gadgets defined on a form: 
+ 
+define method .frameEvents(!frame is GADGET, !event  is STRING) 
+  -- Frame events open callback handler 
+  if( !event eq 'SELECT' ) then 
+    --Handle radio button selection 
+    !selection = !frame.val 
+  elseif( !event eq 'SHOWN' ) then 
+    -- tabbed page selected 
+    -- modify page content 
+  endif 
+endmethod 
+20.2.4. Managing the Fold Up Panel 
+ The form shown below is a docking dialog which has  five FOLDUPPANEL gadgets, the 
+first two are collapsed (hidden) and the second two  are expanded (shown). Each one has a 
+title bar which displays the panel's tag text, and an icon which allows the panel to fold-up or 
+folddown when clicked. The default state is 'unfold ed' and the EXPANDED property allows 
+the user to initialise a panel to unfolded (true) o r folded (false). When the panel expands or 
+collapses, any gadgets which lie below the panel an d between (or partially between) the 
+panel's horizontal limits will be moved down or up the form. If the form's AutoScroll attribute 
+is selected, then a scroll bar will automatically a ppear whenever gadgets have been moved 
+off the bottom of the form, so that the entire form  is always accessible. 
+ 
+Picture Nr.24. - Foldup panel example form 
+Fold Up Panel Events 
+HIDDEN and SHOWN events are raised whenever the use r interactively folds or unfolds the 
+panel. These events are only fired if an Open callb ack is defined for the foldup frame. To 
+manage FoldUpPanels which are also radio groups, th en you must supply an open callback 
+so that you can differentiate the panel's SELECT, H IDDEN and SHOWN events. 
+  
+
+
+--- Page 27 ---
+AVEVA PDMS Programmable Macro Language manual 
+  2016 v.1. Page 127/178  20.3. CONTAINER Gadget 
+ The Container gadget allows the hosting of an exte rnal Control, e.g. a PMLNet, control 
+inside a PML defined form. It allows the user to ad d an external .Net control, which may 
+raise events that can be handled by PML. In order t o customise the context menus of the 
+.Net control, the Container may have a PML popup me nu assigned to it. This is shown when 
+the .Net control raises a 'popup' event. A CONTAINE R gadget can be created by container 
+.NET indent PMLNETControl dock fill The following s ection contains the PML code for an 
+example form !!MyNetForm. By default the Container will be will have a drawn surrounding 
+box, but you can select NOBOX or INDENT which produ ces a 3-D indented surround. 
+ 
+ The Dock and Anchor attributes are supported to al low intelligent resize behaviour. The 
+enclosed Control must support resizing and is usual ly set as Dock fill, so that it follows size 
+changes of the Container. The following restriction s apply: 
+ 
+• Tagtext can be specified but is never displayed. 
+• Positioning must be specified before size (<vshape >). 
+• Currently only Controls of type PMLNet are support ed. 
+20.3.1. Example of Container Gadget 
+This section creates a form, MYNETFORM, which hosts  a PMLNet control. First you will 
+need to have created your PMLNet control. In this e xample the control is called 
+MyNetControl, and comprises a text label, a toggle (NET), a button (Colour) and a PDMS 
+explorer, as shown in the picture. 
+ 
+Picture Nr.25. - Container gadget example 
+MyNetControl supports three events, namely OnCheck,  OnPopup and OnColour. 
+ 
+• OnCheck - raised when the NET toggle is clicked. Callbacks keep the PML toggle and the 
+.NET toggle in step. 
+
+
+--- Page 28 ---
+AVEVA PDMS Programmable Macro Language manual 
+  2016 v.1. Page 128/178  • OnPopup - raised when the right mouse button is p ressed while the cursor is over the 
+background of the control. Callbacks edit and show the PML popup menu. 
+• OnColour – raised when the user selects a colour from the standard Winforms colour 
+picker (as pictured), which is shown when the colou r button is pressed. Callback prints the 
+RGB components of the selected colour. 
+ 
+The PML code to create and manage the form is given  below. Purple is used to highlight the 
+PMLNet commands, the rest is just standard PML2. It  includes rudimentary callback 
+methods to service the PMLNet controls events. In y our Appware you need an import 
+command (to load the dll containing your PMLNetCont rols) import 'PMLNetTest' This is 
+usually done once only, probably in application sta rt-up macro. You can have it in your form, 
+but you will then need to handle the error which wi ll occur if the import is executed more than 
+once: 
+ 
+import 'PMLNetTest' 
+handle (1000,0) 
+-- PMLNetTest dll already loaded 
+endhandle 
+ 
+-- MyNetForm.pmlfrm: Test form hosting a PMLNet Con trol 
+setup form !!MyNetForm size 25 20 dialog dock right  
+  using namespace 'Aveva.PDMS.PMLNetTest' 
+  member .MyCtrl is MyNetControl 
+  !this.FormTitle = 'My PMLNet Form' 
+  path down 
+  -- define PML Container to host .Net control 
+  container .NET indent PMLNETControl dock fill 
+  -- define PML Frame 
+  frame .PMLFrame 'PML' dock top 
+    paragraph .PMLMessage text 'This frame contains  a PML toggle button' wid 25 
+    toggle .PMLToggle 'PML ' 
+  exit 
+  -- define PML popup menu 
+  menu .PMLPopup popup 
+  !this.PMLPopup.add( 'CALLBACK', 'Attributes', '!t his.attributesMenu()' ) 
+  !this.PMLPopup.add( 'CALLBACK', 'More', '!this.mo reMenu()' ) 
+  !this.PMLPopup.add( 'CALLBACK', 'Last', '!this.la stMenu()') 
+exit 
+ 
+---------------------- 
+-- MYNETFORM Constructor 
+---------------------- 
+define method .MyNetForm() 
+  using namespace 'Aveva.PDMS.PMLNetTest' 
+  -- create instance of .Net control 
+  !this.MyCtrl = object MyNetControl() 
+  -- add .Net control to PML container 
+  !this.NET.control = !this.MyCtrl.handle() 
+  -- add PML event handlers to .Net control, to ser vice (some of) the events it raises 
+  !this.MyCtrl.addeventhandler('OnCheck', !this, 'N ETToggleCallback') 
+  !this.MyCtrl.addeventhandler('OnPopup', !this, 'N ETPopupCallback') 
+  !this.MyCtrl.addeventhandler('OnColour', !this, ' NETColourCallback') 
+  -- add callback to the context menu, so we can ed it the menu before it gets popped up 
+  !this.PMLPopup.callback = '!this.editMenu()' 
+  -- add PML callback for PML Toggle 
+  !this.PMLToggle.callback = '!this.PMLToggleCallba ck(!this.PMLToggle.val)' 
+endmethod 
+ 
+ 
+
+--- Page 29 ---
+AVEVA PDMS Programmable Macro Language manual 
+  2016 v.1. Page 129/178  ---------------------- 
+-- Callback methods 
+---------------------- 
+define method .NETPopupCallback(!x is REAL, !y is R EAL) 
+  -- service the .Net control’s popup event 
+  !this.NET.popup = !this.PMLPopup 
+  !this.NET.showPopup( !x, !y ) 
+endmethod 
+ 
+define method .editMenu() 
+  -- Edit the popup menu which is about to be shown  
+  !this.PMLPopup.add( 'CALLBACK', 'New field', '$p this is a new field' ) 
+endmethod 
+ 
+define method .attributesMenu() 
+  -- service the menu field 
+  $P attributesmenu callback executed 
+endmethod 
+ 
+define method .moreMenu() 
+  -- service the menu field 
+  $P moremenu callback executed 
+endmethod 
+ 
+define method .lastMenu() 
+  -- service the menu field 
+  $P this.Lastmenu callback executed 
+endmethod 
+ 
+define method .NETToggleCallback(!checked is BOOLEA N) 
+  -- service the ‘checked’ event for the toggle in the .Net control 
+  -- keep PMLtoggle in step 
+  !this.PMLToggle.val = !checked 
+endmethod 
+ 
+define method .NETColourCallback(!red is REAL, !gre en is REAL, !blue is REAL) 
+  -- service the ‘colour selected’ event for the bu tton in the .Net control 
+  $P NetColour Callback executed: RGB = ( $!red, $! green, $!blue ) 
+endmethod 
+ 
+define method .PMLToggleCallback(!checked is BOOLEA N) 
+  -- service the PML toggle callback 
+  -- keep .NETtoggle in step 
+  !this.MyCtrl.val(!checked) 
+endmethod 
+20.4. Paragraph Gadgets 
+ Paragraph gadgets allow a text or a pixmap to be displayed on a form. This gadget has 
+no associated name-tag and no call-back command: it  is passive so cannot be selected by 
+the user. A paragraph gadget can contain text or a pixmap. Once it has been defined, a 
+textual paragraph cannot be changed to a pixmap paragraph or vice versa. Paragraph 
+gadgets support the DOCK and ANCHOR attributes. 
+20.4.1. Textual Paragraph Gadgets 
+ A textual paragraph gadget is defined by the paragraph command. A paragraph 
+gadget’s size may be specified explicitly in terms of width and height , or defined implicitly 
+by the initial value, or content. Once it has been defined, the size of the gadget cannot be 
+changed. An initial value of a paragraph gadget can  be set using the TEXT keyword. You do 
+
+--- Page 30 ---
+AVEVA PDMS Programmable Macro Language manual 
+  2016 v.1. Page 130/178  not need to set the value in the setup form sequence: you can leave it until a value is 
+assigned to its val member, but you must give a textual paragraph gadge t an initial size if 
+you do not give it an initial text value. 
+ 
+paragraph .message text 'Text string' 
+paragraph .message AT . . . text 'Text string' widt h 16 lines 7 
+paragraph .message AT . . . background 2 width 20 l ines 2 
+ 
+For multi-line paragraphs the text is line-wrapped and formatted into the available space. It 
+can contain explicit newlines to achieve the desire d format. 
+20.4.2. Pixmap Paragraph Gadgets 
+ A pixmap paragraph gadget has a fixed width and length that may be spe cified explicitly 
+in terms of width and height in pixels of the large st pixmap that is to be displayed, or defined 
+implicitly by the initial value. Once it has been d efined, the size of the gadget cannot be 
+changed. The default size for a pixmap is 32x32 pix els. 
+ 
+paragraph .picture AT . . . 
+pixmap /filename 
+paragraph .picture AT . . . 
+pixmap /filename width 256 height 200 
+ 
+The pixmap may be changed at any time by assigning a new value to the .val member: 
+ 
+!!MyForm.picture.val = /newfilename 
+20.4.3. Textual Paragraph Gadgets 
+ The background colour may optionally be set using the BACKGROUND keyword and a 
+colour specification. 
+20.5. Button Gadgets 
+ When the user presses a button gadget (control button) it will usually display a child fo rm 
+or invoke a call-back - typically a PML Form method . Buttons have a tag-name or pixmap 
+which is shown within the button rectangle. The tag , pixmap, call-back, and child form are all 
+optional. For example: 
+ 
+button .SubForm 'More . . .' FORM !!ChildForm 
+button .SubForm pixmap /filename FORM !!ChildForm 
+button .Calculate 'Calculate' CALLBACK 
+‘!this.CallbackFunction()’ 
+ 
+ You can specify the width of the BUTTON independently of any tag text string it contains 
+using the WIDTH syntax. You can also define its height with the HEIGHT syntax, allowing 
+you to define textual BUTTON s taller than a single character in height. For exa mple: 
+ 
+Button .btn1 |reject selection| at ... width 10 hei ght 1.5 
+ 
+Note: The BUTTON ‘s tag is always centre-aligned within the define a rea. 
+20.5.1. Buttons of Type Toggle 
+ Buttons can optionally be used in toggle mode, whe re they show visually differentiated 
+pressed and unpressed states, similar to TOGGLE gadgets. Buttons with Pixmaps For 
+these buttons, the Unselected and Selected pixmaps swap whenever the button is pressed, 
+so alternating between the two images in the presse d and un-pressed states. Textual 
+Buttons Toggle buttons will highlight when pressed. For exa mple on toolbars they will turn 
+
+--- Page 31 ---
+AVEVA PDMS Programmable Macro Language manual 
+  2016 v.1. Page 131/178  from blue to orange when pressed, and go back to bl ue again when un-pressed. The syntax 
+to select the new mode is toggle , which can be anywhere after the button name and bef ore 
+the button control type or associated form, e.g. 
+ 
+Button .B1 TOGGLE pixmap /Unselected.png /Selected. png / Inactive.png width 16 height 16 
+tooltip... 
+ 
+The button’s value-member !button.val is a BOOLEAN and reflects the button’s state, 
+having the value TRUE when the button is pressed and FALSE when it is not. 
+20.5.2. Buttons of type LINKLABEL 
+ The Linklabel, provides a purely textual button pr esentation, i.e. it has no enclosing box. It 
+is often used to indicate a link to some applicatio n item, e.g. a hyperlink to a file, a link to an 
+associated form. They do cause validation of any mo dified text fields of the form whenever 
+they are pressed. 
+ 
+The tag text is shown in a different colour to all other gadget's tag text. The link label gadget 
+highlights by underlining when the mouse cursor pas ses over it. Pressing it causes a 
+SELECT event to be raised and runs any associated c all back. Linklabels have the following 
+restrictions: 
+ 
+• They don't support change of background colour. 
+• They don't support 'pressed' and 'not pressed' val ue. 
+• They can have popup menus, though this is not reco mmended. 
+• They don't have Control Types e.g. OK, CANCEL etc.  
+ 
+The sub-type of any Button gadget can be queried us ing the it's Subtype method. 
+20.5.3. Form Control Attributes 
+ A button may optionally have a form control attrib ute, such as OK, which takes effect after 
+the callback command is invoked. It is convenient, but not essential, to give a button the 
+same PML name and displayed tag name as its control  attribute. If no form control attribute 
+is specified, the effect of the button depends enti rely on the callback or the showing of a 
+child form. You can only have one of each type of c ontrol attribute on any form, apart form 
+APPLY which may be used on several buttons. 
+ 
+OK  Allows the user to approve the current gadget sett ings and action the form. The form 
+nest’s OKCALL callbacks are run (see Form OK and CA NCEL Callbacks) and the nest is 
+hidden. Any callback on the OK button is ignored. 
+APPLY  Similar to OK in that the gadget settings are appr oved and the form is actioned but 
+not removed from the screen. There may in fact be s everal APPLY buttons for different 
+sections of form (ideally each section within its o wn Frame). A form with one or more APPLY 
+buttons should also be given a DISMISS button for r emoving it from the screen. 
+CANCEL  Allows the user to decides not to proceed with the  form. The form nest’s 
+CANCELCALL callbacks are run and the nest is hidden . All gadget values are reset to their 
+initial settings or to the values established at th e last APPLY. 
+RESET  Returns the values of all gadgets on the form to t he values they had when the form 
+was displayed. If the user has since pressed an APP LY button, the form gadgets are reset to 
+the values they had when the APPLY button was last pressed. The callback is then invoked 
+in which your PML code should ensure that anything that needs undoing is indeed undone. 
+HELP  Invokes online help. 
+ 
+The effect of OK and CANCEL on gadgets is more exte nsive if a form family is involved, as 
+described in Free Forms and Form Families. Examples : 
+ 
+
+--- Page 32 ---
+AVEVA PDMS Programmable Macro Language manual 
+  2016 v.1. Page 132/178  button .Ok AT . . . 'OK' CALLBACK '!!MyOkFunction() ' OK 
+button .Apply 'Apply' CALLBACK '!!MyApplyFunction() ' APPLY 
+button .Cancel 'Cancel' CALLBACK '!!MyCancelFunctio n()' CANCEL 
+button .reset AT . . . 'Reset' RESET 
+button .help AT . . . 'Help' HELP 
+20.5.4. Defining a Dismiss Button 
+To define a dismiss button , use a command like this: 
+ 
+button .Dismiss 'Dismiss' CANCEL 
+ 
+Note  that this button deliberately does not have a callback. When this button is pressed, the 
+form nest is removed from the screen and its CANCELCALL callbacks executed. 
+20.6. Toggle Gadgets 
+ TOGGLE gadgets are used for independent on/off set tings as opposed to a radio group. 
+A TOGGLE should be given a tag name or pixmap, whic h is displayed to the right of the 
+TOGGLE button. The three TOGGLES are defined by the  following lines. 
+ 
+toggle .Bold 'Bold' 
+toggle .Italic 'Italic' 
+toggle .Underline 'Underline' 
+ 
+They are named Bold, Italic and Underline, and they  are tagged with corresponding text, 
+enclosed in quotes. More examples: 
+ 
+toggle .Italic 'Italic' AT . . . 
+toggle .GridOn pixmap /filename callback '!!MyFunct ion()' 
+ 
+The value of a toggle gadget is set and used via th e .val member which is a BOOLEAN 
+value: 
+ 
+!!MyForm. Italic.val = TRUE 
+  if ( !!MyForm.GridOn.val ) then 
+  ... 
+  else 
+  ... 
+  endif 
+ 
+The default value for a toggle is FALSE . 
+20.7. RToggle Gadgets 
+ The RTOGGLE  gadget is very similar to the TOGGLE gadget, but i s allowed only in 
+FRAMEs, where they operate together to form a set o f radio buttons, only one of which can 
+be selected at any one time. You can add RTOGGLE ga dgets to a FRAME with the usual 
+layout and positioning commands. The RTOGGLE gadget s are implicitly numbered 1, 2, 3, 
+… n as they are added. 
+ 
+RToggle Callbacks  The RTOGGLE gadget can have an assigned callback, which is 
+executed whenever its selected status is changed. W hen the group selection is changed, by 
+the user clicking an unselected radio button, the c urrent button (if any) is unselected and the 
+new button is selected. An open callback (PML funct ion or form method) is necessary as the 
+events UNSELECT and SELECT need to be reported. The  PML code below shows a 
+modification to our example form, which makes use o f open callbacks on the RTOGGLEs 
+
+--- Page 33 ---
+AVEVA PDMS Programmable Macro Language manual 
+  2016 v.1. Page 133/178  instead of a simple callback on the FRAME radio gro up. The Constructor and the 
+RgroupSelectionChanged methods are modified accordi ngly.  
+ 
+Note : The behaviour of the two versions is identical. B oth mechanisms are equally valid, and 
+are provided to minimise the work required in repla cing the RGROUP and (deprecated) 
+RADIO gadgets. 
+ 
+define method .FRGTest() 
+  -- Constructor 
+  -- Frame radiogroup 
+  -- set result field read-only 
+  !this.choice.setEditable(false) 
+  --TV and Radio with open callbacks 
+  !this.rad1.callback = '!this.RGroupSelectionChang ed(' 
+  !this.rad2.callback = '!this.RGroupSelectionChang ed(' 
+  this.rad3.callback = '!this.RGroupSelectionChange d(' 
+  this.rad4.callback = '!this.RGroupSelectionChange d(' 
+  this.rad5.callback = '!this.RGroupSelectionChange d(' 
+  -- Radio choices 
+  !this.rad5.setTooltip(|select your Radio option|)  
+  !radio[1] = 'Q103' 
+  !radio[2] = 'Hereward' 
+  !radio[3] = 'Cambridge' 
+  !radio[4] = 'ClassicFM' 
+  !radio[5] = 'Caroline' 
+  !this.Radio.dtext = !radio 
+  !this.Radio.setTooltip(|change your Radio option| ) 
+  !this.Radio.callback = '!this.selectProgram(!this .rad5)' 
+  -- set initial value 
+  !this.rad2.val = true 
+  !this.RGroupSelectionChanged( !this.rad2,'SELECT'  ) 
+endmethod 
+ 
+define method .RGroupSelectionChanged( !rtog is GAD GET, !event is STRING ) 
+  -- Service specified radio-toggle events 
+  if( !event eq 'UNSELECT' ) then 
+    -- Do some application actions 
+    !this.choice.clear() 
+  elseif( !event eq 'SELECT' ) then 
+    !value = !rtog.onValue 
+    -- Do some application actions 
+    if( !value eq 'radio' ) then 
+      !value = !this.Radio.selection('dtext') 
+    endif 
+    !this.choice.val = !value 
+  endif 
+endmethod 
+ 
+Order of Event Generation 
+Events for the radio group FRAME and its radio-togg les happen in the following order, when 
+an RTOGGLE is selected: 
+ 
+• UNSELECT on previously selected RTOGGLE (if any) 
+• SELECT on new RTOGGLE 
+• SELECT on FRAME 
+  
+
+--- Page 34 ---
+AVEVA PDMS Programmable Macro Language manual 
+  2016 v.1. Page 134/178  20.8. Option and Combobox Gadgets 
+ The OPTION and COMBOBOX gadgets offer a single cho ice from a list of items. Clicking 
+the down-arrow icon opens the drop-down list to all ow a selection of a field from the choices. 
+The currently selected field is highlighted. The tw o gadget types are similar, the main 
+differences being: 
+ 
+• Option gadget's display text field cannot be edite d. 
+• Combobox gadget's display text field is editable, just like a TEXT gadget. 
+• Combobox does not support the display of pixmaps. 
+ 
+The drop-down list is very similar to a Single Choi ce List Gadget and supports DTEXT, 
+RTEXT, ZEROSELECT and NORESELECT properties. The sa me methods are used to 
+manage the list's content. In just the same way it also allows UNSELECT and SELECT 
+events. When the user presses the option gadget, th e entire set of items is shown as a drop-
+down list and the user can then select a new item b y clicking the option required. There is 
+always a selected value unless the option list is e mpty. You can use the Add methods to add 
+a single new entry to be appended to OPTION 
+gadgets: 
+ 
+Add( !Dtext is STRING ) 
+Add( !Dtext is STRING, !Rtext is STRING ) 
+ 
+Where Dtext is the text to be displayed in the opti on list, and Rtext is the replacement text for 
+the new field. If Rtext is not specified, it will b e set to the Dtext string by default. 
+20.8.1. Textual Option Gadgets 
+ The width of a textual option gadget, in grid unit s, must be specified. A tag name is 
+optional and is displayed to the left of the gadget . 
+ 
+option .Colour 'Colour' width 10 
+ 
+The current value in a textual option gadget is scr ollable using the left- and right-arrow keys. 
+This means you can specify a gadget that’s narrower  than the options displayed in the 
+dropdown list. The OPTION gadget actually contains two parallel lists of the same length, 
+the display values (or Dtext ) and the replacement values (or Rtext ). The list of display 
+values must be supplied by assigning an array of values to the gadget's Dtext member. This 
+is the list of choices displayed to the user. In Ex amples, the lines in the default constructor 
+method define the Colour option gadget values as follows: 
+ 
+!ColourArray[1]='Black' 
+!ColourArray[2]='White' 
+!ColourArray[3]='Red' 
+!ColourArray[4]='Green' 
+!ColourArray[5]='Blue' 
+!This.Layout2.Colour.Dtext=!ColourArray 
+ 
+Other examples: 
+ 
+option .Colour 'Colour:' AT . . . callback '!!MyFun c()' width 20 
+  
+
+--- Page 35 ---
+AVEVA PDMS Programmable Macro Language manual 
+  2016 v.1. Page 135/178  20.8.2. Combobox Gadgets 
+ A COMBObox is a combination of an option gadget an d text field. It can be defined by the 
+command combo .Colour tagwid 5 'Colour' scroll 20 w idth 5 When the ComboBox is 
+editable(default), with the drop-down list closed, the user can search for a required option by 
+typing the first few letters into the display field  and clicking the down-arrow. The list will open 
+with the first matching option highlighted. This is  useful for large lists. 
+ 
+The display field is accessible to the user, who ca n edit the contents by typing or pasting text 
+into the field. If the user clicks ENTER while the gadget's text field has focus and has been 
+modified, a VALIDATE event is raised. You can trap this event by assigning a PML Open 
+callback to the gadget. This allows you to give mea ning to the action of typing text into the 
+display field. The Open callback is necessary to di fferentiate the VALIDATE event from the 
+SELECT and UNSELECT events. On receipt of the VALID ATE event, your callback method 
+can retrieve the displayed text by means of the Dis playText method and decide what action 
+is associated. Additionally you can assign a popup menu to the gadget, which gives the user 
+the choice of several actions. For example, you mig ht append the current display text to the 
+drop-down list as a new choice, possibly ensuring t hat there are no duplicate entries. An 
+assigned popup menu could allows options to be remo ved from the drop-down list and the 
+editable status of the combobox to be toggled. (PML  example code is available as User 
+Manual example Layout2.pmlfrm which can be obtained  from AVEVA's support web site.) 
+20.8.3. Pixmap Option Gadgets 
+The gadget-shape must be specified, using the WIDTH  keyword and either HEIGHT or 
+ASPECT. A tag name is optional and is displayed to the left of the gadget. The display text 
+should be set to pixmap’s filename and assigned to the Dtext member: 
+ 
+!CircleDtextsArray[1] = '/directory/circle/cenrad' 
+!CircleDtextsArray[2] = '/directory/circle/3pts' 
+!!MyForm.Circle.Dtext = !CircleArray 
+option .Circle1 AT . . . callback '!!MyFunc()' PIXM AP width 256 height 128 
+option .Circle2 AT . . . callback '!!MyFunc()' PIXM AP width 256 aspect 2.0 
+ 
+The replacement-texts, if needed, are set by assign ing an array of values to the Rtext 
+member. 
+ 
+!CircleRtextsArray[1] = 'Specify centre and radius'  
+!CircleRtextsArray[2] = 'Pick three points on the 
+circumference' 
+!!MyForm.Circle.Rtext = !CircleArray 
+20.8.4. Setting and Getting the Current Selection 
+The default selection is the first value in the lis t. You can explicitly set the currently selected 
+value by means of the option gadget's select() meth od: 
+ 
+!!Layout2.Colour.select('Dtext','Orange') 
+!!MyForm.Circle.select('directory/circle/cenrad') 
+ 
+You can read the current selection using the select ion() method. This will return the 
+replacement-text (or the display-text if replacemen t-texts were not defined): 
+!SelectedText = !This.List.Selection() 
+ 
+The .val member reads the index number of the curre ntly selected value: 
+!ChosenNumber = !!Form.List.Val 
+The clear() method will discard both display- and r eplacement-text lists: 
+!!MyForm.Colours.clear() 
+  
+
+--- Page 36 ---
+AVEVA PDMS Programmable Macro Language manual 
+  2016 v.1. Page 136/178  20.9. Slider Gadgets 
+ The SLIDER gadget allows you interactively to gene rate values in a specified range, at 
+specified steps. PML supports both vertical and hor izontal SLIDERS. An example SLIDER 
+definition is: 
+ 
+Frame .fr2 |Slider 2| at xmin form ymax anchor All width 20 
+  text .t2 wid 3 is REAL 
+  slider .sl2 vertical anchor All range -50 +50 ste p 5 val 0 
+  height 5 
+exit 
+ 
+Picture Nr.26. - Slider example 
+The SLIDER gadget responds to left-mouse SLIDER STA RT, MOVE, and stop events at 
+which it executes the gadget’s callback if one is d efined. We recommend you use an open-
+callback (PML function or form method) as it includ es the action ‘START’, ‘MOVE’ or ‘STOP’. 
+For example the form method .serviceSlider would ha ve the signature 
+ 
+define method .serviceSlider( slider is GADGET, act ion is STRING ) 
+ 
+The callbacks for action START and MOVE are not fol lowed by an automatic update, for 
+efficiency reasons, so you may need to follow some gadget modifications carried out in the 
+callback with a !gadget.refresh(), e.g. modifying a  TEXT gadget to track the SLIDER’s 
+current value. The MOVE callback is generated at ea ch step increment in the SLIDER‘s 
+range. 
+20.10. Line Gadgets 
+ The LINE gadget gives the ability to display horiz ontal or vertical lines to separate groups 
+of gadgets on a form, for increased clarity of inte nt. The line's presentation reflects the colour 
+of the current Windows scheme. A Line gadget can be  defined by line .horiz 'H-Line' Horiz 
+width.f3 height.t1 The line's width and height can be set either specifically or in terms of the 
+width of other gadgets on the form. Setting the hei ght for a Horizontal separator or the width 
+for a Vertical separator causes the line to be draw n across the middle of the implied area. 
+This allows for equal spacing on each side of the s eparator line. If the width or height is 
+omitted then a default value is assumed. The line's  Dock and Anchor attributes allow it to be 
+dynamic and respond to interactive changes in form size. The Line has the following 
+restrictions: 
+ 
+• The tag text is never displayed. 
+• It cannot not appear in toolbar frames. 
+• It is not interactive and has no associated value.  
+• It supports the standard default gadget members an d methods only. 
+ 
+frame .f3 'f3' 
+vdist 0.2 
+hdist 0.5 
+toggle .t1 'Toggle 1' at x 2 
+
+
+--- Page 37 ---
+AVEVA PDMS Programmable Macro Language manual 
+  2016 v.1. Page 137/178  line .horiz 'H-Line' Horiz wid.f3 hei.t1 
+toggle .t2 'Toggle 2' 
+line .vert at xmin.f3 ymin.f3+0.5 Vert wid 2 hei.f3  
+exit  
+20.11. Numeric Input Gadget 
+ The NUMERICINPUT gadget allows numeric input withi n a specified range, with given 
+granularity. It has Up/Down arrow icons which contr ol incrementing and decrementing the 
+displayed value by the specified increment, within the range. The tag text is always 
+displayed. Additionally it is possible to type in t he required value, which is adjusted to the 
+nearest valid value in the range. The default initi al value is the minimum value of the range 
+and the maximum value is adjusted so that the range  is an integral number of steps. It is not 
+possible to provide user formatting of the values d isplayed by the gadget. It has the following 
+properties and methods: 
+ 
+val is REAL - value of the numeric input. 
+range is array of REAL - a real array with members Start,  End and step (>0). 
+ndp is REAL - (read only) the number of decimal places.  If zero then all values will be 
+integer. 
+editable is BOOLEAN - enable/disable ability to edit the dis played value. 
+modified is BOOLEAN - enable/disable modified events. 
+setRange (!range is array of REAL, !ndp is REAL) 
+ 
+The NumericInput gadget supports SELECT and MODIFIE D events, and users may provide 
+a callback method to service these events. Note tha t often no callback is required, and the 
+numeric input value is merely read and used by othe r gadgets of the form. A SELECT event 
+is raised whenever the user clicks ENTER while the numeric input display field has focus. 
+Typically this happens after the user has typed in a required value, but will also apply if the 
+user enters the field after modifying the values us ing the up/down arrows. The callback can 
+be a simple or an Open callback. A MODIFIED event i s raised for each modification of the 
+displayed value using the up/down arrows. Modified events are only reported if they are 
+enabled and the user has provided an  Open callback , as this allows differentiation from the 
+SELECT events. The default state is modified events  disabled. 
+20.12. List Gadgets 
+ A list gadget allows the user to make single or mu ltiple selections from many alternatives. 
+The list of choices is scrollable if the list is to o long to be displayed all at once. A LIST 
+gadget is thus appropriate if you have a long list of choices, or if you are constructing the list 
+dynamically (at run time), especially if you cannot  predict how many choices there will be. 
+You must specify whether the gadget is a single or multiple-choice list, and give the width 
+and height of the displayed portion. The length def ines the number of choices that will be 
+visible within the gadget. You may optionally speci fy a text tag to be displayed at the top-left 
+above the gadget, the position on the form and a ca llback command. Typically you enter text 
+values into the list using an array of strings and assigning to its Dtext member. 
+ 
+list .List 'Select some of these' MULTIPLE width 15  height 8 
+!Elements[1]= 'Element 1' 
+!Elements[2]= 'Element 2' 
+!Elements[3]= 'Element 3' 
+!Elements[4]= 'Element 4' 
+!Elements[5]= 'Element 5' 
+!Elements[6]= 'Element 6' 
+!This.List.Dtext= !Elements 
+ 
+More examples: 
+
+--- Page 38 ---
+AVEVA PDMS Programmable Macro Language manual 
+  2016 v.1. Page 138/178   
+list .Components SINGLE width 10 height 15 
+list .Components 'Colour:' AT . . . MULTIPLE width 10 height 15 
+list .Elements 'Elements to be deleted' callback '! this.Delete' MULTIPLE width 10 length 15 
+ 
+As with the option gadget, the list gadget actually  contains two parallel lists, of the same 
+length, one containing display values ( Dtext ) and the other containing replacement values 
+(Rtext ). The Dtext values must be supplied, but the replacement values are optiona l. If you 
+don’t supply the Rtext values they will default to the Dtext values. The Rtext values are 
+often used to assign callback strings to each field  of the list. Resetting a list gadget's display-
+texts automatically deletes the existing display an d replacement-texts and clears any current 
+selections. For example, the contents of gadget 
+ 
+!Choices[ 1 ] = 'Tea' 
+!Choices[ 2 ] = 'Coffee' 
+!Choices[ 3 ] = 'Chocolate' 
+ 
+!This.List.Dtext = !Choices 
+ 
+You can replace the list’s Rtext with a new array of the same length without disturb ing the 
+current Dtext s: 
+ 
+!newRtext[1] = ‘drink6’ 
+!newRtext[2] = ‘drink4’ 
+!newRtext[3] = ‘drink12’ 
+!This.List.Rtext = !newRtext 
+ 
+You can use the new Add methods to add a single new entry to be appended to  LIST and 
+SELECTOR gadgets: 
+ 
+Add( !Dtext is STRING ) 
+Add( !Dtext is STRING, !Rtext is STRING ) 
+ 
+Where Dtext is the text to be displayed in the option list, and  Rtext is the replacement text 
+for the new field. If Rtext is not specified, it will be set to the Dtext string by default. 
+20.12.1. Single Choice List Gadgets 
+You can set and get the current selection in a single-choice list using  the display-text, 
+replacement text, or .val member. For example: 
+ 
+!This.List.val =2 - selects second list field 
+!This.List.Select( 'Dtext', 'Coffee' ) 
+!This.List.Select( 'Rtext', 'drink4' ) 
+!fieldNumber = !This.List.val 
+!Rtext = !This.List.selection() 
+!Dtext = !This.List.selection(‘Dtext’) 
+ 
+Zero-Selections and Single Choice List Gadgets 
+You can also define a single-choice list-gadget to allow zero-selections.. The list syntax 
+allows you to define the gadget with the SINGLE ZER OSELECTIONS keyword to indicate 
+that the list is single choice with no mandatory se lected field, e.g. 
+ 
+list .List |Cars| Anchor all single zerosel width 2 5 length 10 
+ 
+The val member now allows programmatic de-selection  of the current field. For Single choice 
+lists the keyword NORESELECT disables UnSelect and Select events when the currently 
+selected field is clicked with the mouse, for examp le: 
+
+--- Page 39 ---
+AVEVA PDMS Programmable Macro Language manual 
+  2016 v.1. Page 139/178   
+list .l1 |List gadget| zeroSel noReselect width 15 length 5 tooltip 'single choice list' 
+ 
+For ZeroSelection lists it is now possible to inter actively deselect the selected field by 
+clicking in unused rows or after the last column. S ingle choice List gadgets support 
+UNSELECT events. Typically when a field is selected , an UNSELECT event is raised for the 
+previously selected field (if any) and then a SELEC T interactively deselected. 
+Notes: 
+1. UNSELECT events are not notified to PML unless a n open callback has been specified 
+(so that SELECT and UNSELECT events can be differen tiated). 
+2. Typically the UNSELECT action allows Appware to manage consequences of deselection 
+for any dependent gadgets or forms. 
+3. It is recommend that you do not change the List' s selection programmatically in an 
+UNSELECT event. 
+20.12.2. Multiple Choice List Gadgets 
+You can read the current selections in a multiple-c hoice list using the selection() methods. 
+This will return the replacement-texts: 
+ 
+!Xarray = !This.List.selection() - returns selected  replacement texts by default 
+!Xarray = !This.List.selection(‘Dtext’) - returns s elected display texts 
+ 
+To read the index numbers of the currently selected  fields of a multi-choice list gadget: 
+ 
+!ChosenNumbersArray = !!Form.List.Val 
+ 
+You can read back the current Dtext s or Rtext s as an array or simply as strings: 
+ 
+!array = !This.List.Dtext - get all the Dtexts 
+!string = !This.List.Rtext[3] - get Rtext of the th ird list field 
+ 
+You can select fields of this list either singly (a dditive) or by array of Dtext or Rtext, using its 
+select() methods: 
+ 
+!This.List.select(‘Rtext’, ‘Tea’) 
+!This.List.select(‘Dtext’, !array) 
+ 
+Callbacks on Multi-Choice List Gadgets 
+At PDMS11.6 we introduced support for Extended Sele ction Mode for multi-selection lists, 
+whereby CTRL and SHFT keys can qualify the list sel ection. As a result a whole set of 
+UNSELECT events followed by a whole set of SELECT e vents can result from a single 
+(atomic) user action. These events are presented in  sequence, but AppWare cannot tell 
+where the sequence starts or ends. At PDMS11.6, pro blems may arise if a multi-selection list 
+is programmatically changed during the list callbac k. Modifying the list content or its 
+selection during the sequence can cause unexpected results or even software crashes. At 
+PDMS11.6Sp1 we nave introduced new START and STOP b atch actions to bracket the 
+sequence of UNSELECT and SELECT event actions. For maximum upwards compatibility, 
+the START and STOP batch actions are only notified to PML if the user has assigned an 
+open callback, since this is the only way that diff erent event types (actions) can be 
+differentiated because START and STOP events will n ot be notified to it. AppWare which 
+used open callbacks and worked at PDMS11.6 will con tinue to work if the SELECT and 
+UNSELECT meta-events were explicitly differentiated  in the callback, as shown below, 
+because the new START and STOP events will be ignor ed 
+ 
+Define method .listSelectionChanged( !list is GADGE T, !action is STRING ) 
+  . . . 
+
+--- Page 40 ---
+AVEVA PDMS Programmable Macro Language manual 
+  2016 v.1. Page 140/178    if( !action eq ‘SELECT’ ) then 
+  . . . 
+  elseif( !action eq ‘UNSELECT’ then 
+  . . . 
+  endif 
+  . . . 
+endmethod  
+
+--- Page 41 ---
+AVEVA PDMS Programmable Macro Language manual 
+  2016 v.1. Page 141/178  If you experience a change in behaviour, then you m ay need to rewrite your callback to 
+explicitly handle the new START and STOP events and  modify the list content or its 
+selection only on receiving the STOP event action. For newly written AppWare we strongly 
+advise you use open callbacks to service multiselec tion list gadgets. 
+20.12.3. Multi-Column List Gadgets 
+ You can simulate a multi-column list using spaces and tabs if you are using a fixed-width 
+font. But if you are using a proportionally spaced font, then you cannot do this and guarantee 
+the columns will always line up. The list gadget ma y have multiple columns as shown in the 
+following example, which is also a single-choice, z ero-selection list. The column widths can 
+be interactively modified using the mouse cursor in  the headings row. 
+ 
+Picture Nr.27. -  Multi-Column List Gadget 
+The number of columns is deduced from the List's da ta. If the user specifies a set of (1 or 
+more) column headings before the list is populated,  then this will determine the number of 
+columns. If no headings are pre-specified then the number of columns is deduced from the 
+display text of the List's first row. This provides  upwards compatibility for existing Appware 
+using single column lists. A List gadget's headings  can be replaced after the list has been 
+populated. If the new headings specify the same num ber of columns then the headings are 
+replaced but the List's data fields and selection r emain unchanged. If the number of columns 
+is different, then the list is replaced by an empty  list with the new headings. Invoking the 
+Clear() method will clear the list's data fields an d rebuild the current headings. The column 
+headings, and hence the number of columns, for the list are assigned as an array of 
+STRING: 
+ 
+!This.List.SetHeadings( !headings ) 
+ 
+The Dtexts for each column of each row of the list can be provided as a PML array, where 
+each element is an array of STRING. This can be row  oriented or column oriented. 
+ 
+!This.List.SetRows( !rows ) 
+ 
+!rows is an array of ‘row arrays’, and its size det ermines the number of rows in the list. 
+ 
+!This.List.SetColumns( !columns ) 
+ 
+!columns is an array of ‘column arrays’, and its si ze must match the number of columns of 
+the list. The size of all the column arrays must be  the same and determines the no of rows in 
+the list. The default width of each column is deter mined by the longest header or Dtext value 
+supplied. Rtext values for each row are supplied as  for single column lists. Selection within 
+the list applies to the entire row not individual c ells, but rows of the list can be selected on 
+the basis of a column’s Dtext: 
+ 
+Select( !column is REAL, !dtext is STRING ) 
+
+
+--- Page 42 ---
+AVEVA PDMS Programmable Macro Language manual 
+  2016 v.1. Page 142/178  This selects the first list row whose column has th e given Dtext. If the list is a multi-choice list 
+then repeated use of this method will add selected rows to the list. 
+ 
+Note:  For a multi-column list gadget each row’s Dtext st ring is held as a ‘horizontal tab’ 
+character separated string of column data, matching  the column headings (as opposed to a 
+simple string for single column list). The standard  list members val, Dtext, Dtext[n] and 
+methods Select( ‘Dtext’, …), Selection( ‘Dtext’ ) w ork on multicolumn lists with the following 
+limitations: 
+ 
+• Querying Dtexts will return the tab separated stri ngs. 
+• Supplying Dtext to populate the list or invoke sel ections will require tab separated 
+strings as input. 
+ 
+Popup-Menus on Multi-Column List Gadgets 
+List gadgets with a popup menu assigned to them wil l pop up the menu when the rightmouse 
+button is released when the cursor is over the list  title or any list selection field. For multi-
+column lists right-mouse in a list field will first  select that field, and unselect any other 
+selected fields, before the popup appears. This sel ection behaviour does not occur for single 
+column lists. The use of popup menus on list gadget s can be confusing so use them with 
+care. 
+20.13. Database Selector Gadgets 
+ A database selector is a special kind of list gadg et. It provides a mechanism for displaying 
+the current database element along with its owner a nd members. The user can also interact 
+with a selector to change the current element. A si ngle-choice selector permits only one 
+selected value at a time. A typical example is the PDMS Members List. A multiple-selector 
+could be used to display the results of querying da tabase attributes or to select a group of 
+elements for modification. Its definition is simila r to list gadgets. 
+ 
+selector .Mem 'members:' SINGLE width 12 height 8 D ATABASE 
+selector .Mem SINGLE width 12 height 8 DATABASE OWN ERS 
+selector .Mem SINGLE width 12 height 8 DATABASE MEM BERS 
+selector .Mem AT . . . SINGLE width 12 height 8 DAT ABASE AUTO 
+selector .Mem AT . . . MULTIPLE width 12 height 8 D ATABASE 
+selector .Mem callback '!this.MyList(' MULTIPLE wid th 12 height 8 DATABASE 
+ 
+The DATABASE keyword is mandatory. 
+The owners and members keywords are optional. By de fault, a database selector displays 
+the current element together with elements both abo ve it and below it in the database 
+hierarchy. If present, the owners keyword specifies  that only elements above the current 
+element are shown. If present the members keyword s pecifies that only elements below the 
+current element are shown. 
+If auto is specified, the selector automatically re freshes its displayed contents whenever the 
+current element of the database changes. If absent,  the contents of a selector remain as 
+they were when the gadget was initially displayed u ntil the gadget is explicitly refreshed by 
+your PML code. The auto keyword and the multiple ke yword cannot be used together.  
+To set and get selected values for a selector use t he select() and selection() methods, and 
+the .val members, as you do for lists. For example,  to access the currently selected value of 
+a single-selector gadget: 
+ 
+!element = !This.Members.selection() 
+ 
+Note  that for a selector gadget, the Rtext and Dtext ar e always the same as one another. 
+  
+
+--- Page 43 ---
+AVEVA PDMS Programmable Macro Language manual 
+  2016 v.1. Page 143/178  20.14. Text Gadgets 
+ A text gadget is a box that can display a value an d into which the user may type a value, 
+or edit an existing value. To type into a text gadg et on a form it must have the keyboard 
+focus to receive the keystrokes typed by the user. The user can move the focus to another 
+text gadget by selecting it with the mouse or stepp ing from one gadget to the next using the 
+TAB key. 
+ 
+text .number AT . . . width 10 is REAL 
+text .name 'Name:' callback '!!MyFunction' width 10  scroll 100 is STRING 
+text .active 'Active:' callback '!!MyFunction' widt h 10 is BOOLEAN 
+text .bore 'Bore:' width 10 is BORE format !!Format Bore 
+text .password 'Password:' AT . . . width 10 NOECHO  is STRING 
+ 
+You must: 
+• Specify the WIDTH, which determines the maximum nu mber of character spaces 
+visible. Optionally you may specify a larger SCROLL  width, which is the maximum 
+number of characters that the gadget can hold, and scroll through. The default 
+scrollwidth is 132 characters. The maximum is 256 c haracters. 
+• Specify a data type using IS which determines how a value assigned to the gadget will 
+be displayed and how a value typed by the user will  be interpreted by your PML 
+code. You may also supply a FORMAT object which spe cifies in detail how a value 
+is to be displayed or interpreted (see below). 
+ 
+You may optionally 
+• Specify a tag name to be displayed to the left of the gadget. 
+• Specify a callback command. 
+• Specify a position on the form. 
+• Specify a NOECHO keyword that indicates any charac ters typed should be displayed 
+as stars: a typical use would be a gadget for the u ser to enter a password. 
+• Give the text gadget an initial value, which will be the value accessed by your PML 
+code if it is not modified by the user. To set an i nitial value for a text input gadget, 
+use its .val member: 
+ 
+This.name.val = 'PIPE-1' 
+ 
+• Specify whether the text displayed is editable int eractively or is read only. When you 
+type into a text gadget its background color change s from white to beige to indicate 
+that has been modified. Its content is actioned whe n you press Enter while the text 
+gadget has focus, or if you press a button on the f orm. 
+ 
+When a field is actioned its content is read and va lidated according to the field’s type (see 
+Validating Input to Text Fields). If an error is de tected, then the field’s background colour 
+changes to gold to indicate an error and focus is r eturned to it so that the user can correct 
+the error. If no error was detected then the text g adget’s callback (if any) is executed To get 
+the current value of a text input gadget: 
+!Value = !This.name.val 
+ 
+The data type of the variable !Value will be the sa me as the type of the text gadget. To get 
+the textual value use: 
+!string = !Value.String() 
+ 
+To set the keyboard focus so that keystrokes come t o this gadget: 
+!This.name.SetFocus() 
+  
+
+--- Page 44 ---
+AVEVA PDMS Programmable Macro Language manual 
+  2016 v.1. Page 144/178  20.14.1. Controlling Text Gadgets’ Editing 
+Text fields have a member Editable (read/write), wh ich controls the user's ability to edit the 
+displayed text interactively, e.g. 
+ 
+!this.myTextField.editable = false 
+ 
+Makes the field read only. 
+ 
+Modified Events for Text Gadgets 
+When the user finishes modifying the field by click ing ENTER while the field has focus, or 
+pressing any button on the form, the field content is validated. If valid, then the field’s 
+callback (if any) is notified (executed) of a SELEC T event, and the field returns to ‘white’ 
+again indicating that it is no longer modified. Oth erwise an error is detected, the field’s 
+background colour becomes ‘gold’ and focus is retur ned to it for further modification. The 
+setEditable method allows PML to be notified when t he displayed text is modified by user 
+interaction 
+ 
+setEditable( !attribute is STRING, !value is REAL )  
+ 
+Currently the only attribute supported is HANDLEMOI FY which may have the integer values: 
+ 
+• 0 MODIFIED events off (default). 
+• 1 Generate MODIFIED event at first user modificati on only. 
+ 
+Note : MODIFIED events are not notified to PML unless th e field is editable, modified events 
+are enabled and an open callback has been specified  (so that MODIFIED and SELECT 
+events cannot be differentiated) Typically, the fir st MODIFIED event is used to allow 
+AppWare to gain control and modify the properties ( e.g. ACTIVE status) of dependent 
+gadgets, which possibly the user should not have ac cess to until the text field’s VALIDATE 
+and SELECT events have been handled. 
+ 
+The code fragment below defines an RTOGGLE that all ows a user specified TV program to 
+be typed into an associated TEXT gadget. 
+ 
+rToggle .rad6 tagwid 7 |TV:| States '' 'TV' 
+text .TV width 10 is STRING 
+!this.rad6.callback = '!this.RGroupSelectionChanged (' 
+-- set open callback on text field and option list 
+!this.TV.callback = '!this.selectProgram(' 
+!this.Radio.callback = '!this.selectProgram(' 
+- handle first Modified event only 
+!this.TV.setModified( ‘handleModify’, 1 ) 
+ 
+The extended (open) callback selectProgram(, shown below, intelligently handles the TEXT 
+gadget and OPTION list. The open callback RGroupSel ectionChanged sets the value of the 
+‘TV’ RTOGGLE from the TEXT gadget. 
+ 
+define method .selectProgram( !gad is GADGET, !even t is STRING ) 
+  -- Select new program from option list or text in put field 
+  if( !gad.type( ) eq 'TEXT' ) then 
+    -- Control active state of R-toggle according t o modified 
+    state of textfield 
+    !rtog = !this.rad6 
+    if( !event eq 'MODIFIED' ) then 
+      -- deactivate R-toggle 
+      !rtog.active = false 
+
+--- Page 45 ---
+AVEVA PDMS Programmable Macro Language manual 
+  2016 v.1. Page 145/178      elseif( !event eq 'SELECT' ) then 
+      -- reactivate R-toggle 
+      !rtog.active = true 
+    endif 
+  else 
+    -- select radio program from option list 
+    !rtog = !this.rad5 
+  endif 
+  if( !this.rg1.val eq !rtog.index ) then 
+    -- deselect current selection 
+    !this.rg1.val = 0 
+    !this.choice.clear() 
+  endif 
+endmethod 
+ 
+define method .RGroupSelectionChanged( !rtog is GAD GET, !event is STRING ) 
+  -- Service specified radio-toggle events 
+  if( !event eq 'UNSELECT' ) then 
+    -- Do some application actions 
+    !this.choice.clear() 
+  elseif( !event eq 'SELECT' ) then 
+    !value = !rtog.onValue 
+    -- Do some application actions 
+    if( !value eq 'radio' ) then 
+      !value = !this.Radio.selection('dtext') 
+    elseif( !value eq 'TV' ) then 
+      !value = !this.TV.val 
+    endif 
+    !this.choice.val = !value 
+  endif 
+endmethod 
+20.14.2. Copying and Pasting into Text Fields 
+The text gadget supports the standard copy and past e mechanisms: 
+ 
+• Use the mouse Select button to copy and the mouse Adjust button to paste. 
+• Use shortcut keys, for example: Ctrl C to copy, Ct rl V to paste. 
+• Use the system Edit popup menu Pasting into a fiel d acts like typing in, and will set the 
+text field’s Modified appearance. 
+ 
+Note  that user defined Popup menus are not supported on  Text gadgets because they clash 
+with the system-supplied Edit menu. 
+20.14.3. Formatting in Text Input Gadgets: Imperial  Units 
+ The FORMAT object manages the information needed t o convert the value of an object or 
+type to a STRING, and vice versa. The FORMAT object  for a specific data type is normally a 
+global PML Variable used for all text gadgets of th at type. For example, you can create the 
+FORMAT object for a REAL object, so that a distance  is displayed in feet-and-inches with 
+fractions (rather than decimals) with a maximum den ominator of 4: 
+ 
+!!RealFMT = object FORMAT() 
+!!RealFMT.DIMENSION = 'L' 
+!!RealFMT.UNITS = 'FINCH' 
+!!RealFMT.FRACTION = TRUE 
+!!RealFMT.DENOMINATOR = 4 
+!!RealFMT.ZEROS = 'FALSE' 
+  
+
+--- Page 46 ---
+AVEVA PDMS Programmable Macro Language manual 
+  2016 v.1. Page 146/178  See the Software Customisation Reference Manual for  more information on the FORMAT 
+object. The TEXT gadget is created with type REAL a nd assigned a FORMAT object for 
+converting values to and from text: 
+ 
+text .Dist 'Distance:' width 10 is REAL format !!Re alFMT 
+ 
+When we assign a value in millimetres to the text g adget: 
+ 
+!!Form.Dist.val = 3505.2 
+ 
+The display-text of 11' 6 will be shown in the text  gadget. To switch from displaying feet-and-
+inches to displaying mm all that is necessary is to  change the setting of the units member of 
+the format object RealFMT from FINCH to MM. The ass ociated format also determines what 
+can be typed into the field. If the associated form at is FINCH or MM then you can enter 
+distances in either inches or feet and inches. For example: 
+ 
+Chosen Units Typed-in Value Displayed Value  
+FINCH 138 11' 6 
+INCH 138 138 
+INCH 11' 6 138 
+MM 3505.2 3505.2  
+ 
+Note that in every case the text field value is act ually held in millimetres so that the 
+command: 
+ 
+q var !!Form.Dist.val 
+ 
+prints 3505.2. 
+ 
+You can use the format object in your PML code when  converting a value to a STRING: 
+ 
+!StringValue = !!Form.Dist.val.String(!!RealFMT) 
+20.14.4. Unset Text Fields 
+All of text fields displayed a text string represen ting the value of a variable or object of a 
+given Type. The string representing an unset value is ‘Unset’. See Unset Variable 
+Representations and UNSET Values and UNDEFINED Vari ables for a discussion of unset 
+variables.  
+ 
+Note : Some older style ‘untyped’ PML1 text fields use t he (null) string ‘’ to represent unset 
+values for numeric fields. You should avoid using t hese old style fields. You can force an 
+unset value for any text field (of any type) using:  
+ 
+!Ths.MyTextclear() 
+ 
+You can also assign an unset value to a text field:  
+ 
+! = REAL() - defines an unset variable type REAL 
+! = STRING() - defines an unset variable type STRIN G 
+!This.MyText = !x 
+You can check for an unset text gadget of any type using the BOOLEAN method unset(): 
+If( !This.MyText.val.Unset()) then 
+  -- value of text is unset 
+ M ... 
+Endif 
+  
+
+--- Page 47 ---
+AVEVA PDMS Programmable Macro Language manual 
+  2016 v.1. Page 147/178  20.14.5. Validating Input to Text Fields 
+The text field gadget has an optional validation ca llback member which the user can specify: 
+ 
+!textfield.ValidateCall = <callback string> 
+ 
+When a text input field is actioned (by modifying i t and pressing ENTER, or when a button on 
+the form is pressed or the form's OKcall is execute d), it is automatically checked to ensure 
+that the typed-in value matches the field's TYPE an d its FORMAT constraints. If so, then the 
+user's VALIDATECALL is actioned. The VALIDATECALL i s used to apply any checks you 
+want. If an error is encountered then the callback raises the error and returns. Note: The 
+validation callback must not attempt to change the value of the text field. It should just detect 
+and raise an error. When an error is raised, an err or alert is displayed and the text field is left 
+with keyboard focus and error highlight. No further  form or gadget callbacks are executed 
+and the form is not dismissed from the screen. The User can then modify the field and re-
+action it. 
+ 
+The VALIDATECALL is a standard callback, and so it can be a single command, a PML 
+function, method or macro, or an open PML method or  function. For an open callback, for 
+example: 
+ 
+!textField.validateCall = ‘!this.textvalidate(‘ the  corresponding method must be: 
+ 
+define method .1textvalidate( !textin is GADGET, !a ction is STRING ) 
+where the action string will be 'VALIDATE'. 
+ 
+An Example of Text Validation: 
+The form !!ValidForm has two text fields of types R EAL and STRING. There are limits on the 
+values that can be typed into each field: the toolt ips on each field explain the constraints. 
+The textvalidate method determines from its !textin  parameter which field is being validated, 
+and applies the constraints that have been defined.  The Handle block traps any unexpected 
+PML errors generated by the validation code. The fi rst if-block of the validation code checks 
+that the text field is not unset. This also prevent s the possibility of unexpected errors in the 
+validation code. 
+ 
+-- $Header: /dev/eventlayer/PMLLIB/validform.pmlfrm  1 17/ 09/04 13:37 Robin.langridge $ 
+-- PDMS Customisation User Guide 
+-- Form ValidForm - Demonstrate text field validati on 
+setup form !!ValidForm dialog 
+  TITLE |Text Handling| 
+  HDIST 3 
+  text .T1 |Real| at wid 8 is REAL tooltip'range 0. 0 to 100.0' 
+  text .T2 |String| wid 12 is STRING tooltip'anythi ng but FRED' 
+  button .CANCEL at XMIN FORM YMAX FORM CANCEL 
+  button .OK at XMAX FORM - SIZE YMAX FORM - SIZE O K 
+exit 
+ 
+define method .ValidForm() 
+  -- constructor 
+  !this.t1.validatecall = '!this.textvalidate(' 
+  !this.t2.validatecall = '!this.textvalidate(' 
+  !this.OKcall = '!this.printValues()' 
+Endmethod 
+ 
+define method .textvalidate( !textin is GADGET, !ac tion is STRING ) 
+  -- validate the given field contents 
+  -- General form of Validation Callback 
+  -- !action will contain 'VALIDATE' 
+
+--- Page 48 ---
+AVEVA PDMS Programmable Macro Language manual 
+  2016 v.1. Page 148/178    onerror golabel /Errors 
+  label /Errors 
+  -- Include handle block for any unexpected PML er rors 
+  handle ANY 
+    -- Example: can get errors from evaluation of t he String field 
+    -- with an 'unset'value 
+    return error 1 'Invalid input' 
+  endhandle 
+  -- Validation code ------------------------------ ------- 
+  -- Check for unset field first (to avoid possible  unexpected errors) 
+  if( !textin.val.unset() ) then 
+    -- validation callback Failed 
+    return error 2 'Field is unset' 
+  else 
+    !field = !textin.name() 
+    if(!field eq 'T1') then 
+      -- TYPED field must check range 
+      !x = !textin.val 
+        if(!x lt 0.0 or !x gt 100.0) then 
+          return error 1 'value must be in range [0 .0 to 100.0]' 
+        endif 
+      elseif(!field eq 'T2') then 
+        -- any string but FRED 
+        if(!textin.val eq 'FRED') then 
+          return error 4 'value must not be FRED' 
+        endif 
+      endif 
+    endif 
+endmethod 
+ 
+define method .printValues() 
+  !r = !this.t1.val 
+  !s = !this.t2.val 
+  $p values $!r and $!s 
+Endmethod 
+20.14.6. Setting the Value of a Text Field 
+A special SetValue() method allows you to set the v alue of a field programmatically, with 
+full interactive checking applied: 
+ 
+.setValue( !value is ANY, !doCallback is BOOLEAN ) 
+ 
+• If the value’s type fails to match the field type,  a trappable error is raised. 
+• If the types match, the value is validated and the  VALIDATECALL is run, if there is 
+one. 
+• If the value is invalid then a trappable error is raised. If the field is shown then it is set 
+'in error', and the focus is returned to it so that  the user can edit the value. 
+• If the value is valid then the method executes the  field callback if !doCallback is true. 
+20.15. TextPane Gadgets 
+ A textpane gadget provides a box on a form into wh ich a user may type and edit multiple 
+lines of text or cut and paste text from elsewhere on the screen. The contents of the 
+textpane can be set and queried by your PML code. O ptionally the text contents can be 
+made non-editable. You must specify the initial sha pe of the gadget. Optionally you may also 
+supply a form position and a tag to be displayed to  the top-left of the gadget. 
+  
+
+--- Page 49 ---
+AVEVA PDMS Programmable Macro Language manual 
+  2016 v.1. Page 149/178  textpane .text 'Text:' AT . . . width 10 height 20 
+textpane .text 'Text:' AT . . . height 20 aspect 0. 5 
+ 
+The value of a textpane is its current contents as an array of strings, where each element of 
+the array corresponds to a line of text in the gadg et. To make the textpane’s contents read-
+only, use the seteditable method: 
+ 
+!This.text.seteditable(FALSE) 
+ 
+To clear the current contents of a textpane gadget:  
+ 
+!This.text.clear() 
+ 
+To move the keyboard focus to this textpane gadget:  
+ 
+!This.text.setfocus() 
+ 
+To enquire how many lines of text a textpane gadget  currently contains, use the count 
+method: 
+ 
+!Nlines = !This.text.count 
+ 
+To set line 21 in a textpane gadget to 'Hello World ': 
+ 
+!This.text.setline( 21, 'Hello World' ) 
+ 
+To read the current contents of line 21 as a string  variable: 
+ 
+!Line = !This.text.line(21) 
+ 
+To set the entire contents of the textpane gadget t o an array of strings: 
+ 
+!Lines[1] = 'Hello World' 
+!Lines[2] = ' ' 
+!Lines[3] = 'Goodbye World' 
+!This.text.val = !Lines 
+ 
+To read the entire contents of the textpane gadget as an array of strings: 
+ 
+!LinesArray = !This.text.val 
+ 
+To set the current cursor position within a textpan e gadget to line 21, character 15 you can 
+use: 
+ 
+!This.text.setcurpos(21, 15) 
+ 
+or 
+ 
+!ArrayRowColumn[1] = 21 
+!ArrayRowColumn[2] = 15 
+!This.text.SetCurPos( !ArrayRowColumn ) 
+ 
+To read current cursor position within a textpane g adget: 
+ 
+!ArrayRowColumn = !This.text.CurPos() 
+  
+
+--- Page 50 ---
+AVEVA PDMS Programmable Macro Language manual 
+  2016 v.1. Page 150/178  20.15.1. Fixed Width Font 
+ The Textpane gadget definition has a new keyword ‘ FixChars’ to force the use of a fixed 
+width font. This allows the text pane to be used to  show simple reports laid out using the 
+space character. The chosen font is Courier New (Tr ueType), because it has a reasonable 
+selection of character glyphs (nowhere near as exte nsive as the default variable width font 
+Arial Unicode MS). 
+ 
+Example 
+ 
+SETUP FORM !!textbug dialog dock right NoAlign VarC hars 
+  TITLE |Text input and output (!!textbug)| 
+  -- Text pane ------------------------------------ -------- 
+  Path down 
+  hdist 1 
+  vdist 0.1 
+  --Default: variable spaced font 
+  textpane .tp1 |text pane| at xmin form anchor l+r +t wid 43 hei 9 
+ 
+define method .initialise() 
+  -- initialise on show 
+  -- add data into textpane 
+  !s[1] = | 1 Ford Escort| 
+  !s[2] = | 2 Ford Fiesta| 
+  !s[3] = | 3 Vauxhall Nova| 
+  !s[4] = | 4 Vauxhall Astra| 
+  !s[5] = | 5 Vauxhall Lotus| 
+  !s[6] = |16 LandRover RangeRover £62000| 
+  !s[7] = |17 LandRover Defender £23999| 
+  !this.tp1.val = !s 
+ 
+Variable Spaced Font 
+ 
+Picture Nr.28. -  Text imput example 
+  
+
+
+--- Page 51 ---
+AVEVA PDMS Programmable Macro Language manual 
+  2016 v.1. Page 151/178  Fixed Space Font 
+--Force fixed spacing font 
+textpane .tp1 |text pane| at xmin form anchor l+r+t  FixChars wid 43 hei 9 
+ 
+Picture Nr.29. -  Text imput example 2 
+20.16. Fast Access to Lists, Selectors and Textpane s using DO Loops 
+ Sometimes you may have large quantities of data in  list, selector or textpane gadgets and 
+you may find that accessing the data using the sele ction() methods may be very slow. The 
+PML textpane mechanism allows fast access to these gadgets. With a textpane gadget you 
+can use do list so that the do counter takes the va lue of the replacement-text for each of the 
+currently selected rows of the list in turn: 
+ 
+do !field list !!FormA.listC 
+  $P Selected field replacement-text is $!field 
+enddo 
+ 
+For a selector gadget you must use do selector so t hat the do counter takes the displayed 
+value of each of the currently selected rows of the  list in turn: 
+ 
+do !field selector !!FormA.SelectorB 
+  $P Selected field replacement-text is $!field 
+enddo 
+ 
+For a textpane gadget you must use do pane so that the do counter takes the value of each 
+of the displayed lines in turn: 
+ 
+do !line pane !!FormA.TextPaneD 
+  $P Text line value is $!line 
+enddo 
+ 
+Note : That on exit from the loop PML destroys the do va riable for each of these gadget 
+types 
+ 
+20.17. View Gadgets 
+ Horizontal and vertical scroll bars will appear as  necessary. The types of view gadgets 
+supported are: 
+ 
+• ALPHA views for displaying text output and/or allo wing command input. 
+• PLOT views for displaying non-interactive 2D plotf iles. 
+• Interactive 2D graphical views 
+• Interactive 3D graphical views 
+  
+
+
+--- Page 52 ---
+AVEVA PDMS Programmable Macro Language manual 
+  2016 v.1. Page 152/178  20.17.1. Defining a View Gadget 
+A view is defined by the command sequence view … ex it: 
+ 
+  view .MyView AT . . . viewtype 
+  height 10 width 20 
+  contents 
+  attributes 
+exit 
+ 
+The command sequence may optionally be given on a s ingle line, without the exit: 
+ 
+view .MyView AT . . . viewtype height 10 width 20 c ontents attributes 
+ 
+Where the contents and attributes that depend on th e type of View. You do not have to set 
+any attributes and we recommend that you set the vi ew’s attributes in the form’s default 
+constructor method rather than in the form setup de finition. 
+20.17.2. Resizable View Gadgets 
+ When the size of the form is changed by the operat or, the size of a view gadget is 
+automatically adjusted to fill the space available in its container. The origin of the view (the 
+top left-hand corner) always remains fixed in posit ion and the view’s bottom right-hand 
+corner adjusts according to the available space. No te that view gadgets do not support the 
+ANCHOR and DOCK attributes. If you want a view that has these behav iours, you can place 
+it in a frame gadget that you declare with the attr ibute you desire. Since the view will expand 
+to fill the frame, it will be as if you had an anch ored or docked the view gadget. 
+20.17.3. Pop-up Menus in Views 
+ When you create a view, it will automatically be c reated with a default popup menu, which 
+will enable users to control the attributes of the View, such as the action of the mouse 
+buttons, and whether borders are displayed. You can  assign popup menus to view gadgets 
+using the gadget’s setpopup() method, with the name  of the popup menu as the argument to 
+the method. For example: 
+ 
+!MyForm.MyView.setpopup( !MyForm.pop1 ) 
+ 
+Note : The standard graphical view forms in AVEVA produc ts are normally supplied with fully 
+customised popup menus, so you should not assign yo ur own ones to these views 
+20.17.4. Defining Alpha Views 
+view .Input AT . . . ALPHA 
+  height 20 width 40 
+  channel COMMANDS 
+exit 
+view .InputOutput AT . . . ALPHA 
+  height 20 aspect 2.0 
+  channel REQUEST 
+  channel COMMANDS 
+exit 
+ 
+Borders and scroll bars cannot be turned off and th e area they occupy is in addition to the 
+size you specify for the gadget. To define the data  channel via which the gadget derives its 
+alphanumeric content, use the channel command: 
+ 
+channel COMMANDS  causes the alpha view to have a command input fiel d and displays 
+command lines and error messages in the scrollable output region 
+
+--- Page 53 ---
+AVEVA PDMS Programmable Macro Language manual 
+  2016 v.1. Page 153/178  channel REQUESTS displays the output resulting from commands, in par ticular, queries in 
+the scrollable output region 
+ 
+To set the keyboard focus so that keystrokes come t o this gadget: 
+!This.InputOutput.SetFocus() 
+ 
+To clear the text output region of an alpha view us e: 
+!This.InputOutput.clear() 
+ 
+It is not an error to have no associated channels w hen an alpha gadget is created. 
+Removing the Requests IO-channel from Alpha View Ga dget To delete the ‘requests’ 
+channel from an alpha view gadget us the command: 
+!alpha.removeRequests() 
+ 
+This command will also dissociate the view from the  current PDMS Requests IO-channel if 
+necessary. Thus request output will no longer go to  this alpha view. The method is valid only 
+on a form that has been mapped to the screen, and w ill cause an error (61, 605) if used 
+during form definition. 
+ 
+Note  that you can add the channel back again by assigni ng to the gadget’s .channel 
+member: 
+!alpha.channel = ‘Requests’ 
+ 
+This adds the ‘requests’ channel to the gadget, and  causes it to become the current PDMS 
+requests region, if the form is mapped, and displac es any previous association. When the 
+user clicks on an alpha view it will automatically associate itself with the PDMS requests 
+channel or the commands channels, or both, accordin g to its current channel settings. 
+ 
+The Alpha view gadget supports multiple line copy a nd paste of text. The simple command 
+window form below shows the appearance 
+ 
+Picture Nr.30. -  Alpha view example 
+The bottom-most empty blank line is the command inp ut line, where the user can type in, 
+and execute the next command by pressing the 'enter ' key. The Alpha view allows the 
+following operations: 
+ 
+1. Double-click of any displayed line will copy tha t line to the command input line ready for 
+editing and execution. 
+2. You can use standard techniques to select text i n the view and then use the rightmouse 
+menu to copy your selection. 
+
+
+--- Page 54 ---
+AVEVA PDMS Programmable Macro Language manual 
+  2016 v.1. Page 154/178  3. You can use the right-mouse menu to paste a sele ction into the command line. Each line 
+of the pasted selection is executed in turn as if y ou had typed it in, except the last line, which 
+becomes the command input line ready for editing an d execution. 
+4. You can use the right-mouse menu to paste a sele ction as a macro. The set of pasted 
+lines are captured to a temporary file which is the n executed as PML macro. The selected 
+lines are not echoed into the view's display. 
+5. Pasting of multiple lines is aborted if an error  alert is displayed. 
+6. You can drag and drop a PML file into the view, and it will then execute as a PML macro. 
+7. The right mouse menu also allows you to clear th e contents of the view and to change the 
+size of text in the view's display. 
+20.17.5. Graphical Views 
+ There are two types of Graphical view, namely 2D a nd 3D. Different applications use 2D 
+and 3D graphical views in different ways so each sp ecific view gadget must be qualified by a 
+view subtype which identifies its usage (or applica tion). The Forms and Menus system 
+supports a standard 2D view subtype PLOT view, whic h is a non-interactive view capable of 
+displaying PDMS PLOT files. Specific PDMS applicati ons support their own view subtypes, 
+for example: 
+ 
+• DESIGN uses 3D view subtype VOLUME and 2D view sub type COMPARE 
+• DRAFT uses 2D view subtype AREA and 3D view subtyp e VOLUME. 
+ 
+Both 2D and 3D view types support a set of common m embers and methods. Some key 
+ones are described below, before each subtype is de alt with 
+ 
+View Borders 
+Graphical views have optional sliders or scrollbars  which allow modification of the view’s 
+geometric transformation. They can be turned on or off using the .borders( !Boolean) 
+method. If the border is switched off, the actual d isplay area expands to fill the available 
+space. 
+ 
+Aspect Ratio and View Gadgets 
+Note when specifying the aspect ratio for a view th at the corresponding ratios for ISO 
+drawing sheet sizes are 0.7071 for portrait format and 1.414 for landscape format. 
+ 
+View Colours 
+Graphical views have two colours associated with th em, namely the background colour and 
+the highlight colour. Setting Background and Highli ght Colours These can be set using the 
+Background and Highlight members, either as integer  colour indices or as colourname text 
+strings: 
+ 
+!view.Background = ‘black’ 
+!view.Background = 2 
+ 
+The highlight colour is the colour used to highligh t selected items in the view. You can set it 
+by 
+ 
+!view.Highlight = ‘white’ 
+!view.Highlight = 1 
+ 
+Some view subtypes ignore this attribute. 
+  
+
+--- Page 55 ---
+AVEVA PDMS Programmable Macro Language manual 
+  2016 v.1. Page 155/178  Getting Background and Highlight Colours 
+You can get the background and highlight colour ind ices from the member variables or you 
+can use the Highlight() and Background() methods th at return the value of the respective 
+property as a name string. For instance, using the example above: 
+ 
+!colourname = !view.Background() 
+ 
+Would give us the string “black”, and 
+ 
+!colourindex = !view.background 
+ 
+Would give us the integer colour index value 2. 
+ 
+Cursor Types 
+When the mouse cursor enters a graphical view, the View gadget determines what cursor 
+type should be displayed for the user, or the repre sentation to be assumed during a 
+graphical interaction. Some of he types of cursor a vailable are: 
+ 
+ 
+Picture Nr.31. -  Available Cursor Types 
+Note : The initial cursor type for VOLUME views is a Poi nter, and you cannot re-define this. 
+You can specify the initial setting for the cursor type in a 2D view when you define the view 
+gadget. The default values for initial cursor types  for PDMS 2D view types are: 
+ 
+2D View Gadget Cursor Type 
+PLOT CROSSHAIR 
+DRAFT CROSSHAIR 
+COMPARATOR POINTER 
+ 
+You may use the CURSortype attribute command to set  an initial cursor type within the 
+gadget definition. For example: 
+ 
+Cursor POINTER 
+  
+
+
+--- Page 56 ---
+AVEVA PDMS Programmable Macro Language manual 
+  2016 v.1. Page 156/178  20.17.6. Defining PLOT Views 
+setup form !!MyForm . . . 
+  view .Diagram AT . . . PLOT height 20 width 40 
+exit 
+ 
+define method !!MyForm( ) 
+  -- form constructor method 
+  -- Initialise plot view gadget 
+  !this.diagram.borders = false 
+  !this.diagram.background( ‘darkslate’ ) 
+  !this.diagram.add( ‘plot1-1’ ) 
+endmethod 
+ 
+ The area occupied by borders and scroll bars is wi thin the area you specify for the gadget 
+If the border is switched off, the actual display a rea expands to fill the available space. When 
+borders are turned off, the PLOT view becomes fixed  and you cannot zoom or pan within it. 
+This may be useful if you are using PLOT views as i f they were paragraphs; for example, as 
+decoration or for information. To define the conten ts of the view specify the PLOTFILE 
+pathname with the .add() method. To remove a PLOT f rom the current PLOT view, use the 
+.clear() method. This will leave the view empty. If  you want to replace the displayed PLOT 
+with another one then just re-use the .add() method  with the new PLOT file. 
+20.17.7. Defining DRAFT’s Area (2D) Views 
+setup form !!MyForm . . . 
+  view .DrawingAT . . .AREA 
+  height 20 width 40 
+  put /SITE1/SHEET 
+  limits 200 100 TO 600 500 
+  exit 
+exit 
+ 
+define method !!MyForm( ) 
+  -- form constructor method 
+  -- Initialise AREA view gadget 
+  !this.drawing.borders = true 
+  !this.drawing.background( ‘beige’ ) 
+  !this.drawing.highlight( ‘red’ ) 
+endmethod 
+ 
+ The area occupied by borders and scroll bars is wi thin the size you specify for the gadget. 
+To define the colour items are displayed in when pi cked with the left-hand mouse button, use 
+the .sethighlight() method with one of the standard  DRAFT colour numbers or colournames. 
+The contents of the view may be any valid 2D graphi cal element, such as a DRAFT SHEET, 
+VIEW, LIBRARY, etc. To define the contents of the v iew, use the put command thus:  
+ 
+Command Effect 
+put CE Draws the current element 
+put /SITE1/SHEET Draws the named Sheet element 
+ 
+If you put new content into an area view that alrea dy contains a drawing, the original content 
+will be replaced by the new, not added to it. 
+ 
+Note : There is currently no .put() method! So to replac e the view contents you will need to 
+use the old PML1 syntax: 
+ 
+edit view !!MyForm.drawing AREA put /site/sheet2 
+  
+
+--- Page 57 ---
+AVEVA PDMS Programmable Macro Language manual 
+  2016 v.1. Page 157/178   The maximum limits for the drawing, such that only  part of the specified content is drawn 
+(giving, in effect, a window on the overall content  area), may be set using the limits keyword 
+as above or using the .limits() member in the form’ s constructor method, as follows: 
+ 
+!box[1] = 200 
+!box[2] = 100 
+!box[3] = 600 
+!box[4] = 500 
+!this.drawing.limits = !box 
+ 
+where the limits define two opposite corners of the  required area in sheet co-ordinates. For a 
+full list of VIEW members and methods, 
+20.17.8. Defining DESIGN’s Volume (3D) Views 
+setup form !!MyForm . . . 
+  view .ModelAT . . .VOLUME 
+  height 20 width 40 
+  limits auto 
+  look east 
+  exit 
+exit 
+ 
+define method !!MyForm( ) 
+  -- form constructor method 
+  -- Initialise 3D view gadget 
+  !this.model.borders = false 
+  !this.model.background( ‘darkslate’ ) 
+  !this.model.shaded( true ) 
+  !this.model.projection( ‘PERSPECTIVE’ ) 
+  !this.model.radius( 100 ) 
+  !this.model.range( 500.0 ) 
+  !this.model.direction( !dir ) 
+  !this.model.eyemode( .false. ) 
+  !this.model.through( !thru ) 
+  !this.model.walkthrough( true ) 
+  !this.model.step( 25 ) 
+endmethod 
+ 
+ The area occupied by borders and sliders is within  the area you specify for the gadget. To 
+enable colour-shaded representation use the .shaded () method. By default a wireline 
+representation .shaded(false) is used. All aspects of the 3D view transformation may be 
+specified: 
+ 
+To enable PERSPECTIVE mode use the .projection(‘PER SPECTIVE’) method. By default 
+the projection is PARALLEL. The view direction is c ontrolled via the 3D view’s .direction 
+member. This is a 3 element array of REAL, represen ting a direction vector in model space ( 
+DEAST, DNORTH, DUP ). So to look east you would spe cify: 
+ 
+!dir[1] = 1.0 
+!dir[2] = 0.0 
+!dir[3] = 0.0 
+!this.model.direction = !dir 
+ 
+The 3D view gadget labels the view direction inform ation in 'ENU' (East-West, North-South, 
+Up-Down) format within the view status line and scr oll borders, by default. The 
+LABELSTYLE member allows the user to specify either  'ENU' or 'XYZ' labelling. In the 'XYZ' 
+scheme the form of the view direction display in th e status line is  x<bearing>y<elevation>z, 
+where the bearing angle is in the range [-180, 180]  and the elevation angle is in the range [-
+
+--- Page 58 ---
+AVEVA PDMS Programmable Macro Language manual 
+  2016 v.1. Page 158/178  90, 90]. The corresponding scroll bars are labelled  "-Y -X Y X -Y" and "-Z 0 Z". The 3D 
+view's bearing and elevation members can also be us ed to set the view direction (if the 
+elevation is Up or Down then changing the bearing w ill have no effect on the view direction). 
+The centre of interest or through point of the 3D v iew is controlled via the .through member. 
+This is a 3 element array of REAL, representing a p osition in model space (EAST, NORTH, 
+UP). 
+ 
+!thru[1] = 1000.0 
+!thru[2] = 5600.5 
+!thru[3] = 500.0 
+!this.model.through = !thru 
+ 
+The .radius() method specifies the radius of the vi ew in current units - an imaginary sphere 
+around the through point. The .range() method speci fies how far away from the Through 
+point you want the Eye point to be. To enable WALKT HROUGH mode specify 
+.walkthrough(true) together with the walking step s ize in current units using the .step() 
+method. 
+ 
+Setting Aspects of the View Transformation by Synta x 
+The commands below allow aspects of the view transf ormation to be set using the old 
+syntax: 
+ 
+edit view !!MyForm.Model VOLUME 
+ 
+followed by one of the following modifiers: 
+ 
+Modifier Effect 
+ELEVATION EAST Looks from the East. 
+LOOK EAST Looks towards the East. 
+LOOK N45W75D Looks towards specified direction. 
+LOOK THROUGH E10 N50 U85 Looks through specified po int. 
+LOOK THROUGH /A1 Looks through named elements origi n. 
+LOOK THROUGH ID @ Prompts for cursor pick on Throug h-point. 
+LOOK THROUGH ID VALV @ Prompts for cursor pick on V alve for through-point. 
+LOOK FROM E10 N50 U85 looks from specified point (d efines eye position) 
+LOOK FROM /A1 Looks from named element (as eye posi tion). 
+LOOK FROM ID @ Prompts for cursor pick on from-poin t. 
+LOOK FROM ID VALV @ Prompts for cursor-on Valve for  from-point. 
+LOOK TOWARDS E10 N50 U85 Looks towards the given di rection. 
+LOOK TOWARDS /A1 Looks towards named element . 
+ISOMETRIC 3 Looks in specified isometric direction.  
+PLAN Looks down (default). 
+ 
+View Limits 
+Each volume view needs to know what region of the d esign model is to be displayed (the 3D 
+view limits). The DESIGN application has the notion  of a current limits box. Unless you 
+specify otherwise, the limits set for a new view ga dget will default to the DESIGN current 
+limits box (as set by, say, the LIMITS or AUTOLIMIT S commands in DESIGN). In addition, 
+each volume view has an AUTO flag associated with i t, which determines whether or not that 
+view will be updated automatically whenever the DES IGN current limits box is changed. To 
+define the view limits and the way in which they ar e to be updated, use the old syntax: 
+ 
+edit view !!MyForm.Model VOLUME 
+ 
+followed by one of  
+
+--- Page 59 ---
+AVEVA PDMS Programmable Macro Language manual 
+  2016 v.1. Page 159/178  LIMITS AUTO  Display limits updated automatically to match curr ent view limits (default). 
+LIMITS LOCAL  Display limits initially set to current view limit s but not updated automatically. 
+LIMITS LOCAL N1000 E2500 U0 TO N3000 E5000 U2000  Display limits initially set to 
+specified positions and not updated automatically. 
+LIMITS LOCAL /EQUI2 /EQUI4  Display limits initially set to enclose the specif ied elements 
+and not updated automatically. 
+ 
+You can set the limits box for a view, subject to t he current AUTO flag using the .limits() 
+method: 
+ 
+-- limits brick set as array of REAL [E1, E2, N1, N 2, U1, U2] !brick[1] = 1000.0 
+!brick[6] = 1560.4 
+!this.model.limits( !brick ) 
+ 
+In DESIGN you may change the current limits box at any time by using one of the command 
+formats 
+ 
+AUTOLIMITS N1000 E2500 U0 TO N3000 E5000 U2000 
+AUTOLIMITS /EQUI2 /EQUI4 
+ 
+Any volume views which have LIMITS AUTO set will be  redrawn to match the new limits. 
+ 
+Mousemode 
+3D views have a mousemode member which can be set t o Zoom, Pan, Rotate, or Walk 
+Saving and Restoring 3D Views 3D views have two met hods which are used to save and 
+restore up to four views, until the user leaves DES IGN: 
+ 
+!!view.saveview( !n ) 
+!!view.restoreview( !n ) 
+Where 1 <= !n <= 4. 
+  
+
+--- Page 60 ---
+AVEVA PDMS Programmable Macro Language manual 
+  2016 v.1. Page 160/178  21. FMSYS Object and its Methods 
+ The FMSYS object (Forms and Menus System object) i s a mechanism for providing 
+methods which are not specific to the standard obje cts, such as forms, gadgets, menus etc. 
+The FMSYS methods perform a variety of system-orien ted tasks. 
+21.1. Managing the Default Form Layout Mode 
+The FMSYS object provides the methods: 
+ 
+.SetDefaultFormLayout(layout is STRING) 
+.DefaultFormLayout( ) is STRING 
+ 
+which allow users to set and query the default layo ut mode. This can be used to help test 
+any existing appware which is using setup form !!fo rmname . . . ,in either mode to determine 
+which forms need  ayout adjustment. For example: 
+ 
+!!FMSYS.SetDefaultFormLayout(‘VarChars’) 
+ 
+will cause any forms (without a VarChars or FixChar s keyword) which are loaded and shown 
+to use the new variable character widths layout. If  you kill and re-show a previously shown 
+(unqualified) form, it will have the new layout, so  it is easy to compare the difference. 
+ 
+In VarChars Mode 
+Forms which have avoided alignment by space-padding  (e.g. by using TagWidth and Width) 
+should not be adversely affected. There may be some  overall reduction in form width. 
+Possible problems are: 
+ 
+• Padding of text with spaces to achieve alignment o f a set of gadgets will no longer 
+work (note, this was not recommended anyway). 
+ 
+Some uses of Align Right may fail with the message “Attempt to place gadget off limits of 
+form”, because the actual sizes of the aligned gadg ets will have changed relative to 
+oneanother. Minimal adjustment could be just adding  the FixChars keyword to restore the 
+old presentation, but a layout revamp would obvious ly be better. 
+21.2. Swapping Applications 
+You can swap to a new application using the SetMain  method: 
+ 
+!main = !!FMSYS.SetMain( !newmain ) 
+21.3. Progress and Interrupt Methods 
+ Form and Gadget callbacks may take a long time to execute, so it is often desirable to 
+use the Progress Indicator field on the Main Window 's status bar (along the bottom) to 
+indicate continuing progress to the user. Additiona lly for some callback operations it may be 
+possible and desirable to allow the user to interru pt the operation and choose to cancel it. 
+The FMSYS methods Progress, setProgress, Interrupt and setInterrupt allow this to be 
+achieved. Your callback which provides the desired operation, must be cyclical so that there 
+is some repeated access point where you can report progress (approximately as a 
+percentage of the total task), and check to see if the user has clicked a stop button which 
+you have provided on some displayed form. In your c allback function you must first notify the 
+system of the identification of the stop button usi ng the FMSYS method SetInterrupt: 
+ 
+!!FMSYS.setInterrupt(!!fmstop.stopButton ) 
+
+--- Page 61 ---
+AVEVA PDMS Programmable Macro Language manual 
+  2016 v.1. Page 161/178  Then at an appropriate point in the callback, check  to see if the stop button has been pressed 
+using the FMSYS Interrupt method, and exit with a m essage if it has: 
+ 
+-- Initialise progress bar 
+!!FMSYS.setProgress(0) 
+do !next from 1 to 50 
+  !!RoutePipe( !next, . . . ) $*Route next pipe 
+  -- Update the progress bar - first update the per centage 
+  completion 
+  !percent = ... 
+  !!FMSYS.setProgress( !percent ) 
+  -- Check if user pressed interrupt button 
+  if ( !!FMSYS.Interruppt() ) then 
+    return error 1 'Processing aborted' 
+  endif 
+enddo 
+ 
+Following is the PML code for a simple interrupt fo rm !!fmstop.pmlfrm: 
+ 
+$* F&M test harness: Stop form for interrupt manage ment 
+setup form !!fmstop dialog NoAlign 
+  title 'STOP (!!fmstop)' 
+  path down 
+  para .stopText text |Press to quit task| width 20  
+  button .stopButton |Quit| width 25 height 2 
+exit 
+ 
+define method .fmstop() 
+  --Constructor 
+  -- define callbacks 
+  !this.firstShownCall = |!this.stopButton.backgrou nd = 
+  'red'| 
+endmethod 
+21.4. Refreshing View Gadgets 
+You can refresh all View gadgets using the Refresh method: 
+ 
+!!FMSYS.Refresh() 
+21.5. Checking References to Other Forms 
+ By default, when a form is loaded, all the referen ces from it to other forms are checked to 
+make sure that the other forms exist. If you are ex periencing performance problems, you can 
+switch the reference checking off using the CheckRe fs method: !!FMSYS.CheckRefs( true ) 
+Using this method can significantly improve perform ance. 
+21.6. Splash Screen 
+There are occasions when the PDMS entry screen, kno wn as a splashscreen, may be left on 
+the screen when PDMS fails to start up, for example , if it has not been correctly installed, or 
+there are network problems. To ensure that this scr een is removed from the display, you can 
+use the SplashScreen method: 
+ 
+! !FMSYS.SplashScreen( false ) 
+  
+
+--- Page 62 ---
+AVEVA PDMS Programmable Macro Language manual 
+  2016 v.1. Page 162/178  21.7. Default Form Positioning 
+ By default, MDI forms are placed at the maximum (r ight-hand side) of the main PDMS 
+window and dialog forms are placed at the minimum ( left-hand side) of the PDMS window. 
+To switch off default positioning, use the DocsAtMa xScreen method: 
+ 
+!!FMSYS.DocsAtMaxScreen( false ) 
+ 
+This method may be useful for wide screen and twin screen devices 
+21.8. CurrentDocument() Method 
+ This method returns the current Document of the ap plication framework as a FORM 
+object. If there is no current document then the re turned form has value Unset. It has the 
+following declaration: 
+ 
+!!FMSYS.currentDocument( ) is FORM 
+ 
+This method should be useful when constructing call backs for menus or gadgets which are 
+not on the current document form, i.e. where the co ntext is not the current form or view 
+gadget, e.g. callbacks from the Main menu system or  from pullright menus on Addin forms. 
+ 
+!myDocument = !!FMSYS.currentDocument() 
+21.9. LoadForm() Method 
+ The method LoadForm allows force loading of a form  definition and/or the ability to get a 
+reference to a form object by name. The method’s si gnature is: 
+ 
+!!Fmsys.loadForm( !formname is STRING ) is FORM 
+ 
+If the form exists then the method returns a refere nce to the form object. If it doesn’t exist, 
+then an attempt is made to force load its definitio n. If this fails then an unset form reference 
+is returned. You can check for this using the Unset  method on the form object. 
+21.10. Cursor Function Support 
+ The F&M system prevents a cursor function from bei ng executed if there are no displayed 
+graphical views which support cursor functions, and  raises the usual 'quit' error (61, 528): 
+'User exit from submode' so that Appware can handle  the effective 'quit', and then raises 
+error (61, 115): 'Invalid command when GRAPHICS OFF  or no suitable view available', 
+which will alert the user unless trapped by the App ware. However, only the Appware knows 
+exactly which graphical views can handle the specif ic cursor command, so the OKCurfnView 
+methods have been provided to allow Appware to use this knowledge intelligently. 
+ 
+Methods provide are: 
+ 
+Query  whether graphical views of the specified view type  are displayed. Graphical view 
+types supported are: 'G2D'; 'G3D'; 'ANY' and any vi ew subtype is implied. 
+OKCurfnView ( !viewtype is STRING ) is BOOLEAN Query whether gr aphical views of the 
+specified view type and subtype are displayed. 
+Graphical view  types supported are: 'G2D'; 'G3D'; 'ANY'. View sub types supported are: 
+ 
+• 'ANY' and for 
+• G2D: 'NORMAL' (Draft); 'PLOT'; 'ISOSPOOL' 
+• G3D: 'NORMAL' (Design) OKCurfnView( !viewtype is S TRING, subtype is STRING ) is 
+BOOLEAN 
+
+--- Page 63 ---
+AVEVA PDMS Programmable Macro Language manual 
+  2016 v.1. Page 163/178  Example using FMSYS OKCurfnView methods: 
+ 
+The following code snippet shows an example of use within a form method: 
+ 
+define method .runCurfn( !curfn is string ) 
+  -- run specified cursor function 
+  if( !!fmsys.OKCurfnView('g2d', 'normal') ) then 
+    -- valid view exists, so run cursor function 
+    $!curfn@ 
+  else 
+    -- no valid view 
+    return error 1 |No suitable displayed 2D views for 
+    cursor function '$!curfn$@'| 
+  endif 
+endmethod 
+ 
+Notes: 
+1. OKCurfnView('g2d') is equivalent to OKCurfnView( 'g2d', 'ANY') 
+2. OKCurfnView('ANY ', 'NORMAL') will look for both  2D Draft and 3D Design views 
+21.11. Setting the Default Format Object for Text F ields 
+The SetDefaultFormat method is used to provide a de fault global format object to be used to 
+format typed text fields when no specific format is  defined at design time. The 
+SetDefaultFormat method can only be called once to avoid inconsistency across appware. 
+Call the method as follows: 
+ 
+.SetDefaultFormat(!!fmt is FORMAT) 
+ 
+where !!fmt must be a global variable. After callin g the method the value can later be 
+retrieved by referencing the DefaultFormat() method  as follows: 
+ 
+!text=!myVar.String(!!fmsys.DefaultFormat()) 
+ 
+  
+
+--- Page 64 ---
+AVEVA PDMS Programmable Macro Language manual 
+  2016 v.1. Page 164/178  22. PML Add-ins 
+A PML add-in can: 
+ 
+• appear as an application on the main menu bar; 
+• define menus and toolbars; 
+• add menu fields and toolbars to applications; 
+• remove menu fields from applications; 
+• cause functions to be run when starting or switchi ng between applications. 
+ 
+Each existing AVEVA application is implemented as a  PML add-in. It is important to 
+distinguish between an add-in that defines an appli cation and one which just modifies an 
+existing application. An application add-in must ha ve an entry in the Applications main menu 
+so that it can be switched to. This chapter describ es mechanisms to allow a number of 
+cooperating applications to be added into a module.  Each AppWare application is a PML 
+Add-in. Users can add their own applications or add  additional functionality to applications 
+using PML Add-ins. 
+ 
+Warning: These mechanisms are still being developed  and so may change at future releases 
+of PDMS. Even though we will make every effort to p reserve the validity of addedin 
+functional code, we recommend you isolate the defin ition of PML Add-ins from the functional 
+code of your applications to minimise the impact of  any such changes. It is important to 
+distinguish between an add-in that defines an appli cation and other addins. An application 
+appears on the Applications menu and can be switche d to, whereas an add-in simply 
+provides a means of adding functionality to a modul e. 
+22.1. Application Switching 
+The application switching mechanism makes use of th e following objects to control 
+applications, toolbars, forms, and menus. 
+ 
+Object Description 
+appCntrl   Controls applications’ switching 
+appDefn   Each application has an appDefn object that store s information about 
+  that application. 
+appTbarCntrl   Controls visibility of toolbars and which toolbar s are active in each 
+  application 
+ 
+Object Description 
+appMenuCntrl   Controls which menus and menu fields are availabl e in each application 
+appFormCntrl   Controls those forms which register themselves 
+ 
+A feature of Application Switching is serialisation , which allows the working environment to 
+be saved and then restored to its previous state on  entry to PDMS; that is, the current 
+application is stored and reloaded on entry. The vi sibility and position of toolbars and forms 
+is also preserved. The new system of add-ins makes it unnecessary to swap the main form 
+when changing  between applications. Instead, the m enu items and toolbars are all 
+contained on one main form; they are then shown onl y when the appropriate application is 
+active. 
+22.1.1. Main Form 
+ The main form is now stored as a PML Form. For DES IGN, this is !!appDesMain and for 
+DRAFT it is !!appDraMain. These contain the basic g adgets and menu-options common to 
+all applications in the module. All others are crea ted using add-ins. We recommend that you 
+create add-ins to modify the main form rather than editing the standard product code. 
+
+--- Page 65 ---
+AVEVA PDMS Programmable Macro Language manual 
+  2016 v.1. Page 165/178  22.1.2. Callbacks 
+Each application can now have different types of ca llback, which are run at different times: 
+ 
+Callback When Executed 
+module startup calls Runs when PDMS first starts. 
+startup calls Runs the first time the application loads. 
+switch calls Runs every time PDMS switches into the application.  
+22.1.3. Defining an Add-in 
+ Each add-in is specified by an add-in definition f ile, with pathname  
+PDMSUI%\<module>\ADDINS\<addin>, where <module> is the module name e.g. DES, and 
+<addin> is the addin name e.g. MYADDIN. This is sim ilar in format to the entries in the old 
+APPLICATIONS file. Each line contains a key and des cription, separated by a colon. Some 
+keys are available to all add-ins; others can be us ed only for applications, since they refer to 
+menu text, gadgets and callbacks specific to that a pplication. The following can be used by 
+all add-ins. 
+ 
+Name  The unique identifier of the add-in, e.g. GEN, DES . This key is compulsory. 
+Title  Text description of the add-in (if the add-in defi nes an application, the title appears in 
+the title bar of the main window when the applicati on is loaded) 
+ShowOnMenu  Determines whether the add-in has an entry on the Applications menu, i.e. 
+whether the add-in defines an application (false by  default). 
+Object  Add-in object: user-defined object type used to he lp define the add-in, e.g. 
+APPGENERAL 
+ModuleStartup  Callback run when the PDMS module first starts 
+StartupModify  Name of application to modify and the callback run  when an application is 
+first started, separated by a colon. e.g. EQUI:!!eq uiAppStartupCall(). 
+SwitchModify  Name of application to modify and the callback to run when the application is 
+switched to, separated by a colon.e.g. PIPE:!!pipeA ppSwitchCall() 
+ 
+The following keys are only used for applications, i.e. add-ins that have a menu option on the 
+Applications menu and can be switched to. 
+ 
+Menu  Entry for application on the applications menu (th e title is used if this isn’t specified) 
+Directory  Name of the application directory under %PDMSUI%\m odule 
+Synonym  Synonym created for the directory (only used if th e directory is specified) 
+Group  Group number (applications with the same group num ber are put into a submenu 
+together) 
+GroupName  Description of submenu to appear on main menu 
+ 
+Gadgets Integer specifying the gadgets that appear on main form for this application: 
+ 
+1 - no gadgets 
+2 - sheet/library gadgets 
+3 - sheet/library and layer gadgets 
+4 - sheet/library and note/vnote gadgets 
+ 
+Type Type of application for user applications. Val id values are DRA, DIM, LAB, USR1, 
+USR2, USR3, USR4, USR5. 
+SwitchCall Callback to be run every time the applic ation is switched to. 
+StartupCall Callback run when the application first  starts. 
+  
+
+--- Page 66 ---
+AVEVA PDMS Programmable Macro Language manual 
+  2016 v.1. Page 166/178  To make it easier for user-defined add-ins to modif y existing applications, it is possible for an 
+add-in to add a startup or switch call to an applic ation. You can do this by adding the lines of 
+the following form to the add-in file. 
+ 
+startupModify: APPNAME: callback 
+switchModify: APPNAME: callback 
+ 
+where APPNAME is the name of the application to mod ify and callback is the callback to be 
+assigned to it. If an application with name APPNAME  is not defined, the callback is not run. 
+22.1.4. Add-in Object 
+ A user-defined object type, the add-in object, is used to define toolbars and menus for an 
+add-in. An instance of this object is created and i ts methods are run at specific points. The 
+method .modifyForm() of each add-in object is calle d during definition of the main form so 
+that add-ins may create their own toolbars on the m ain form; .modifyMenus() is called when 
+starting PDMS to create menu options. For applicati ons, .initialiseForm() is called when 
+switching to the application. It is not mandatory f or all these methods to be present, and if 
+one is not present, execution continues as normal. It is possible to specify no object if you 
+wish only to use the other 
+properties of the add-in. 
+22.1.5. Initialisation 
+ The add-in definitions are loaded from file during  PDMS startup using the function 
+!!appReadAppDefns(!module is STRING), where !module  is the 3-letter identifier for the 
+module. This creates the global !!appCntrl object, which holds information about the add-ins. 
+After reading the definitions of all add-ins, !!app Cntrl assigns all callbacks to the applications. 
+For backward compatibility, if an add-in is an appl ication, a directory is specified for the 
+application and the file module\directory\INIT exis ts, then this file is added as a startup-call. 
+Similarly, if the file module\directory\ISYSTEM exi sts, it is added as a switch call. 
+22.2. Menus 
+ Each add-in is able to specify menus that can be s hown, along with the application in 
+which they can be shown. Menus are created by runni ng the .modifyMenus() method of 
+the add-in object when PDMS first starts. 
+22.2.1. APPMENU Object 
+ The APPMENU object provides a means of adding menu  fields to menus using the usual 
+PML 2 syntax while allowing the menu controlling ob ject to retain information about the fields 
+created. This information is used to show and hide menu fields depending on the application. 
+22.2.2. Addition of Menu Items 
+To add menu fields to an application, proceed as fo llows: 
+ 
+Create an APPMENU object: 
+ 
+!menu = object APPMENU('menuName') 
+ 
+This associates the object with the menu named menu Name on the main form, creating the 
+menu if it does not already exist. Add items to the  menu using the methods of the 
+APPMENU object. The arguments for these methods are  exactly the same as the menu 
+creation functions provided by PML. A unique fieldn ame for each field in a menu can be 
+specified. You may specify a field name when adding  menu items in this way; if no field 
+name is specified, then the Dtext of the menu field  is used as the field name. To add to the 
+end of the menu, use the commands 
+  
+
+--- Page 67 ---
+AVEVA PDMS Programmable Macro Language manual 
+  2016 v.1. Page 167/178  !menu.add('<FieldType>', '<Dtext>', '<Rtext>', {'<F ieldName>'}) 
+!menu.add('SEPARATOR', {'<FieldName>'}). 
+ 
+Note : If a menu field with the same field name is alrea dy present, the field will not be added. 
+This is so two add-ins can define the same menu fie ld, and it will appear independently of 
+whether one or both add-ins are present. This metho d does not always add an item to the 
+end of the menu. If a function tries to add a menu field with the same field name as one 
+that’s already present, the next menu field created  (unless it’s inserted explicitly before or 
+after another field or it’s a separator) will appea r after the existing field. The reason for this is 
+to preserve the intended order of the fields. To in sert a new field relative to existing named 
+field, use  
+ 
+!menu.insertBefore('<TargetFieldName>', '<FieldType >', '<Dtext>', '<Rtext>' {, '<FieldName>'}) 
+!menu.insertAfter('<TargetFieldName>', '<FieldType> ', '<Dtext>', '<Rtext>' {, '<FieldName>'}) 
+!menu.insertBefore('<TargetFieldName>', 'SEPARATOR'  {, '<FieldName>'}) 
+!menu.insertAfter('<TargetFieldName>', 'SEPARATOR' {, '<FieldName>'}). 
+ 
+To register the APPMENU object with !!appMenuCntrl,  specifying the applications in which 
+the menu field should be visible, use: 
+ 
+!appMenuCntrl.addMenu('APP', !menu) 
+ 
+It is possible to add menu fields from an APPMENU o bject to every application. The 
+application name 'ALL' has been reserved for this p urpose. 
+22.2.3. Removing Menu Items 
+ The APPMENU object can also be used to remove menu  fields from an application. The 
+method .remove(!fieldName is STRING) hides the fiel d with unique field name !fieldName. 
+The following commands can be used to remove the fi eld named removeField from the 
+menu menuName in the general application. 
+ 
+!menu = object APPMENU('menuName') 
+!menu.remove('removeField') 
+!!appMenuCntrl.addMenu(!menu) 
+22.2.4. Modifying the Bar Menu  
+ The APPBARMENU object provides similar functions f or the bar menu of the main form. 
+To create additional menus on the bar menu, proceed  as follows: 
+ 
+Create an APPBARMENU object: 
+ 
+!bmenu = object APPBARMENU() 
+ 
+This automatically associates the object with the b ar menu on the main form. You can then 
+change the contents of the bar menu using the follo wing commands. 
+ 
+!bmenu.add(!dtext is STRING, !menuName is STRING) 
+Adds a menu to the end of the bar menu, use the com mand. This adds the menu 
+!menuName to the bar menu with label !dtext. The me nu is automatically positioned before 
+the Window and Help menus if they are present. 
+ 
+!bmenu.insertBefore('<TargetMenuName>', '<Dtext>', '<MenuName>') 
+!bmenu.insertAfter('<TargetMenuName>', '<Dtext>', ' <MenuName>') 
+  
+
+--- Page 68 ---
+AVEVA PDMS Programmable Macro Language manual 
+  2016 v.1. Page 168/178  To insert menus relative to existing menus, use 
+ 
+!bmenu.remove(!menuName is STRING To remove the men u menuName from the bar, use 
+!!appMenuCntrl.addBarMenu('APP', !bmenu) Register t he APPBARMENU object with 
+!!appMenuCntrl, specifying the applications in whic h the menu should be visible. 
+22.3. Toolbars 
+Toolbars are defined by creating a frame of type to olbar on the main form, using the 
+following syntax. 
+ 
+frame .toolbarName toolbar 'Toolbar description' 
+[PML commands to define buttons, toggle gadgets, op tion 
+gadgets and text gadgets] 
+exit 
+ 
+It is not possible to add toolbars to a form once i t has been created, so all toolbars must be 
+defined before any application is started. The meth od .modifyForm() of the add-in object is 
+run during building of the form so that each add-in  can add its own toolbars. 
+22.3.1. Toolbar Control 
+ Toolbar visibility in different applications is co ntrolled by the object APPTBARCNTRL. A 
+global instance !!appTbarCntrl is created when star ting PDMS. Each toolbar is registered 
+with a list of applications in which it can be acti ve. !!appTbarCntrl then controls the active 
+state and visibility of the toolbar as applications  are switched. Toolbars can be shown and 
+hidden using the popup menu which appears when you right click on a toolbar or menu bar 
+of the main form. If a toolbar is shown in one appl ication, then it will be shown in all other 
+applications for which it is registered. To registe r a toolbar, use the command 
+ 
+!!appTbarCntrl.addToolbar(!toolbarName is STRING, 
+!appName is STRING, !visible is BOOLEAN), 
+ 
+where !toolbarName is the name of the toolbar frame , !appName is the name of the 
+application to register the toolbar in and !visible  is whether the toolbar is visible by default. 
+Instead of registering a toolbar in multiple applic ations individually, an array of applications 
+can be specified: 
+ 
+!!appTbarCntrl.addToolbar(!toolbarName is STRING, 
+!appNames is ARRAY, !visible is BOOLEAN) 
+ 
+registers the toolbar for all applications in the a rray !appNames. The application name 'ALL' 
+has been reserved so that toolbars can be registere d in every application. To register a 
+toolbar in all applications, use 
+ 
+!!appTbarCntrl.addToolbar(!toolbarName is STRING, ' ALL', !visible is BOOLEAN) 
+ 
+where !toolbarName is the name of the toolbar and ! visible is whether it is visible by default. 
+The command 
+ 
+!!appTbarCntrl.addToolbar(!toolbarName is STRING) 
+ 
+is a shorthand way of registering the toolbar to be  visible in all applications, making it visible 
+by default. Any toolbars on the main form that are not registered are automatically detected 
+and hidden by default. They are registered to be ac tive in all applications. 
+  
+
+--- Page 69 ---
+AVEVA PDMS Programmable Macro Language manual 
+  2016 v.1. Page 169/178  22.3.2. Removing Gadgets from a Toolbar 
+It is possible to show a toolbar in an application but only show some of its gadgets. In this 
+case, the user must register which gadgets are hidd en in that application. To do this, use 
+ 
+!!appTbarCntrl.hideGadgets(!gadgets is STRING, !app Name is STRING) 
+ 
+where !gadgets is a space-separated list of the gad gets to hide and !appName is the name 
+of the application in which to hide them. 
+22.3.3. Deactivating Gadgets on a Toolbar  
+To grey out gadgets on a toolbar in a given applica tion, use 
+ 
+!!appTbarCntrl.deactivateGadgets(!gadgets is STRING , 
+!appName is STRING), 
+ 
+where !gadgets is a space separated list of the gad gets to inactivate and !appName is the 
+name of the application in which to hide them. 
+22.4. Forms 
+The APPFORMCNTRL object allows control of the behav iour of forms on application 
+switching and re-entering PDMS. A global instance ! !appFormCntrl is created when PDMS 
+starts. If a form is to be controlled, it must regi ster itself with the object during the constructor 
+method. 
+22.4.1. Registering a Form 
+The most complete syntax for registering a form is 
+ 
+!!appFormCntrl.registerForm(!form is FORM, !visible InApps 
+is ARRAY, !requiredApps is ARRAY, !showOnStartup is  BOOLEAN, !showOnSwitch is 
+BOOLEAN) 
+ 
+where !form is the form to be registered, !visibleI nApps is an array containing the 
+applications the form should be visible in, !requir edApps is the applications that must have 
+been loaded in order for the form to be displayed, !showOnStartup is whether the form is re-
+shown on entry to PDMS if it was shown on exit and !showOnSwitch is whether the form is 
+re-shown when switching to an application if it was  previously shown in that application. If 
+!visibleInApps is an empty array, then the form wil l be visible in all applications. However, 
+this can be simplified for most forms that do not n eed all this information stored about them. 
+The command: 
+ 
+!!appFormCntrl.registerForm(!form is FORM) 
+ 
+registers the form so that it is re-shown on startu p if it is shown when PDMS exits. It does 
+not depend on any other applications and its visibi lity is not otherwise controlled. 
+22.4.2. Hiding Forms when Exiting Applications 
+ Previously, the main form was swapped when switchi ng applications. Forms opened as 
+children of the main form were hidden when switchin g out of an application. Since the main 
+form is no longer swapped when switching applicatio ns, this no longer occurs so 
+!!appFormCntrl controls the hiding of forms. When s witching between applications, if a form 
+is shown as a child of the main form and is not reg istered to be shown in the new 
+application, then it is hidden. (Descendants of thi s form will therefore also be hidden.) 
+Dockable forms are shown as free forms, so will be not be closed. However, the effect can 
+
+--- Page 70 ---
+AVEVA PDMS Programmable Macro Language manual 
+  2016 v.1. Page 170/178  still be achieved by registering the form in just o ne application with the argument 
+!showOnSwitch set to false: 
+ 
+!visibleInApps[1] = 'APP' 
+!!appFormCntrl.registerForm(!form, !visibleInApps, ARRAY(), false, false) 
+ 
+The form will be hidden when switching from the app lication 'APP' and will not be shown 
+next time the application is started. 
+22.4.3. Storing Data Between Sessions 
+ APPFORMCNTRL also provides a means for forms to st ore data so that they can restore 
+their state next time the module is loaded. For eac h form that is registered, 
+APPFORMCNTRL calls the .saveData method of the form  when leaving PDMS: the form 
+can return an array of strings of data to be stored . When the form is next shown, it can 
+retrieve this data using the following method: 
+ 
+!data = !!appFormCntrl.getFormData(!form is FORM). 
+ 
+The contents of the array !data will be the strings  in the array returned by the .saveData 
+method when PDMS exited. If no data has been stored  for that form, it will be an empty array 
+You can also use the command: 
+ 
+data = !!appFormCntrl.getFormData(!formName is STRI NG) 
+ 
+if only the name of the form that stored the data i s known. 
+ 
+Note : The form must be able to cope if no data is retur ned. This will happen the first time 
+PDMS is run or if the form was not open the previou s time the user exited PDMS. The 
+following example shows a form that stores the stat e of some of its gadgets between 
+sessions. 
+ 
+setup form !!testForm 
+  title 'Test of form data storage' 
+  text .name 'Name' width 10 is STRING 
+  toggle .toggle 'Toggle' 
+exit 
+ 
+define method .testForm() 
+  -- register form with form controlling object 
+  !!appFormCntrl.registerForm(!this, ARRAY(), ARRAY (), true, true) 
+  -- retrieve data if available 
+  !data = !!appFormCntrl.getFormData(!this) 
+  -- restore name and state of toggle if data prese nt 
+  if (!data.empty().not()) then 
+    !this.name.val = !data[1] 
+    !this.toggle.val = !data[2].boolean() 
+  endif 
+endmethod 
+ 
+define method .saveData() is ARRAY 
+  !return[1] = !this.name.val 
+  !return[2] = !this.toggle.val.string() 
+endmethod 
+  
+
+--- Page 71 ---
+AVEVA PDMS Programmable Macro Language manual 
+  2016 v.1. Page 171/178  22.5. Converting Existing User-defined Applications  
+ Previously, applications for each module were defi ned by an entry in the 
+module\DFLTS\APPLICATIONS file. A separate main for m for each application was built 
+using the module\GEN\FSYSTEM file; application-spec ific gadgets and menus were added 
+by calling the module\application\DBAR file from th e FSYSTEM file. In order that new 
+applications can be added more easily and independe ntly of each other, application 
+definitions are now stored in the directory module\ DFLTS\APPDEFNS. There is one file per 
+application, which uses the same format as the old APPLICATIONS file with the extensions 
+discussed previously. 
+22.5.1. Replacement of the DBAR File 
+ Each add-in has a corresponding object, the type o f which is specified in the add-in file, 
+that adds toolbars and menu entries for that add-in . The functionality of the DBAR file has 
+been replaced by the methods of the add-in object. The method .modifyMenus() of the 
+application object is called to add items to the me nus. This replaces all sections of the DBAR 
+file where menu fields are added. Menu fields must be added using an APPMENU object - 
+see Menus - otherwise they will be visible in all t he menu fields are to be visible, otherwise 
+they will never be shown. The method .modifyForm() is called to make modifications to the 
+main form, specifically to add toolbars, during for m definition. This replaces the label /DATA 
+section of the DBAR file. Exactly the same syntax c an be used here, but if you wish alter any 
+gadgets after they have been created you must refer  to the main form explicitly rather than 
+using the keyword !this, which will refer to the ob ject. Toolbars can be registered - see 
+Toolbar Control - any unregistered toolbars will be  hidden by default and will not be 
+controlled. 
+22.5.2. Menu Name Clashes  
+ Menu names and menu field names must be checked ag ainst existing applications to 
+ensure there is no clash. To avoid clashes, it is r ecommended that each user-defined 
+application prefixes the names of the menus it crea tes and the fields it creates on existing 
+menus with the name of the application. 
+22.5.3. Converting the DBAR File 
+ In order to use an existing application, the DBAR file must be converted from the existing 
+format. If the DBAR file contains only PML 1 syntax  for creating menu items, the object 
+CONVERTDBAR can be used to create the corresponding  add-in object. To convert an 
+existing DBAR file, create a CONVERTDBAR object wit h the following parameters: 
+ 
+!convert = object CONVERTDBAR(!module is STRING, 
+!appNameStr is STRING, !outputDir is STRING, !addin FileDir is STRING) 
+ 
+where !module is the name of the module in which th e add-in is used, !appNameStr is the 
+name of the application (e.g. ‘PIPE’), !outputDir i s the directory in which to put the add-in 
+object and !addinFileDir is the directory in which to put the add-in file. Then run the .convert() 
+method of the object to perform the conversion: !co nvert.convert(). 
+ 
+This creates the add-in object and corresponding ad d-in file. Information about the existing 
+application is stored in the %PDMSUI%\module\DFLTS\ APPLICATIONS file. This 
+information is read and used to create the add-in f ile. Therefore, the application being 
+converted must have an entry in the APPLICATIONS fi le in the current PDMSUI path. 
+  
+
+--- Page 72 ---
+AVEVA PDMS Programmable Macro Language manual 
+  2016 v.1. Page 172/178  22.6. Example Application 
+22.6.1. Adding a Menu Field 
+ It is simple to use a PML add-in to add a field to  a menu in PDMS. The following example 
+shows how to add an extra field to the Query menu i n the Design Pipework application. 
+Create an APPMENU object corresponding to the menu.  
+ 
+!menu = object APPMENU('sysQry') 
+ 
+Add the required field to the menu 
+ 
+!menu.add('CALLBACK', 'Query Owner', 'q owner', 'Qu eryOwner') 
+ 
+Register the APPMENU object with !!appMenuCntrl, so  the menu is visible in the Pipework 
+application 
+ 
+!!appMenuCntrl.addMenu(!menu, 'PIPE') 
+ 
+The same method can be used to add fields to any me nu descended from the bar menu of 
+the main form. A sample add-in object definition, w hich must be put in the PMLLIB path, is 
+shown below. 
+ 
+define object APPADDQUERYMENUFIELD 
+endobject 
+ 
+define method .modifyMenus() 
+  !this.queryMenu() 
+Endmethod 
+ 
+define method .queryMenu() 
+  -- define APPMENU object associated with the Quer y menu 
+  !menu = object APPMENU('sysQry') 
+  -- add field to query the owner of the current el ement 
+  !menu.add('CALLBACK', 'Query Owner', 'q owner', ' QueryOwner') 
+  -- register the APPMENU object to be visible in t he Pipework 
+  -- application 
+  !!appMenuCntrl.addMenu(!menu, 'PIPE') 
+endmethod 
+ 
+The corresponding add-in definition file, which is put in the DES\DFLTS\ADDINS directory, 
+contains: 
+ 
+Name: ADDQUERYMENUFIELD 
+Object: APPADDQUERYMENUFIELD 
+22.6.2. Creating a Custom Delete Callback 
+Users may want to replace the callback for the CE o ption on the Delete menu in DESIGN 
+with a customised callback. This can be done using an add-in, without modifying the AVEVA 
+supplied files. To apply the changes in a new versi on of PDMS, the files can simply be 
+copied across. Create an APPMENU object correspondi ng to the Delete menu. 
+ 
+!menu = object APPMENU('sysDel') 
+ 
+Hide the menu field CE on this menu 
+ 
+!menu.remove('CE') 
+ 
+
+--- Page 73 ---
+AVEVA PDMS Programmable Macro Language manual 
+  2016 v.1. Page 173/178  Insert a new menu option to replace it 
+ 
+!menu.insertAfter('CE', 'CALLBACK', 'Delete', '!!cu stomDelete()', 'customDeleteCE') 
+ 
+Register the object with !!appMenuCntrl so the menu  item is replaced in all applications. 
+ 
+!!appMenuCntrl.addMenu(!menu, 'ALL') 
+ 
+The callback of the Delete button on the main toolb ar can also be modified. 
+ 
+!!appDesMain.mtbDeleteCe.callback = '!!customDelete ()' 
+ 
+A sample add-in object definition, which must be pu t in the PMLLIB path, is shown below. 
+ 
+define object APPCUSTOMDELETE 
+endobject 
+ 
+define method .modifyForm() 
+  -- change callback on Delete toolbar button 
+  !!appDesMain.mtbDeleteCe.callback = '!!customDele te()' 
+endmethod 
+ 
+define method .modifyMenus() 
+  !this.deleteMenu() 
+endmethod 
+ 
+define method .deleteMenu() 
+  !menu = object APPMENU('sysDel') 
+  -- replace CE option on menu with custom delete f unction 
+  !menu.remove('CE') 
+  !menu.insertAfter('CE', 'CALLBACK', 'CE', '!!cust omDelete()','customDelete') 
+  -- we want the menu to be replaced in all applica tions, so 
+  -- register this object in all applications 
+  !!appMenuCntrl.addMenu(!menu, 'ALL') 
+endmethod 
+ 
+The corresponding add-in definition file, which is put in the DES\DFLTS\ADDINS directory, 
+contains: 
+ 
+Name:CUSTOMDELETE 
+Object:APPCUSTOMDELETE 
+ 
+  
+
+--- Page 74 ---
+AVEVA PDMS Programmable Macro Language manual 
+  2016 v.1. Page 174/178  Event Driven Graphics (EDG) 
+23. Event Driven Graphics (EDG) 
+The EDG has been developed to allow a common interf ace for the AppWare developer 
+to use when setting up the graphic canvas for graph ical selection. This method is relatively 
+simple and easily extendible. This will allow the d eveloper to concentrate on the 
+development of their own application without the ne ed to know the underlying mechanism 
+(core implementation) of the EDG interaction handle rs and system. The system handles all 
+the underlying maintenance of the current events st acked e.g. associated forms, initialisation 
+sequences, close sequences, etc. The current implem entation of the system has mainly 
+been developed for interaction with the 3D graphic views in the Design module. However, 
+the interface can be used with any of the modules t hat use the same executable and the 
+standard 3D graphic views. EDG supersedes the old I D@ syntax 
+ 
+setup form !!EDGexample 
+  !this.formtitle = |EDG Example| 
+  button .but1 |Pick Element| call |!this.pick()| 
+exit 
+ 
+define method .pick() 
+  -- define event packet 
+  !packet = object EDGPACKET() 
+  -- define standard element pick 
+  !packet.elementPick(|Pick Element <esc> to finish |) 
+  -- return information about picked item 
+  !packet.action = |q var !this.return[1].item| 
+  -- when finished, doing following 
+  !packet.close = |$p Finished| 
+  -- add the event packet to the EDG object 
+  !!EDGCntrl.add(!packet) 
+endmethod 
+ 
+The above example shows how information is returned  from for the elements picked. The 
+form of the returned information is dependant on th e type of pick that has been used. 
+ 
+setup form !!pickEquip 
+  !this.formTitle = |Pick Equipment| 
+  !this.initcall = |!this.init()| 
+  !this.quitcall = |!this.clear()| 
+  button .pick |Start Pick| call |!this.init()| 
+  textpane .txt1 |Picked Equipments| at x 0 ymax wi dth 25 height 10 
+  member .storage is array 
+exit 
+ 
+define method .init() 
+  !this.clear() 
+  !packet = object EDGPACKET() 
+  !packet.elementPick(|Pick Equipments <esc> to add  to list|) 
+  !packet.description = |Identify Equipment| 
+  !packet.action = |!!pickEquip.identify(!this.retu rn[1].item)| 
+  !packet.close = |!!pickEquip.setInfo()| 
+  !!EDGCntrl.add(!packet) 
+endmethod 
+  
+
+--- Page 75 ---
+AVEVA PDMS Programmable Macro Language manual 
+  2016 v.1. Page 175/178  define method .identify(!pick is DBREF) 
+  do 
+    if !pick.type.eq(|EQUI|) or !pick.type.eq(|WORL |) then 
+      break 
+    else 
+      !pick = !pick.owner 
+    endif 
+  enddo 
+  if !pick.type.eq(|EQUI|) then 
+    !name = !pick.name 
+    if !this.storage.findfirst(!pick.flnn).unset() then 
+      enhance $!name col 215 
+        !this.storage.append(!pick.flnn) 
+    else 
+      !this.storage.remove(!this.storage.findfirst( !pick.flnn)) 
+      unenhance $!name 
+    endif 
+  endif 
+endmethod 
+ 
+define method .setInfo() 
+  !this.txt1.val = !this.storage 
+endmethod 
+ 
+define method .clear() 
+  do !i values !this.storage 
+    unenhance /$!i 
+  enddo 
+  !!edgCntrl.remove(|Identify Equipment|) 
+  !this.txt1.clear() 
+  !this.storage.clear() 
+endmethod 
+ 
+This example shows how a method can take the return ed information and use it. In this 
+case, the picked element type is checked whether it  is a piece of equipment. If it is not, the 
+method loops up the hierarchy until one is found (o r the world is reached). 
+  
+
+--- Page 76 ---
+AVEVA PDMS Programmable Macro Language manual 
+  2016 v.1. Page 176/178  24. PML.NET 
+ Using AVEVA Plant 12, it is now possible to custom ise the product using .NET through 
+.NET controls and objects. PML .NET allows you to i nstantiate and invoke methods on .NET 
+objects from PML proxy objects. PML proxy class def initions are created from .NET class 
+definitions at run time. These proxy classes presen t the same methods as the .NET class 
+which are described using custom attributes. The PM L proxy objects behave just like any 
+other PML object. PML callable assemblies are loade d by PDMS using the IMPORT syntax. 
+Assemblies may be defined in potentially any .NET l anguage (for example managed C++, 
+C# or VB.NET). The PML.Net Engine loads a given ass embly and once loaded instances of 
+PMLNetCallable classes may be created. No additiona l code to interface between PML and 
+.NET is necessary. This is provided by the PMLNetEn gine. 
+ 
+Picture Nr.32. -  PML.Net engine 
+ It is possible to add container objects to a conve ntional PML form creating a hybrid of 
+PML & .NET. The container is treated as a normal fo rm gadget (i.e syntax graph) but can be 
+filled with a .NET object 
+24.1. Import an Assembly into PDMS 
+ Before a .NET control can be used in a form, it fi rst has to be imported into PDMS. The 
+required .dll file has to be loaded and the namespace specified. For example: 
+ 
+import 'GridControl' 
+using namespace 'Aveva.Pdms.Presentation' 
+24.1.1. PML.Net syntax 
+To define your first .NET object, type out the foll owing into the Command Window: 
+ 
+import 'GridControl' 
+using namespace 'Aveva.Pdms.Presentation' 
+!netObj = object NETGRIDCONTROL() 
+q var !netObj 
+q var !netObj.methods() 
+  
+
+
+--- Page 77 ---
+AVEVA PDMS Programmable Macro Language manual 
+  2016 v.1. Page 177/178  On the command line create a File Browser object. T he options are: 
+Open or Save. (If no argument is given then it will  default to “Open”) 
+ 
+import 'PMLFileBrowser' 
+using namespace 'Aveva.Pdms.Presentation' 
+!browser = object PMLFileBrowser('OPEN') 
+ 
+Query the object and the methods on the PMLFileBrow ser instance 
+ 
+q var !browser 
+q var !browser.methods() 
+q var !browser.file() 
+ 
+Show the File browser Dialog Form: 
+directory (string) seed (String) – file which is sh own by default title (string) – title of form exist s 
+(Boolean) – check if specified file exists filter ( string) - type of files to open.  
+ 
+!browser.show('C:\','abc.doc','Example 
+Browser',true, 'Word Documents|*.doc',1) 
+q var !browser.file() 
+ 
+A description, followed by “|” and then the file ty pes – for example: 
+ 
+Word Documents|*.DOC 
+Text files 
+(*.txt)|*.txt|All files 
+(*.*)|*.* 
+ 
+Index (integer) – for multiple strings, the index o f the filter currently selected 
+24.2. Creating a PML form containing the .NET Contr ol 
+ Once the .dll file has been loaded and the namespa ce specified the object is available for 
+use. For example a user may specify a CONTAINER wit hin a form definition to hold the 
+.NET control and a form member to define it: 
+ 
+container .netFrame PMLNETCONTROL ‘NET’ dock fill 
+member .netControl is NETGRIDCONTROL 
+ 
+After this, the constructor method would define the  .NET object and apply it to the container 
+gadget 
+ 
+using namespace 'Aveva.Pdms.Presentation' 
+!this.netControl = object NETGRIDCONTROL() 
+!this.netFrame.control = !this.netControl.handle() 
+ 
+The user is now able to specify event methods to co ntrol the .NET gadget: 
+ 
+!this.netControl.addeventhandler('OnPopup', !this, 'rightClickExplorer') 
+ 
+This example allows the forms .rightClickExplorer()  method to be run when the .NET object 
+is right clicked. 
+  
+
+--- Page 78 ---
+AVEVA PDMS Programmable Macro Language manual 
+  2016 v.1. Page 178/178  24.3. Grid Control 
+ Another example of an available .NET object is the  Grid Control gadget. Despite 
+appearing similar to a LIST gadget, the Grid Control gadget has a large number of methods 
+available to it allowing it to behave more like a s preadsheet. Some of the advantages are as 
+follows: 
+ 
+• Data in the grid can be selected, sorted and filte red. 
+• Data in the grid can be exported to/imported from a Microsoft Excel file 
+• Grid contents can be previewed and printed directl y 
+• The colour of rows, columns or cells can be set (i ncluding icons) 
+• The values of entire rows/columns can be extracted /set 
+• The contents of the grid can be filled based on DB  elements and their attributes 
+24.3.1. Applying Data to the Grid 
+ Data is applied to a Grid Control gadget through t he use of a NETDATASOURCE object. 
+While defining this object, the required data is co llected and formatted for the grid. The data 
+is applied to the grid by using its .BindToDataSour ce() method. For example: 
+ 
+var !coll collect all EQUI 
+!attribs = |NAME TYPE OWNER AREA| 
+!data = object NetDataSource(‘Example Grid, !attrib s.split(), !coll) 
+!this.exampleGrid.BindToDataSource(!data) 
+24.3.2. Events and Callbacks 
+The following events are available on the grid: 
+ 
+• OnPopup(Array) 
+- Array[0] is the x coordinate of the current curso r position 
+- Array[1] is the y coordinate of the current curso r position 
+- Array[2] contains the ID of each of the selected rows 
+• BeforeCellUpdate(Array) 
+- Array[0] is the new value the user typed in 
+- Array[1] is the Row Tag of the cell 
+- Array[2] is the Column key of the cell 
+- Array[3] is a Boolean. If you set it to “false” t hen the new value will NOT be allowed 
+• AfterSelectChange(Array) 
+- The array contains the ID of each of the selected  rows 
+- AfterCellUpdate 
+- No arguments are passed. 
