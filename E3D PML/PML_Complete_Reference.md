@@ -704,7 +704,37 @@ define function !!CalculateArea(!width is REAL, !height is REAL)
 endfunction
 ```
 
-Place in `%PMLLIB%` directory for automatic loading.
+**PML Functions vs Macros:**
+- **PML Functions (`.pmlfnc`)** are the recommended approach for storing command sequences
+- Functions provide argument type checking and return types
+- Functions replace older PML Macros (`.mac`) for most use cases
+- Use macros only for simple command sequences without parameters
+
+**Automatic Loading from PMLLIB:**
+- Place `.pmlfnc` files in any directory defined in the `PMLLIB` environment variable
+- PML automatically scans these directories on startup
+- Functions are loaded on-demand when first called
+- No manual loading required
+
+**Example PMLLIB Setup:**
+```batch
+REM Windows
+set PMLLIB=C:\MyPMLFunctions;C:\AVEVA\PDMS\pmllib
+
+REM Linux
+export PMLLIB=/home/user/pml:/opt/aveva/pdms/pmllib
+```
+
+**User Customization Best Practice:**
+- **NEVER modify original AVEVA files**
+- Store all user customizations in a separate directory
+- Add your custom directory to the **beginning** of PMLLIB path
+- Your functions will override AVEVA defaults when needed
+
+```batch
+REM User area first, then AVEVA area
+set PMLLIB=C:\Users\MyName\CustomPML;C:\AVEVA\PDMS\pmllib
+```
 
 ### 7.4 Built-in Functions
 
@@ -759,6 +789,8 @@ enddefine
 
 ### 8.3 Object Methods
 
+#### Basic Object Methods
+
 ```pml
 define object RECTANGLE
   member .Width is REAL
@@ -789,6 +821,110 @@ Using the object:
 !perimeter = !rect.Perimeter()
 
 !rect.Scale(2.0)  -- Double the size
+```
+
+#### Database Reference (DBREF) Introspection Methods
+
+These methods are critical for dynamic database querying, especially when working with elements having unknown or variable attributes:
+
+**Attribute() - Get/Set Object Member by Name**
+```pml
+!elem = !!CE  -- Current element (DBREF)
+!attrName = 'DIAM'
+
+-- Get attribute value dynamically
+!value = !elem.Attribute(!attrName)  -- Returns ANY type
+$P Diameter: $!value
+
+-- Set attribute value dynamically
+!elem.Attribute('XPOS') = 1000
+```
+
+**Attributes() - List All Object Members**
+```pml
+!elem = object DBREF('/PIPE-1')
+
+-- Get array of all attribute names
+!attrList = !elem.Attributes()  -- Returns ARRAY OF STRINGS
+
+-- Iterate through all attributes dynamically
+DO !attrName VALUES !attrList
+  !value = !elem.Attribute(!attrName)
+  $P $!attrName = $!value
+ENDDO
+```
+
+This is essential for:
+- Generating comprehensive reports with all available attributes
+- Working with pipe specifications containing varying component types
+- Creating generic utilities that work across different element types
+
+**Set() - Check If Attribute Has Value**
+```pml
+!elem = !!CE
+
+-- Check if attribute is set (not UNSET)
+!hasValue = !elem.Attribute('DIAM').Set()
+
+IF !hasValue THEN
+  !diam = !elem.Attribute('DIAM')
+  $P Diameter is set: $!diam
+ELSE
+  $P Diameter is UNSET
+ENDIF
+
+-- Common pattern: check if UNSET
+IF !elem.Attribute('DESCRIPTION').Set().not() THEN
+  $P Description is UNSET
+ENDIF
+```
+
+**String() - Convert Object Value to String**
+```pml
+!elem = !!CE
+!value = !elem.Attribute('POSITION')
+
+-- Convert to string for file output or display
+!textValue = !value.String()
+$P Position as text: $!textValue
+
+-- Write to file
+!file = object FILE()
+!file.Filename = 'C:\temp\output.txt'
+!file.OpenWrite()
+!file.WriteLine(!value.String())
+!file.Close()
+```
+
+**Example: Dynamic Attribute Report Generator**
+```pml
+define function !!GenerateElementReport(!elem is DBREF)
+  !report = ARRAY()
+  
+  -- Get all attributes
+  !attrs = !elem.Attributes()
+  
+  -- Build report lines
+  DO !attrName VALUES !attrs
+    !value = !elem.Attribute(!attrName)
+    
+    -- Check if attribute has a value
+    IF !value.Set() THEN
+      !line = !attrName & ' = ' & !value.String()
+      !report.Append(!line)
+    ENDIF
+  ENDDO
+  
+  return !report
+endfunction
+
+-- Usage
+!elem = object DBREF('/ZONE-1/PIPE-1')
+!reportLines = !!GenerateElementReport(!elem)
+
+DO !line VALUES !reportLines
+  $P $!line
+ENDDO
 ```
 
 ### 8.4 Constructor Methods
@@ -959,6 +1095,51 @@ VAR 118 (NAME OF OWNER OF OWNER)
 VAR 119 'hello' + 'world' + 'how are you'
 ```
 
+### 9.6 Macros vs Functions - Best Practice
+
+**Recommendation:** Use PML Functions (`.pmlfnc`) instead of Macros (`.mac`) for most scenarios.
+
+**PML Functions Advantages:**
+- Type-checked parameters
+- Return values
+- Better error handling
+- Automatic loading from PMLLIB
+- More maintainable code
+
+**When to Use Macros:**
+- Simple command sequences
+- No parameters needed
+- Legacy code compatibility
+- Interactive command shortcuts
+
+**Migration Example:**
+
+**Old Macro (CreateBox.mac):**
+```pml
+-- Parameters: $1=name, $2=xlen, $3=ylen, $4=zlen
+NEW EQUIP /$1
+NEW BOX
+XLEN $2
+YLEN $3
+ZLEN $4
+```
+
+**New Function (CreateBox.pmlfnc):**
+```pml
+define function !!CreateBox(!name is STRING, !xlen is REAL, !ylen is REAL, !zlen is REAL)
+  -- Type checking automatic
+  -- Better error messages
+  
+  NEW EQUIP /(!name)
+  NEW BOX
+  XLEN !xlen
+  YLEN !ylen
+  ZLEN !zlen
+  
+  return !!CE  -- Return created element
+endfunction
+```
+
 ---
 
 ## 10. File Operations
@@ -1035,10 +1216,11 @@ ENDDO
 
 ### 10.6 Reading/Writing Arrays
 
+#### WriteArray() Method
 ```pml
 !myArray = ARRAY('Line 1', 'Line 2', 'Line 3')
 
--- Write array to file
+-- Write array to file (line by line)
 !file = object FILE()
 !file.Filename = 'C:\temp\data.txt'
 !file.OpenWrite()
@@ -1050,6 +1232,69 @@ ENDDO
 !loadedArray = !file.ReadArray()
 !file.Close()
 ```
+
+#### WriteFile() Method - Efficient Array Output
+
+The **WriteFile()** method writes array contents directly to file in a single operation:
+
+```pml
+!outputArray = ARRAY()
+!outputArray.Append('Header Line')
+!outputArray.Append('Data Line 1')
+!outputArray.Append('Data Line 2')
+!outputArray.Append('Data Line 3')
+
+-- Write entire array to file at once
+!file = object FILE()
+!success = !file.WriteFile('C:\temp\output.txt', !outputArray, 'OVERWRITE')
+
+IF !success THEN
+  $P File written successfully
+ELSE
+  $P Error writing file
+ENDIF
+```
+
+**WriteFile() Modes:**
+- `'OVERWRITE'` - Replace existing file
+- `'APPEND'` - Add to existing file
+
+**Complete Database Export Example:**
+```pml
+define function !!ExportElementAttributes(!elem is DBREF, !filepath is STRING)
+  !outputLines = ARRAY()
+  
+  -- Add header
+  !outputLines.Append('Element: ' & !elem.Fullname())
+  !outputLines.Append('Type: ' & !elem.Type)
+  !outputLines.Append('---')
+  
+  -- Get all attributes
+  !attrs = !elem.Attributes()
+  
+  -- Add each attribute
+  DO !attrName VALUES !attrs
+    !value = !elem.Attribute(!attrName)
+    
+    IF !value.Set() THEN
+      !line = !attrName & ',' & !value.String()
+      !outputLines.Append(!line)
+    ENDIF
+  ENDDO
+  
+  -- Write to file efficiently
+  !file = object FILE()
+  !success = !file.WriteFile(!filepath, !outputLines, 'OVERWRITE')
+  
+  return !success
+endfunction
+
+-- Usage
+!elem = object DBREF('/ZONE-1/PIPE-1')
+!success = !!ExportElementAttributes(!elem, 'C:\temp\pipe_data.csv')
+```
+
+**Best Practice:** Use `WriteFile()` for batch operations instead of multiple `WriteLine()` calls for better performance.
 
 ### 10.7 Error Handling with Files
 
@@ -1822,7 +2067,117 @@ DO !pipe VALUES !pipes
 ENDDO
 ```
 
-### 16.7 Queries
+### 16.7 COLLECTION Object for Efficient Queries
+
+The COLLECTION object provides efficient, filtered querying of the database hierarchy:
+
+**Basic COLLECTION Usage**
+```pml
+-- Create collection object
+!collect = object COLLECTION()
+
+-- Set scope (hierarchy element to search under)
+!pipe = object DBREF('/ZONE-1/PIPE-1')
+!collect.scope(!pipe)
+
+-- Set type of elements to find
+!collect.type('ELBOW')
+
+-- Execute search and get results
+!elbows = !collect.results()  -- Returns ARRAY of DBREF objects
+
+-- Process results
+DO !elbow VALUES !elbows
+  $P Found elbow: $(!elbow.Name)
+ENDDO
+```
+
+**Complete COLLECTION Pattern**
+```pml
+define function !!GetPipeComponents(!pipePath is STRING, !compType is STRING)
+  -- Create collection
+  !collect = object COLLECTION()
+  
+  -- Set scope to pipe
+  !pipeRef = object DBREF(!pipePath)
+  !collect.scope(!pipeRef)
+  
+  -- Set component type (e.g., 'ELBOW', 'VALVE', 'TEE')
+  !collect.type(!compType)
+  
+  -- Get and return results
+  !components = !collect.results()
+  return !components
+endfunction
+
+-- Usage
+!valves = !!GetPipeComponents('/ZONE-1/PIPE-1', 'VALVE')
+$P Found $(!valves.Size()) valves
+```
+
+**Using Current Element (!!CE)**
+```pml
+-- !!CE is a global DBREF pointing to current database element
+!currentElem = !!CE
+
+-- Collect all members under current element
+!collect = object COLLECTION()
+!collect.scope(!!CE)
+!collect.type('MEMBER')
+!members = !collect.results()
+
+DO !member VALUES !members
+  $P Member: $(!member.Name), Type: $(!member.Type)
+ENDDO
+```
+
+**COLLECTION vs COLLECT Comparison**
+```pml
+-- Traditional COLLECT (PML1 style)
+!pipes = COLLECT ALL PIPE FOR ZONE
+
+-- COLLECTION object (PML2 style - more flexible)
+!collect = object COLLECTION()
+!collect.scope(object DBREF('/ZONE-1'))
+!collect.type('PIPE')
+!pipes = !collect.results()
+
+-- COLLECTION allows dynamic type specification
+!elementType = 'ELBOW'  -- Could come from user input
+!collect.type(!elementType)
+!results = !collect.results()
+```
+
+**Pipe Specification Example**
+```pml
+define function !!GetAllComponentsInSpec(!specName is STRING)
+  !allComponents = ARRAY()
+  
+  -- Get spec element
+  !spec = object DBREF('/CATALOGUE/' & !specName)
+  
+  -- Collect all section types
+  !collect = object COLLECTION()
+  !collect.scope(!spec)
+  !collect.type('SCTN')
+  !sections = !collect.results()
+  
+  -- For each section, collect components
+  DO !section VALUES !sections
+    !collect.scope(!section)
+    !collect.type('MEMBER')
+    !components = !collect.results()
+    
+    DO !comp VALUES !components
+      !allComponents.Append(!comp)
+    ENDDO
+  ENDDO
+  
+  return !allComponents
+endfunction
+```
+
+### 16.8 Traditional Queries
 
 ```pml
 -- Query elements
@@ -1835,7 +2190,7 @@ ENDDO
 !names = EVALUATE (NAME) FOR ALL FROM !collection
 ```
 
-### 16.8 Modification Tracking
+### 16.9 Modification Tracking
 
 ```pml
 -- Undo support
@@ -1856,6 +2211,7 @@ REDO
 
 ### 17.1 Code Organization
 
+#### Meaningful Variable Names
 ```pml
 -- Use meaningful names
 !pipelineDiameter = 150  -- Good
@@ -1875,6 +2231,80 @@ ENDDO
 -- Write data
 !file.Close()
 ```
+
+#### File Organization and PMLLIB Structure
+
+**Recommended Directory Structure:**
+```
+C:\MyPML\                    (Add to PMLLIB)
+├── functions\               (General utilities)
+│   ├── StringUtils.pmlfnc
+│   ├── MathUtils.pmlfnc
+│   └── DatabaseUtils.pmlfnc
+├── reports\                 (Report generators)
+│   ├── PipeReport.pmlfnc
+│   └── EquipmentList.pmlfnc
+├── forms\                   (GUI forms)
+│   ├── MainDialog.pmlfrm
+│   └── Settings.pmlfrm
+├── objects\                 (Custom objects)
+│   └── Point3D.pmlobj
+└── pml.index               (Auto-generated - DO NOT EDIT)
+```
+
+**PMLLIB Best Practices:**
+
+1. **Separate User Code from AVEVA Code**
+   ```batch
+   REM CORRECT - User area first
+   set PMLLIB=C:\MyPML;C:\ProjectPML;C:\AVEVA\PDMS\pmllib
+   
+   REM WRONG - Don't put custom code in AVEVA directories
+   REM set PMLLIB=C:\AVEVA\PDMS\pmllib
+   ```
+
+2. **Never Modify AVEVA Files**
+   - AVEVA updates will overwrite your changes
+   - Create new files in your own directories
+   - Override functions by placing your version earlier in PMLLIB path
+
+3. **Automatic Loading**
+   - PML scans all PMLLIB directories at startup
+   - Creates `pml.index` files automatically
+   - Functions load on first call (lazy loading)
+   - No manual loading required
+
+4. **Rebuilding Indexes**
+   ```pml
+   -- After adding new .pmlfnc files, rebuild index
+   pml rehash
+   
+   -- Or rebuild all PMLLIB directories (slower)
+   pml rehash all
+   
+   -- Reload specific function after editing
+   pml reload function !!MyFunction
+   ```
+
+5. **Function Naming Conventions**
+   ```pml
+   -- Use descriptive names
+   !!CalculatePipeLength      -- Good
+   !!CPL                       -- Bad
+   
+   -- Prefix by category
+   !!Report_GeneratePipeList
+   !!Report_ExportToExcel
+   !!Util_StringToArray
+   !!Util_FileExists
+   !!DB_GetAllPipes
+   !!DB_FindElementByName
+   ```
+
+6. **Version Control**
+   - Store your PMLLIB directories in version control (Git, SVN)
+   - Exclude auto-generated `pml.index` files
+   - Document dependencies in README files
 
 ### 17.2 Comments
 
@@ -2249,22 +2679,106 @@ pml index
 q var !!PML.GetPathname('filename.pmlfnc')
 ```
 
-### 19.2 PMLLIB Environment Variable
+### 19.2 PMLLIB Environment Variable and File Organization
 
 The `PMLLIB` environment variable defines search paths for PML files:
 
 ```batch
-REM Windows example
-set PMLLIB=C:\MyPML;C:\AVEVA\PDMS\pmllib
+REM Windows example - User directories FIRST
+set PMLLIB=C:\Users\MyName\CustomPML;C:\ProjectPML;C:\AVEVA\PDMS\pmllib
 
-REM PML automatically creates pml.index files in each directory
+REM Linux example
+export PMLLIB=/home/user/custom_pml:/project/pml:/opt/aveva/pdms/pmllib
 ```
 
-**Directory Structure:**
-- PML scans all directories in PMLLIB path
-- Creates `pml.index` file listing all PML files
-- Files loaded automatically on startup
-- Use `pml rehash` after adding new files
+**Critical Best Practices:**
+
+1. **User Customizations Must Be Separate**
+   - **NEVER modify original AVEVA files** - updates will overwrite changes
+   - Store all customizations in separate user directories
+   - Place user directories **at the beginning** of PMLLIB path
+   - Your functions will override AVEVA defaults when names match
+
+2. **Search Path Order Matters**
+   ```batch
+   REM Correct order: User -> Project -> AVEVA
+   set PMLLIB=C:\MyPML;C:\SharedPML;C:\AVEVA\PDMS\pmllib
+   
+   REM PML searches directories left-to-right
+   REM First match wins
+   ```
+
+3. **Automatic File Indexing**
+   - PML scans all directories in PMLLIB path at startup
+   - Creates `pml.index` file in each directory automatically
+   - Index contains references to all `.pmlfnc`, `.pmlobj`, `.pmlfrm` files
+   - **DO NOT manually edit pml.index files**
+
+4. **File Extensions and Loading**
+   - `.pmlfnc` - Functions (loaded on first call)
+   - `.pmlobj` - Object definitions (loaded on first use)
+   - `.pmlfrm` - Forms (loaded when shown)
+   - `.mac` - Macros (not indexed, must be explicitly called)
+
+5. **Rebuilding Indexes**
+   ```pml
+   -- After adding new files to first PMLLIB directory
+   pml rehash
+   
+   -- Rebuild ALL PMLLIB directory indexes (SLOW - use sparingly)
+   pml rehash all
+   
+   -- Re-read all pml.index files without rebuilding
+   pml index
+   
+   -- Reload specific function after editing
+   pml reload function !!MyFunction
+   pml reload object MYOBJECT
+   ```
+
+6. **Directory Structure Example**
+   ```
+   C:\Users\John\PML\          (First in PMLLIB)
+   ├── pml.index               (Auto-generated)
+   ├── MyUtilities.pmlfnc
+   ├── CustomReport.pmlfnc
+   ├── MyDialog.pmlfrm
+   └── CustomObject.pmlobj
+   
+   C:\ProjectX\PML\            (Second in PMLLIB)
+   ├── pml.index
+   ├── ProjectUtils.pmlfnc
+   └── ProjectForms.pmlfrm
+   
+   C:\AVEVA\PDMS\pmllib\      (Last in PMLLIB - AVEVA defaults)
+   ├── pml.index
+   └── [AVEVA files - DO NOT MODIFY]
+   ```
+
+7. **Function Override Example**
+   ```pml
+   -- File: C:\AVEVA\PDMS\pmllib\StandardReport.pmlfnc
+   define function !!GenerateReport()
+     $P Standard AVEVA Report
+   endfunction
+   
+   -- File: C:\MyPML\StandardReport.pmlfnc (earlier in PMLLIB)
+   define function !!GenerateReport()
+     $P Custom Project Report
+     -- Your custom implementation
+   endfunction
+   
+   -- When called, YOUR version executes (first in path)
+   !!GenerateReport()  -- Outputs: "Custom Project Report"
+   ```
+
+8. **Checking File Locations**
+   ```pml
+   -- Query where PML finds a function
+   q var !!PML.GetPathname('MyUtilities.pmlfnc')
+   
+   -- Returns full path, showing which directory was used
+   ```
 
 ### 19.3 Database Reference (DBREF) Objects
 
