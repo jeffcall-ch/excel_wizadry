@@ -1,0 +1,241 @@
+-- ============================================================================
+-- PML Function: Dynamic Pipe Specification Report Generator
+-- ============================================================================
+-- Purpose: Extracts all component data from a selected Pipe Specification
+--          and outputs a CSV report with dynamically discovered attributes
+--
+-- Usage: 
+--   1. Navigate to a Pipe Specification element (e.g., /CATALOGUE/PIPEWORK/MYSPEC)
+--   2. Execute: !!GeneratePipeSpecReport()
+--
+-- Output: CSV file in %PDMSUSER%\PSPEC_Report_<SpecName>.csv
+-- ============================================================================
+
+define function !!GeneratePipeSpecReport()
+
+  -- ========================================================================
+  -- 1. VALIDATE CURRENT ELEMENT (CE)
+  -- ========================================================================
+  
+  !ce = !!CE
+  
+  -- Check if CE is set
+  IF !ce IS UNSET THEN
+    $P ERROR: No element is currently selected (CE is UNSET)
+    $P Please navigate to a Pipe Specification element first
+    return FALSE
+  ENDIF
+  
+  -- Check if CE exists in database
+  handle OBJNOTFND
+    !elemExists = !ce.Exists()
+  elsehandle
+    $P ERROR: Current element reference is invalid
+    return FALSE
+  endhandle
+  
+  -- Verify we're at a pipe specification (type should be PSPEC or similar)
+  !ceType = !ce.Type
+  $P Current Element: $(!ce.Fullname())
+  $P Element Type: $!ceType
+  
+  
+  -- ========================================================================
+  -- 2. COLLECT ALL MEMBERS USING COLLECTION OBJECT
+  -- ========================================================================
+  
+  $P Collecting component members from specification...
+  
+  !collect = object COLLECTION()
+  !collect.scope(!ce)
+  !collect.type('MEMBER')
+  !components = !collect.results()
+  
+  !componentCount = !components.Size()
+  
+  IF !componentCount EQ 0 THEN
+    $P WARNING: No MEMBER elements found under current element
+    $P Please ensure you are at a Pipe Specification with components
+    return FALSE
+  ENDIF
+  
+  $P Found $!componentCount component(s)
+  
+  
+  -- ========================================================================
+  -- 3. BUILD HEADER LIST
+  -- ========================================================================
+  
+  $P Building report headers...
+  
+  -- Define column headers (for display only)
+  !headers = ARRAY()
+  !headers.Append('GTYP_OF_CATR')
+  !headers.Append('TANSW')
+  !headers.Append('P1_BORE')
+  !headers.Append('P2_BORE')
+  !headers.Append('STYP')
+  !headers.Append('DTXR')
+  !headers.Append('MTXX')
+  
+  !attrCount = !headers.Size()
+  $P Using $!attrCount requested attributes
+  
+  
+  -- ========================================================================
+  -- 4. BUILD OUTPUT ARRAY
+  -- ========================================================================
+  
+  $P Building report data...
+  
+  !outputArray = ARRAY()
+  
+  -- ========================================================================
+  -- 4.1 BUILD HEADER ROW
+  -- ========================================================================
+  
+  !headerRow = 'DBREF'
+  
+  DO !hdr VALUES !headers
+    !headerRow = !headerRow & ';' & !hdr
+  ENDDO
+  
+  !outputArray.Append(!headerRow)
+  
+  
+  -- ========================================================================
+  -- 4.2 BUILD DATA ROWS
+  -- ========================================================================
+  
+  !rowNum = 0
+  
+  DO !comp VALUES !components
+    
+    !rowNum = !rowNum + 1
+    
+    handle ANY
+      
+      -- Start row with component DBREF fullname
+      !dataRow = !comp.Fullname()
+      
+      -- Extract each attribute using direct queries
+      handle ANY
+        !catr = CATR OF !comp
+        IF NOT !catr IS UNSET THEN
+          !gtypOfCatr = GTYPE OF !catr
+          !gtypValue = IF !gtypOfCatr IS UNSET THEN '' ELSE !gtypOfCatr.String()
+        ELSE
+          !gtypValue = ''
+        ENDIF
+      elsehandle
+        !gtypValue = ''
+      endhandle
+      
+      handle ANY
+        !tansw = TANSW OF !comp
+        !tanswValue = IF !tansw IS UNSET THEN '' ELSE !tansw.String()
+      elsehandle
+        !tanswValue = ''
+      endhandle
+      
+      handle ANY
+        !p1bore = P1 BORE OF !comp
+        !p1boreValue = IF !p1bore IS UNSET THEN '' ELSE !p1bore.String()
+      elsehandle
+        !p1boreValue = ''
+      endhandle
+      
+      handle ANY
+        !p2bore = P2 BORE OF !comp
+        !p2boreValue = IF !p2bore IS UNSET THEN '' ELSE !p2bore.String()
+      elsehandle
+        !p2boreValue = ''
+      endhandle
+      
+      handle ANY
+        !styp = STYP OF !comp
+        !stypValue = IF !styp IS UNSET THEN '' ELSE !styp.String()
+      elsehandle
+        !stypValue = ''
+      endhandle
+      
+      handle ANY
+        !dtxr = DTXR OF !comp
+        !dtxrValue = IF !dtxr IS UNSET THEN '' ELSE !dtxr.String()
+      elsehandle
+        !dtxrValue = ''
+      endhandle
+      
+      handle ANY
+        !mtxx = MTXX OF !comp
+        !mtxxValue = IF !mtxx IS UNSET THEN '' ELSE !mtxx.String()
+      elsehandle
+        !mtxxValue = ''
+      endhandle
+      
+      -- Build data row with all values
+      !dataRow = !dataRow & ';' & !gtypValue
+      !dataRow = !dataRow & ';' & !tanswValue
+      !dataRow = !dataRow & ';' & !p1boreValue
+      !dataRow = !dataRow & ';' & !p2boreValue
+      !dataRow = !dataRow & ';' & !stypValue
+      !dataRow = !dataRow & ';' & !dtxrValue
+      !dataRow = !dataRow & ';' & !mtxxValue
+      
+      -- Add completed row to output array
+      !outputArray.Append(!dataRow)
+      
+    elsehandle
+      $P Warning: Error processing component $!rowNum: $(!comp.Fullname())
+    endhandle
+    
+  ENDDO
+  
+  $P Generated $!rowNum data row(s)
+  
+  
+  -- ========================================================================
+  -- 5. WRITE OUTPUT FILE
+  -- ========================================================================
+  
+  -- Build output filename using specification name
+  !specName = !ce.Name
+  !pdmsUser = GETENV('PDMSUSER')
+  
+  -- Fallback if PDMSUSER not set
+  IF !pdmsUser IS UNSET OR !pdmsUser EQ '' THEN
+    !pdmsUser = 'C:\temp'
+  ENDIF
+  
+  !outputPath = !pdmsUser & '\PSPEC_Report_' & !specName & '.csv'
+  
+  $P Writing report to file...
+  $P Output path: $!outputPath
+  
+  !file = object FILE()
+  
+  handle ANY
+    !success = !file.WriteFile(!outputPath, !outputArray, 'OVERWRITE')
+    
+    IF !success THEN
+      $P ======================================================
+      $P SUCCESS: Pipe Specification Report Generated
+      $P ======================================================
+      $P File: $!outputPath
+      $P Components: $!componentCount
+      $P Attributes: $!attrCount
+      $P Total Rows: $(!rowNum + 1) (including header)
+      $P ======================================================
+      return TRUE
+    ELSE
+      $P ERROR: Failed to write file (WriteFile returned FALSE)
+      return FALSE
+    ENDIF
+    
+  elsehandle
+    $P ERROR: Exception during file write
+    $P Error: $!!Error.Message
+    return FALSE
+  endhandle
+
+endfunction

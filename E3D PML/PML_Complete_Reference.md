@@ -634,6 +634,79 @@ ENDDO
 !bigPipes = EVALUATE (NAME) FOR ALL FROM !pipes WITH DIAM GT 100
 ```
 
+### 6.9 COMPOSE Command for Formatted Output
+
+The `COMPOSE` command builds formatted text from arrays - powerful for reports:
+
+```pml
+-- Collect data
+var !selection collect all pipe for zone
+var !names raw evaluate (NAME) for all from !selection
+var !diams raw evaluate (DIAM) for all from !selection
+var !lengths raw evaluate (LENGTH) for all from !selection
+
+-- Create sort order
+var !sortorder evaluate (vval(!diams)) indices !selection
+
+-- Build formatted lines with COMPOSE
+var !separator |;|
+var !delimiter | |
+
+var !lines compose sort !sortorder quote (vtext(!delimiter)) nosuml $
+  col val !names q $
+  sep (vtext(!separator)) $
+  col val !diams q $
+  sep (vtext(!separator)) $
+  col val !lengths q
+
+-- Output lines
+do !line values !lines
+   write |$!line|
+enddo
+```
+
+**COMPOSE Options:**
+- `sort !sortorder` - Apply sorting indices
+- `quote (delim)` - Quote values containing separator
+- `nosuml` - Skip subtotal/summary lines
+- `col val !array q` - Column from array, quoted
+- `sep (sep)` - Separator between columns
+
+**Dynamic COMPOSE String:**
+```pml
+-- Build compose command dynamically
+if(|$!write| eq |write|)then
+   var !composeCom |var !lines compose sort !sortorder quote (vtext(!del)) nosuml|
+else
+   var !composeCom |$!write compose sort !sortorder quote (vtext(!del)) nosuml|
+endif
+
+-- Execute dynamic command
+$!composeCom $
+col val !col1 q $
+sep (vtext(!sep)) $
+col val !col2 q $
+sep (vtext(!sep)) $
+col val !col3 q
+```
+
+### 6.10 RAW Keyword for EVALUATE
+
+Use `raw` to prevent type conversion in evaluations:
+
+```pml
+-- With RAW: keeps original format
+var !col1 raw evaluate (DIAM) for all from !selection
+-- Result: Strings exactly as displayed in database
+
+-- Without RAW: converts to native types  
+var !col2 evaluate (DIAM) for all from !selection
+-- Result: REAL numbers
+
+-- Essential for formatted output
+var !names raw evaluate (NAME of OWNER of OWNER) for all from !selection
+```
+
 ---
 
 ## 7. Functions and Methods
@@ -1095,7 +1168,48 @@ VAR 118 (NAME OF OWNER OF OWNER)
 VAR 119 'hello' + 'world' + 'how are you'
 ```
 
-### 9.6 Macros vs Functions - Best Practice
+### 9.6 Conditional Macro Execution Pattern
+
+Production macros often use parameter-based conditional execution for different modes:
+
+```pml
+-- Multi-mode macro: Definition mode, Prompt mode, Run mode
+-- Usage: $M/MyReport DEFINE    -- Set up parameters
+--        $M/MyReport           -- Interactive prompt
+--        $M/MyReport RUN ...   -- Direct execution
+
+if (|$1| eq |DEFINE|) then
+   -- DEFINE mode: Initialize report parameters
+   var _REPFORMAT |CSV|
+   var _REPSEPARATOR |;|
+   var _REPFILENAME |C:\output\report.csv|
+   var !!RepColumns[1] raw |NAME|
+   var !!RepColumns[2] raw |TYPE|
+   var !!RepColumns[3] raw |DIAMETER|
+   return
+endif
+
+if (|$1| eq |PROMPT| or |$1| eq ||) then
+   -- PROMPT mode: Show interactive dialog
+   $M "%PMLUI%/CLIB/REP/RSELECT" $<RUN$> $<$0$> $
+     $<$_REPFILENAME$> $<pipe$> $<$> $<ce$>
+   return
+endif
+
+-- RUN mode: Execute with parameters $2, $3, etc.
+var !fileName (trim(|$2|))
+var !selType (upcase(trim(|$3|)))
+-- Process report...
+```
+
+**Pattern Benefits:**
+- Single macro handles configuration, UI, and execution
+- DEFINE mode initializes global variables
+- PROMPT mode provides interactive interface
+- RUN mode enables batch/scripted execution
+- Cleaner than multiple separate macros
+
+### 9.7 Macros vs Functions - Best Practice
 
 **Recommendation:** Use PML Functions (`.pmlfnc`) instead of Macros (`.mac`) for most scenarios.
 
@@ -1315,6 +1429,72 @@ elsehandle
 endhandle
 ```
 
+### 10.8 PML1 File Operations with OPENFILE/CLOSEFILE
+
+Legacy macros use PML1 file commands with file handles:
+
+```pml
+-- Open file with overwrite confirmation
+var !fileName 'C:\output\report.csv'
+openfile "$!fileName" overwrite !output
+handle (41,324)  -- File exists error
+   confirm |OK to overwrite $!fileName?|
+   handle (61,115)  -- User cancelled
+      return error 1 'File $!fileName exists. Use OVERWRITE mode to force write.'
+   endhandle
+   if(not $_CALERT_USERDATA) then
+      return  -- User clicked No
+   endif
+   openfile "$!fileName" overwrite !output
+   handle any
+      return error 1 |Unable to open file $!fileName|
+   endhandle
+elsehandle any
+   return error 1 |Unable to open file $!fileName|
+endhandle
+
+-- Write to file using handle
+var !write |writefile $!output|
+$!write 'Header Line'
+$!write 'Data Line 1'
+$!write 'Data Line 2'
+
+-- Always close file
+closefile $!output
+```
+
+**Key Patterns:**
+- `openfile` creates file handle variable (`!output`)
+- `writefile $!output` writes line to file
+- `closefile $!output` closes file
+- Nested error handling for user confirmation
+- Special error codes: `(41,324)` = file exists, `(61,115)` = user cancel
+
+### 10.9 VTEXT() Function for Safe Variable Expansion
+
+Use `vtext()` to safely expand variables in string comparisons:
+
+```pml
+-- Safe string comparison
+if(vtext(!fileName) ne ||) then
+   -- File name provided
+else
+   -- No file name, use display output
+endif
+
+-- Without vtext() can cause issues with special characters
+if(vtext(!selType) eq || or vtext(!selType) eq |ALL|) then
+   var !criteria |ALL|
+else
+   var !criteria (|ALL (| + vtext(!selType) + |)|)
+endif
+```
+
+**Why VTEXT():**
+- Prevents errors with UNSET or special characters
+- Returns empty string for UNSET instead of error
+- Essential for building dynamic command strings
+
 ---
 
 ## 11. Error Handling
@@ -1403,6 +1583,94 @@ IF !success THEN
   $P Operation succeeded
 ENDIF
 ```
+
+### 11.7 ONERROR with GOLABEL for Resource Cleanup
+
+Advanced pattern: Use `onerror golabel` to ensure cleanup happens even on errors:
+
+```pml
+-- Save original state
+var !units units
+mm bore mm distance
+
+-- Set up error recovery BEFORE operations
+onerror golabel /closefile
+
+-- Open file
+openfile "$!fileName" overwrite !output
+
+-- Perform operations that might fail
+var !selection collect $!criteria
+handle any
+   if(vtext(!fileName) ne ||) then
+      closefile $!output
+   endif
+   $!units  -- Restore units
+   return error 1 |Selection is invalid: $!!ERROR.TEXT|
+endhandle
+
+-- Process data...
+-- Write to file...
+
+-- Normal completion
+if (vtext(!fileName) ne ||) then
+   closefile $!output
+endif
+onerror golabel /restoreUnits
+$!units  -- Restore units
+return
+
+-- Error handlers with cleanup
+label /closefile
+handle any
+   if (vtext(!fileName) ne ||) then
+      closefile $!output
+   endif
+   $!units
+   return error
+endhandle
+
+label /restoreUnits
+handle any
+   $!units
+   return error
+endhandle
+```
+
+**Pattern Benefits:**
+- Guarantees file closure even on errors
+- Restores system state (units, settings)
+- Multiple error exit points with consistent cleanup
+- Labels group related error handling
+
+### 11.8 DEFINED() Function for Conditional Logic
+
+Check if variable exists before using:
+
+```pml
+var !graphicsMode 1
+
+if (defined(!graphicsMode)) then
+   prompt 'Processing $!count elements...'
+endif
+
+-- Use for optional features
+handle (61,115)  -- User cancel
+elsehandle none
+   var !graphicsMode 1  -- Only set if not cancelled
+endhandle
+
+if (defined(!graphicsMode)) then
+   -- Show progress only in graphics mode
+   prompt 'Evaluating expressions...'
+endif
+```
+
+**Use Cases:**
+- Optional progress indicators
+- Feature flags
+- Mode detection
+- Preventing undefined variable errors
 
 ---
 
@@ -2411,6 +2679,174 @@ define object POINT3D
 enddefine
 ```
 
+### 17.8 User Feedback and Progress Indicators
+
+Provide clear feedback during long operations:
+
+```pml
+-- Show progress messages
+prompt 'Selecting elements from database...'
+var !selection collect all pipe for zone
+
+prompt 'Evaluating expressions for $!selSize elements...'
+var !names evaluate (NAME) for all from !selection
+
+prompt 'Formatting output...'
+-- Process data...
+
+prompt 'Writing report...'
+-- Write files...
+
+prompt dismiss  -- Clear prompt when done
+```
+
+**Conditional Progress (Graphics Mode Only):**
+```pml
+-- Detect graphics mode
+handle (61,115)  -- User cancel error = graphics mode
+elsehandle none
+   var !graphicsMode 1
+endhandle
+
+-- Show prompts only in graphics mode
+if (defined(!graphicsMode)) then
+   prompt 'Processing...'
+endif
+
+-- Always dismiss at end
+if (defined(!graphicsMode)) then
+   prompt dismiss
+endif
+```
+
+**Pattern Benefits:**
+- Users know script is running
+- Prevents "hanging" perception
+- No prompts in batch/background mode
+- Professional user experience
+
+### 17.9 Production Macro Template
+
+Complete template incorporating best practices:
+
+```pml
+$* Report Generator v1.0
+$* Usage: $M/MyReport [DEFINE|PROMPT|RUN filename type filter]
+
+-- === MODE SELECTION ===
+if (|$1| eq |DEFINE|) then
+   -- Initialize global parameters
+   var !!REP_FORMAT |CSV|
+   var !!REP_SEPARATOR |;|
+   var !!REP_COLUMNS ARRAY('NAME', 'TYPE', 'DIAMETER')
+   return
+endif
+
+if (|$1| eq |PROMPT| or |$1| eq ||) then
+   -- Show interactive dialog
+   $M "%PMLUI%/MyDialog" RUN $0
+   return
+endif
+
+-- === PARAMETER PROCESSING ===
+var !fileName (trim(|$2|))
+var !elemType (upcase(trim(|$3|)))
+var !filter (trim(|$4|))
+
+-- === STATE MANAGEMENT ===
+var !units units
+mm bore mm distance
+onerror golabel /cleanup
+
+-- === FILE OPERATIONS ===
+if (vtext(!fileName) ne ||) then
+   openfile "$!fileName" overwrite !output
+   handle (41,324)
+      confirm |OK to overwrite $!fileName?|
+      handle (61,115)
+         $!units
+         return error 1 'Operation cancelled by user'
+      endhandle
+      if(not $_CALERT_USERDATA) then
+         $!units
+         return
+      endif
+      openfile "$!fileName" overwrite !output
+   elsehandle any
+      $!units
+      return error 1 |Unable to open file: $!!ERROR.TEXT|
+   endhandle
+   var !write |writefile $!output|
+else
+   var !write |write|
+endif
+
+-- === DETECT GRAPHICS MODE ===
+handle (61,115)
+elsehandle none
+   var !graphicsMode 1
+endhandle
+
+-- === MAIN PROCESSING ===
+if (defined(!graphicsMode)) then
+   prompt 'Collecting elements...'
+endif
+
+var !selection collect all $!elemType for ce
+handle any
+   if(vtext(!fileName) ne ||) then
+      closefile $!output
+   endif
+   $!units
+   return error 1 |Collection failed: $!!ERROR.TEXT|
+endhandle
+
+var !count (arraysize(!selection))
+if (defined(!graphicsMode)) then
+   prompt 'Processing $!count elements...'
+endif
+
+-- Evaluate attributes
+var !names raw evaluate (NAME) for all from !selection
+var !types raw evaluate (TYPE) for all from !selection
+
+-- Build output
+var !header |Name;Type|
+$!write (vtext(!header))
+
+var !lines compose quote (| |) $
+  col val !names q $
+  sep (|;|) $
+  col val !types q
+
+do !line values !lines
+   $!write (vtext(!line))
+enddo
+
+-- === CLEANUP ===
+if (vtext(!fileName) ne ||) then
+   closefile $!output
+endif
+$!units
+if (defined(!graphicsMode)) then
+   prompt dismiss
+endif
+return
+
+-- === ERROR HANDLERS ===
+label /cleanup
+handle any
+   if (vtext(!fileName) ne ||) then
+      closefile $!output
+   endif
+   $!units
+   if (defined(!graphicsMode)) then
+      prompt dismiss
+   endif
+   return error
+endhandle
+```
+
 ---
 
 ## 18. Complete Function Reference
@@ -2589,6 +3025,45 @@ SYSTEM('dir C:\temp')
 
 -- Session ID
 !sessionId = SESSIONID()
+```
+
+### 18.8 Project and Time Functions
+
+```pml
+-- Current units setting
+var !units units
+-- Returns current units (e.g., 'MM BORE MM DISTANCE')
+
+-- Restore units
+$!units  -- Expands to saved units command
+
+-- Date and time
+var !date clock date  -- Current date
+var !time clock time  -- Current time
+
+-- Project information
+var !projCode proj code  -- Project code
+var !projNumb proj numb  -- Project number
+var !projName proj name  -- Project name
+var !projDesc proj desc  -- Project description
+var !projMess proj mess  -- Project message
+```
+
+**State Management Pattern:**
+```pml
+-- Save current state
+var !units units
+var !savedCE !!CE
+
+-- Change state for processing
+mm bore mm distance
+ce /ZONE-1
+
+-- Do work...
+
+-- Restore state
+$!units
+ce $(!savedCE.Fullname())
 ```
 
 ### 18.8 Database Query Functions
