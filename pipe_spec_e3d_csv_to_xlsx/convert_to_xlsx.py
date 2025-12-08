@@ -55,6 +55,12 @@ def parse_e3d_csv(file_path):
     # Create DataFrame
     df = pd.DataFrame(data_rows)
     
+    # Clean P1 CONN and P2 CONN columns by removing commas
+    if 'P1 CONN' in df.columns:
+        df['P1 CONN'] = df['P1 CONN'].str.replace(',', '', regex=False)
+    if 'P2 CONN' in df.columns:
+        df['P2 CONN'] = df['P2 CONN'].str.replace(',', '', regex=False)
+    
     return df
 
 
