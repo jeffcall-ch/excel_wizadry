@@ -44,6 +44,8 @@ def extract_branch_positions(file_path):
                             'Pipe': current_pipe,
                             'Branch': current_branch,
                             'Full_Branch_ID': current_pipe + current_branch,
+                            'HCON': '',
+                            'TCON': '',
                             'HPOS_X': None,
                             'HPOS_Y': None,
                             'HPOS_Z': None,
@@ -53,9 +55,19 @@ def extract_branch_positions(file_path):
                         }
                         in_branch = True
             
-            # Extract HPOS and TPOS coordinates
+            # Extract HPOS, TPOS, HCON, TCON
             elif in_branch and current_branch_info:
-                if line.strip().startswith('HPOS '):
+                if line.strip().startswith('HCON '):
+                    hcon_match = re.search(r'HCON\s+(\S+)', line)
+                    if hcon_match:
+                        current_branch_info['HCON'] = hcon_match.group(1)
+                
+                elif line.strip().startswith('TCON '):
+                    tcon_match = re.search(r'TCON\s+(\S+)', line)
+                    if tcon_match:
+                        current_branch_info['TCON'] = tcon_match.group(1)
+                
+                elif line.strip().startswith('HPOS '):
                     # Extract coordinates from HPOS line
                     hpos_match = re.search(r'HPOS X ([\d.-]+)mm Y ([\d.-]+)mm Z ([\d.-]+)mm', line)
                     if hpos_match:
@@ -70,8 +82,6 @@ def extract_branch_positions(file_path):
                         current_branch_info['TPOS_X'] = float(tpos_match.group(1))
                         current_branch_info['TPOS_Y'] = float(tpos_match.group(2))
                         current_branch_info['TPOS_Z'] = float(tpos_match.group(3))
-                        # Once we have TPOS, we can consider branch parsing complete
-                        in_branch = False
     
     # Don't forget the last branch
     if current_branch_info and current_branch_info.get('Pipe'):
@@ -86,6 +96,8 @@ def find_connected_branches(branches, tolerance_tight=5.0, tolerance_loose=150.0
     1. X and Y within tolerance_tight, Z within tolerance_loose
     2. X and Z within tolerance_tight, Y within tolerance_loose
     3. Y and Z within tolerance_tight, X within tolerance_loose
+    
+    Only includes connections where at least one of TCON (of branch1) or HCON (of branch2) is 'BWD' (welded).
     
     Args:
         branches: List of branch dictionaries with position data
@@ -143,6 +155,14 @@ def find_connected_branches(branches, tolerance_tight=5.0, tolerance_loose=150.0
             
             # If any match found, record connection
             if match_type:
+                # Check if at least one of the connection ends is welded (BWD)
+                tcon_bwd = branch1.get('TCON', '') == 'BWD'
+                hcon_bwd = branch2.get('HCON', '') == 'BWD'
+                
+                # Skip this connection if neither end is welded
+                if not (tcon_bwd or hcon_bwd):
+                    continue
+                
                 # Create a pair key to avoid duplicates (order-independent)
                 pair_key = tuple(sorted([branch1['Full_Branch_ID'], branch2['Full_Branch_ID']]))
                 
@@ -167,7 +187,9 @@ def find_connected_branches(branches, tolerance_tight=5.0, tolerance_loose=150.0
                     
                     connections.append({
                         'Branch_A': branch1['Full_Branch_ID'],
+                        'Branch_A_TCON': branch1.get('TCON', ''),
                         'Branch_B': branch2['Full_Branch_ID'],
+                        'Branch_B_HCON': branch2.get('HCON', ''),
                         'Branch_A_Pipe': branch1['Pipe'],
                         'Branch_A_Branch': branch1['Branch'],
                         'Branch_B_Pipe': branch2['Pipe'],
@@ -506,10 +528,309 @@ def lookup_and_merge_with_excel(components, excel_file):
     
     return result
 
+def detect_components_at_branch_ends(file_path, excel_file, branch_positions, tolerance=5.0):
+    """
+    Detect welded components directly at branch heads (HPOS) or tails (TPOS).
+    
+    A component is considered at the head/tail if:
+    - Distance from component center to HPOS/TPOS <= component_length/2 + tolerance
+    
+    Args:
+        file_path: Path to E3D database listing file
+        excel_file: Path to Excel file with component data
+        branch_positions: List of branch positions from extract_branch_positions()
+        tolerance: Distance tolerance in mm (default 5mm)
+    
+    Returns:
+        Dictionary with:
+        - 'components_at_ends': List of components at branch ends
+        - 'stats': Statistics about components at ends vs HCON/TCON BWD
+    """
+    # Read Excel file and create lookup
+    df_excel = pd.read_excel(excel_file)
+    component_lookup = {}
+    
+    def calculate_component_length(comp_type, pbor, pbor1, form):
+        """Calculate component length based on type."""
+        if comp_type == 'ELBO':
+            if form is not None and pbor > 0:
+                try:
+                    return float(form) + pbor / 2.0
+                except:
+                    return None
+            return None
+        elif comp_type == 'TEE':
+            return 0.90 * pbor if pbor > 0 else None
+        elif comp_type == 'FLAN':
+            return 0.4 * pbor if pbor > 0 else None
+        elif comp_type == 'VALV':
+            # Use PBOR if available, otherwise fallback to PBOR1
+            if pbor > 0:
+                return 0.5 * pbor
+            elif pbor1 > 0:
+                return 0.5 * pbor1
+            else:
+                return None
+        elif comp_type == 'REDU':
+            return 1.15 * pbor1 if pbor1 > 0 else None
+        elif comp_type == 'CAP':
+            return 0.0
+        else:
+            return None
+    
+    for _, row in df_excel.iterrows():
+        spre = row['SPRE']
+        p1_conn = row['P1 CONN'] if pd.notna(row['P1 CONN']) else ''
+        p2_conn = row['P2 CONN'] if pd.notna(row['P2 CONN']) else ''
+        comp_type = row['TYPE'] if pd.notna(row['TYPE']) else ''
+        
+        pbor_str = row['PBOR'] if pd.notna(row['PBOR']) else '0mm'
+        try:
+            pbor = float(str(pbor_str).replace('mm', ''))
+        except:
+            pbor = 0.0
+        
+        pbor1_str = row['PBOR1'] if pd.notna(row['PBOR1']) else '0mm'
+        try:
+            pbor1 = float(str(pbor1_str).replace('mm', ''))
+        except:
+            pbor1 = 0.0
+        
+        form_str = row['FORM'] if pd.notna(row['FORM']) else None
+        try:
+            form = float(form_str) if form_str is not None else None
+        except:
+            form = None
+        
+        comp_length = calculate_component_length(comp_type, pbor, pbor1, form)
+        is_welded = (p1_conn == 'BWD' or p2_conn == 'BWD' or comp_type == 'OLET')
+        
+        component_lookup[spre] = {
+            'welded': is_welded,
+            'type': comp_type,
+            'length': comp_length,
+            'p1_conn': p1_conn,
+            'p2_conn': p2_conn
+        }
+    
+    # Create branch position lookup
+    branch_lookup = {}
+    for branch in branch_positions:
+        branch_id = branch['Full_Branch_ID']
+        branch_lookup[branch_id] = branch
+    
+    # Parse file to extract components with positions
+    kks_pattern = r'\d[A-Z]{3}\d{2}BR\d{3}'
+    branch_pattern = r'/B\d+'
+    
+    components_at_ends = []
+    current_pipe = None
+    current_branch = None
+    current_component = None
+    
+    with open(file_path, 'r', encoding='utf-8') as f:
+        for line in f:
+            if 'NEW PIPE' in line:
+                match = re.search(kks_pattern, line)
+                if match:
+                    current_pipe = match.group()
+                    current_branch = None
+                    current_component = None
+            
+            elif 'NEW BRANCH' in line and current_pipe:
+                full_match = re.search(kks_pattern + branch_pattern, line)
+                if full_match:
+                    full_branch = full_match.group()
+                    branch_match = re.search(branch_pattern, full_branch)
+                    if branch_match:
+                        current_branch = branch_match.group()
+                        current_component = None
+            
+            elif current_pipe and current_branch:
+                if line.strip().startswith('SPRE '):
+                    spre_match = re.search(r'SPRE SPCOMPONENT\s+(\S+)', line)
+                    if spre_match:
+                        spre = spre_match.group(1)
+                        if current_component is None:
+                            current_component = {'spre': spre, 'pos': None}
+                        else:
+                            current_component['spre'] = spre
+                        
+                        # If we already have a position, process the component now
+                        if current_component.get('pos') is not None:
+                            spre = current_component['spre']
+                            pos = current_component['pos']
+                            if spre in component_lookup and component_lookup[spre]['welded']:
+                                comp_data = component_lookup[spre]
+                                comp_length = comp_data['length']
+                                
+                                if comp_length is not None:
+                                    # Check against branch head and tail
+                                    branch_id = current_pipe + current_branch
+                                    if branch_id in branch_lookup:
+                                        branch_info = branch_lookup[branch_id]
+                                        hpos = (branch_info['HPOS_X'], branch_info['HPOS_Y'], branch_info['HPOS_Z'])
+                                        tpos = (branch_info['TPOS_X'], branch_info['TPOS_Y'], branch_info['TPOS_Z'])
+                                        
+                                        # Calculate distances
+                                        if all(coord is not None for coord in hpos):
+                                            dist_to_head = ((pos[0] - hpos[0])**2 + (pos[1] - hpos[1])**2 + (pos[2] - hpos[2])**2)**0.5
+                                            threshold_head = comp_length / 2.0 + tolerance
+                                            
+                                            if dist_to_head <= threshold_head:
+                                                components_at_ends.append({
+                                                    'KKS_Pipe': current_pipe,
+                                                    'Branch': current_branch,
+                                                    'Full_Branch_ID': branch_id,
+                                                    'Component_Name': spre,
+                                                    'Component_Type': comp_data['type'],
+                                                    'Component_Length': round(comp_length, 2),
+                                                    'Position': 'HEAD',
+                                                    'HCON': branch_info['HCON'],
+                                                    'Component_X': pos[0],
+                                                    'Component_Y': pos[1],
+                                                    'Component_Z': pos[2],
+                                                    'Branch_End_X': hpos[0],
+                                                    'Branch_End_Y': hpos[1],
+                                                    'Branch_End_Z': hpos[2],
+                                                    'Distance_mm': round(dist_to_head, 2),
+                                                    'Threshold_mm': round(threshold_head, 2)
+                                                })
+                                        
+                                        if all(coord is not None for coord in tpos):
+                                            dist_to_tail = ((pos[0] - tpos[0])**2 + (pos[1] - tpos[1])**2 + (pos[2] - tpos[2])**2)**0.5
+                                            threshold_tail = comp_length / 2.0 + tolerance
+                                            
+                                            if dist_to_tail <= threshold_tail:
+                                                components_at_ends.append({
+                                                    'KKS_Pipe': current_pipe,
+                                                    'Branch': current_branch,
+                                                    'Full_Branch_ID': branch_id,
+                                                    'Component_Name': spre,
+                                                    'Component_Type': comp_data['type'],
+                                                    'Component_Length': round(comp_length, 2),
+                                                    'Position': 'TAIL',
+                                                    'TCON': branch_info['TCON'],
+                                                    'Component_X': pos[0],
+                                                    'Component_Y': pos[1],
+                                                    'Component_Z': pos[2],
+                                                    'Branch_End_X': tpos[0],
+                                                    'Branch_End_Y': tpos[1],
+                                                    'Branch_End_Z': tpos[2],
+                                                    'Distance_mm': round(dist_to_tail, 2),
+                                                    'Threshold_mm': round(threshold_tail, 2)
+                                                })
+                            # Reset for next component
+                            current_component = None
+                
+                elif line.strip().startswith('POS '):
+                    pos_match = re.search(r'POS X ([\d.-]+)mm Y ([\d.-]+)mm Z ([\d.-]+)mm', line)
+                    if pos_match:
+                        pos = (float(pos_match.group(1)), float(pos_match.group(2)), float(pos_match.group(3)))
+                        if current_component is None:
+                            # POS came before SPRE, initialize component with position
+                            current_component = {'spre': None, 'pos': pos}
+                        else:
+                            current_component['pos'] = pos
+                        
+                        # If we already have both spre and pos, process the component
+                        if current_component.get('spre') is not None:
+                            spre = current_component['spre']
+                            if spre in component_lookup and component_lookup[spre]['welded']:
+                                comp_data = component_lookup[spre]
+                                comp_length = comp_data['length']
+                                
+                                if comp_length is not None:
+                                    # Check against branch head and tail
+                                    branch_id = current_pipe + current_branch
+                                    if branch_id in branch_lookup:
+                                        branch_info = branch_lookup[branch_id]
+                                        hpos = (branch_info['HPOS_X'], branch_info['HPOS_Y'], branch_info['HPOS_Z'])
+                                        tpos = (branch_info['TPOS_X'], branch_info['TPOS_Y'], branch_info['TPOS_Z'])
+                                        
+                                        # Calculate distances
+                                        if all(coord is not None for coord in hpos):
+                                            dist_to_head = ((pos[0] - hpos[0])**2 + (pos[1] - hpos[1])**2 + (pos[2] - hpos[2])**2)**0.5
+                                            threshold_head = comp_length / 2.0 + tolerance
+                                            
+                                            if dist_to_head <= threshold_head:
+                                                components_at_ends.append({
+                                                    'KKS_Pipe': current_pipe,
+                                                    'Branch': current_branch,
+                                                    'Full_Branch_ID': branch_id,
+                                                    'Component_Name': spre,
+                                                    'Component_Type': comp_data['type'],
+                                                    'Component_Length': round(comp_length, 2),
+                                                    'Position': 'HEAD',
+                                                    'HCON': branch_info['HCON'],
+                                                    'Component_X': pos[0],
+                                                    'Component_Y': pos[1],
+                                                    'Component_Z': pos[2],
+                                                    'Branch_End_X': hpos[0],
+                                                    'Branch_End_Y': hpos[1],
+                                                    'Branch_End_Z': hpos[2],
+                                                    'Distance_mm': round(dist_to_head, 2),
+                                                    'Threshold_mm': round(threshold_head, 2)
+                                                })
+                                        
+                                        if all(coord is not None for coord in tpos):
+                                            dist_to_tail = ((pos[0] - tpos[0])**2 + (pos[1] - tpos[1])**2 + (pos[2] - tpos[2])**2)**0.5
+                                            threshold_tail = comp_length / 2.0 + tolerance
+                                            
+                                            if dist_to_tail <= threshold_tail:
+                                                components_at_ends.append({
+                                                    'KKS_Pipe': current_pipe,
+                                                    'Branch': current_branch,
+                                                    'Full_Branch_ID': branch_id,
+                                                    'Component_Name': spre,
+                                                    'Component_Type': comp_data['type'],
+                                                    'Component_Length': round(comp_length, 2),
+                                                    'Position': 'TAIL',
+                                                    'TCON': branch_info['TCON'],
+                                                    'Component_X': pos[0],
+                                                    'Component_Y': pos[1],
+                                                    'Component_Z': pos[2],
+                                                    'Branch_End_X': tpos[0],
+                                                    'Branch_End_Y': tpos[1],
+                                                    'Branch_End_Z': tpos[2],
+                                                    'Distance_mm': round(dist_to_tail, 2),
+                                                    'Threshold_mm': round(threshold_tail, 2)
+                                                })
+                            # Reset for next component
+                            current_component = None
+    
+    # Calculate statistics
+    total_hcon_bwd = sum(1 for b in branch_positions if b['HCON'] == 'BWD')
+    total_tcon_bwd = sum(1 for b in branch_positions if b['TCON'] == 'BWD')
+    components_at_head = sum(1 for c in components_at_ends if c['Position'] == 'HEAD')
+    components_at_tail = sum(1 for c in components_at_ends if c['Position'] == 'TAIL')
+    components_at_head_bwd = sum(1 for c in components_at_ends if c['Position'] == 'HEAD' and c.get('HCON') == 'BWD')
+    components_at_tail_bwd = sum(1 for c in components_at_ends if c['Position'] == 'TAIL' and c.get('TCON') == 'BWD')
+    
+    stats = {
+        'total_hcon_bwd': total_hcon_bwd,
+        'total_tcon_bwd': total_tcon_bwd,
+        'total_bwd_connections': total_hcon_bwd + total_tcon_bwd,
+        'components_at_head': components_at_head,
+        'components_at_tail': components_at_tail,
+        'components_at_head_bwd': components_at_head_bwd,
+        'components_at_tail_bwd': components_at_tail_bwd,
+        'total_components_at_ends': len(components_at_ends)
+    }
+    
+    return {
+        'components_at_ends': components_at_ends,
+        'stats': stats
+    }
+
 def extract_component_adjacency(file_path, excel_file, distance_threshold_close=50.0, distance_threshold_near=150.0):
     """
     Extract component pairs that are close to each other (potentially touching/welded).
     Only processes components that have welds (BWD connections or OLET type).
+    Only checks specific component type pairs (order-independent):
+    - ELBO-ELBO, ELBO-REDU, ELBO-FLAN, ELBO-TEE, ELBO-CAP, ELBO-VALV
+    - TEE-REDU, TEE-TEE, TEE-CAP, TEE-FLAN
+    - REDU-FLAN, REDU-CAP, REDU-REDU, REDU-VALV
     
     Uses PBOR (Pipe Bore) values to determine appropriate distance thresholds.
     Threshold logic:
@@ -525,26 +846,108 @@ def extract_component_adjacency(file_path, excel_file, distance_threshold_close=
     Returns:
         List of component pairs with distance information
     """
-    # Read Excel file and create lookup for welded components with PBOR
+    # Define valid component type pairs (order-independent)
+    VALID_PAIRS = {
+        frozenset(['ELBO', 'ELBO']),
+        frozenset(['ELBO', 'REDU']),
+        frozenset(['ELBO', 'FLAN']),
+        frozenset(['ELBO', 'TEE']),
+        frozenset(['ELBO', 'CAP']),
+        frozenset(['ELBO', 'VALV']),
+        frozenset(['TEE', 'REDU']),
+        frozenset(['TEE', 'TEE']),
+        frozenset(['TEE', 'CAP']),
+        frozenset(['TEE', 'FLAN']),
+        frozenset(['REDU', 'FLAN']),
+        frozenset(['REDU', 'CAP']),
+        frozenset(['REDU', 'REDU']),
+        frozenset(['REDU', 'VALV'])
+    }
+    
+    # Read Excel file and create lookup for welded components with PBOR, PBOR1, FORM
     df_excel = pd.read_excel(excel_file)
-    welded_components = {}  # Dictionary: SPRE -> {'welded': bool, 'pbor': float}
+    welded_components = {}  # Dictionary: SPRE -> {'welded': bool, 'pbor': float, 'pbor1': float, 'type': str, 'form': float, 'length': float}
+    
+    def calculate_component_length(comp_type, pbor, pbor1, form):
+        """
+        Calculate component length based on type and dimensions.
+        
+        Returns:
+            float: Component length in mm, or None if cannot be calculated
+        """
+        if comp_type == 'ELBO':
+            # ELBO: FORM + PBOR/2
+            # FORM must be numeric (3 or 5)
+            if form is not None and pbor > 0:
+                try:
+                    form_val = float(form)
+                    return form_val + pbor / 2.0
+                except:
+                    return None
+            return None
+        elif comp_type == 'TEE':
+            # TEE: 0.90 * PBOR
+            return 0.90 * pbor if pbor > 0 else None
+        elif comp_type == 'FLAN':
+            # FLAN: 0.4 * PBOR
+            return 0.4 * pbor if pbor > 0 else None
+        elif comp_type == 'VALV':
+            # VALV: 0.5 * PBOR (use PBOR1 as fallback)
+            if pbor > 0:
+                return 0.5 * pbor
+            elif pbor1 > 0:
+                return 0.5 * pbor1
+            else:
+                return None
+        elif comp_type == 'REDU':
+            # REDU: 1.15 * PBOR1
+            return 1.15 * pbor1 if pbor1 > 0 else None
+        elif comp_type == 'CAP':
+            # CAP: endpoint component, length = 0
+            return 0.0
+        else:
+            return None
     
     for _, row in df_excel.iterrows():
         spre = row['SPRE']
         p1_conn = row['P1 CONN'] if pd.notna(row['P1 CONN']) else ''
         p2_conn = row['P2 CONN'] if pd.notna(row['P2 CONN']) else ''
         comp_type = row['TYPE'] if pd.notna(row['TYPE']) else ''
-        pbor_str = row['PBOR'] if pd.notna(row['PBOR']) else '0mm'
         
         # Parse PBOR (e.g., "100mm" -> 100.0)
+        pbor_str = row['PBOR'] if pd.notna(row['PBOR']) else '0mm'
         try:
-            pbor = float(pbor_str.replace('mm', ''))
+            pbor = float(str(pbor_str).replace('mm', ''))
         except:
             pbor = 0.0
         
+        # Parse PBOR1 (e.g., "15mm" -> 15.0)
+        pbor1_str = row['PBOR1'] if pd.notna(row['PBOR1']) else '0mm'
+        try:
+            pbor1 = float(str(pbor1_str).replace('mm', ''))
+        except:
+            pbor1 = 0.0
+        
+        # Parse FORM (could be numeric like '3', '5' or text like 'SWF/SWF')
+        form_str = row['FORM'] if pd.notna(row['FORM']) else None
+        try:
+            form = float(form_str) if form_str is not None else None
+        except:
+            form = None
+        
+        # Calculate component length
+        comp_length = calculate_component_length(comp_type, pbor, pbor1, form)
+        
         # Include only welded components (BWD or OLET)
         is_welded = (p1_conn == 'BWD' or p2_conn == 'BWD' or comp_type == 'OLET')
-        welded_components[spre] = {'welded': is_welded, 'pbor': pbor}
+        welded_components[spre] = {
+            'welded': is_welded, 
+            'pbor': pbor, 
+            'pbor1': pbor1,
+            'type': comp_type,
+            'form': form,
+            'length': comp_length
+        }
     
     kks_pattern = r'\d[A-Z]{3}\d{2}BR\d{3}'
     branch_pattern = r'/B\d+'
@@ -568,15 +971,41 @@ def extract_component_adjacency(file_path, excel_file, distance_threshold_close=
                             comp1 = branch_components[i]
                             comp2 = branch_components[i + 1]
                             
+                            # Check if this is a valid component type pair
+                            type_pair = frozenset([comp1['type'], comp2['type']])
+                            if type_pair not in VALID_PAIRS:
+                                continue  # Skip this pair
+                            
+                            # Skip if either component has no valid length
+                            if comp1['length'] is None or comp2['length'] is None:
+                                continue
+                            
                             # Calculate 3D distance between components
                             distance = ((comp1['pos'][0] - comp2['pos'][0])**2 + 
                                        (comp1['pos'][1] - comp2['pos'][1])**2 + 
                                        (comp1['pos'][2] - comp2['pos'][2])**2)**0.5
                             
-                            # Use PBOR-based thresholds (average of both components)
-                            avg_pbor = (comp1['pbor'] + comp2['pbor']) / 2.0
-                            threshold_touching = avg_pbor + 50.0  # PBOR + 50mm
-                            threshold_near = avg_pbor * 2 + 100.0  # PBOR * 2 + 100mm
+                            # Calculate expected touching distance based on component types
+                            if comp1['type'] == 'ELBO' and comp2['type'] == 'ELBO':
+                                # ELBO to ELBO: sum of both lengths
+                                expected_distance = comp1['length'] + comp2['length']
+                            elif comp1['type'] == 'ELBO':
+                                # ELBO to other: just ELBO length
+                                expected_distance = comp1['length']
+                            elif comp2['type'] == 'ELBO':
+                                # Other to ELBO: just ELBO length
+                                expected_distance = comp2['length']
+                            elif comp1['type'] == 'CAP' or comp2['type'] == 'CAP':
+                                # If CAP is involved, use the other component's length
+                                expected_distance = comp1['length'] if comp2['type'] == 'CAP' else comp2['length']
+                            else:
+                                # Other combinations: sum of both lengths
+                                expected_distance = comp1['length'] + comp2['length']
+                            
+                            # Apply margins: touching ±10%, near ±50%, separated ±100%
+                            threshold_touching = expected_distance * 1.10  # +10% margin
+                            threshold_near = expected_distance * 1.50  # +50% margin
+                            threshold_separated = expected_distance * 2.00  # +100% margin
                             
                             # Determine relationship
                             if distance <= threshold_touching:
@@ -587,21 +1016,26 @@ def extract_component_adjacency(file_path, excel_file, distance_threshold_close=
                                 relationship = 'Separated'
                             
                             component_pairs.append({
-                                'Pipe': current_pipe,
+                                'KKS_Pipe': current_pipe,
                                 'Branch': current_branch,
+                                'Component_1_Name': comp1['spre'],
                                 'Component_1_Type': comp1['type'],
-                                'Component_1_SPRE': comp1['spre'],
                                 'Component_1_PBOR': comp1['pbor'],
+                                'Component_1_Length': round(comp1['length'], 2),
                                 'Component_1_X': comp1['pos'][0],
                                 'Component_1_Y': comp1['pos'][1],
                                 'Component_1_Z': comp1['pos'][2],
+                                'Component_2_Name': comp2['spre'],
                                 'Component_2_Type': comp2['type'],
-                                'Component_2_SPRE': comp2['spre'],
                                 'Component_2_PBOR': comp2['pbor'],
+                                'Component_2_Length': round(comp2['length'], 2),
                                 'Component_2_X': comp2['pos'][0],
                                 'Component_2_Y': comp2['pos'][1],
                                 'Component_2_Z': comp2['pos'][2],
                                 'Distance_mm': round(distance, 2),
+                                'Expected_Distance_mm': round(expected_distance, 2),
+                                'Threshold_Touching': round(threshold_touching, 2),
+                                'Threshold_Near': round(threshold_near, 2),
                                 'Relationship': relationship
                             })
                     
@@ -617,14 +1051,33 @@ def extract_component_adjacency(file_path, excel_file, distance_threshold_close=
                         comp1 = branch_components[i]
                         comp2 = branch_components[i + 1]
                         
+                        # Check if this is a valid component type pair
+                        type_pair = frozenset([comp1['type'], comp2['type']])
+                        if type_pair not in VALID_PAIRS:
+                            continue  # Skip this pair
+                        
+                        # Skip if either component has no valid length
+                        if comp1['length'] is None or comp2['length'] is None:
+                            continue
+                        
                         distance = ((comp1['pos'][0] - comp2['pos'][0])**2 + 
                                    (comp1['pos'][1] - comp2['pos'][1])**2 + 
                                    (comp1['pos'][2] - comp2['pos'][2])**2)**0.5
                         
-                        # Use PBOR-based thresholds (average of both components)
-                        avg_pbor = (comp1['pbor'] + comp2['pbor']) / 2.0
-                        threshold_touching = avg_pbor + 50.0  # PBOR + 50mm
-                        threshold_near = avg_pbor * 2 + 100.0  # PBOR * 2 + 100mm
+                        # Calculate expected touching distance based on component types
+                        if comp1['type'] == 'ELBO' and comp2['type'] == 'ELBO':
+                            expected_distance = comp1['length'] + comp2['length']
+                        elif comp1['type'] == 'ELBO':
+                            expected_distance = comp1['length']
+                        elif comp2['type'] == 'ELBO':
+                            expected_distance = comp2['length']
+                        elif comp1['type'] == 'CAP' or comp2['type'] == 'CAP':
+                            expected_distance = comp1['length'] if comp2['type'] == 'CAP' else comp2['length']
+                        else:
+                            expected_distance = comp1['length'] + comp2['length']
+                        
+                        threshold_touching = expected_distance * 1.10
+                        threshold_near = expected_distance * 1.50
                         
                         if distance <= threshold_touching:
                             relationship = 'Touching'
@@ -634,21 +1087,26 @@ def extract_component_adjacency(file_path, excel_file, distance_threshold_close=
                             relationship = 'Separated'
                         
                         component_pairs.append({
-                            'Pipe': current_pipe,
+                            'KKS_Pipe': current_pipe,
                             'Branch': current_branch,
+                            'Component_1_Name': comp1['spre'],
                             'Component_1_Type': comp1['type'],
-                            'Component_1_SPRE': comp1['spre'],
                             'Component_1_PBOR': comp1['pbor'],
+                            'Component_1_Length': round(comp1['length'], 2),
                             'Component_1_X': comp1['pos'][0],
                             'Component_1_Y': comp1['pos'][1],
                             'Component_1_Z': comp1['pos'][2],
+                            'Component_2_Name': comp2['spre'],
                             'Component_2_Type': comp2['type'],
-                            'Component_2_SPRE': comp2['spre'],
                             'Component_2_PBOR': comp2['pbor'],
+                            'Component_2_Length': round(comp2['length'], 2),
                             'Component_2_X': comp2['pos'][0],
                             'Component_2_Y': comp2['pos'][1],
                             'Component_2_Z': comp2['pos'][2],
                             'Distance_mm': round(distance, 2),
+                            'Expected_Distance_mm': round(expected_distance, 2),
+                            'Threshold_Touching': round(threshold_touching, 2),
+                            'Threshold_Near': round(threshold_near, 2),
                             'Relationship': relationship
                         })
                 
@@ -670,7 +1128,14 @@ def extract_component_adjacency(file_path, excel_file, distance_threshold_close=
                     # Include only piping components: FLANGE, ELBOW, TEE, REDUCER, VALVE, etc.
                     if component_type not in ['BRANCH', 'PIPE', 'ZONE', 'SITE', 'STRUCTURE', 
                                               'SUBSTRUCTURE', 'CYLINDER', 'CTORUS', 'ATTACHMENT']:
-                        current_component = {'type': component_type, 'spre': None, 'pos': None, 'pbor': 0.0}
+                        current_component = {
+                            'type': component_type, 
+                            'spre': None, 
+                            'pos': None, 
+                            'pbor': 0.0,
+                            'pipe': current_pipe,
+                            'branch': current_branch
+                        }
             
             # Extract SPRE for current component
             elif 'SPRE SPCOMPONENT' in line and current_component:
@@ -684,6 +1149,9 @@ def extract_component_adjacency(file_path, excel_file, distance_threshold_close=
                             spre = current_component['spre']
                             if spre in welded_components and welded_components[spre]['welded']:
                                 current_component['pbor'] = welded_components[spre]['pbor']
+                                current_component['pbor1'] = welded_components[spre]['pbor1']
+                                current_component['type'] = welded_components[spre]['type']  # Use type from Excel
+                                current_component['length'] = welded_components[spre]['length']
                                 branch_components.append(current_component)
                             current_component = None
             
@@ -703,6 +1171,9 @@ def extract_component_adjacency(file_path, excel_file, distance_threshold_close=
                             spre = current_component['spre']
                             if spre in welded_components and welded_components[spre]['welded']:
                                 current_component['pbor'] = welded_components[spre]['pbor']
+                                current_component['pbor1'] = welded_components[spre]['pbor1']
+                                current_component['type'] = welded_components[spre]['type']  # Use type from Excel
+                                current_component['length'] = welded_components[spre]['length']
                                 branch_components.append(current_component)
                             current_component = None
     
@@ -712,14 +1183,33 @@ def extract_component_adjacency(file_path, excel_file, distance_threshold_close=
             comp1 = branch_components[i]
             comp2 = branch_components[i + 1]
             
+            # Check if this is a valid component type pair
+            type_pair = frozenset([comp1['type'], comp2['type']])
+            if type_pair not in VALID_PAIRS:
+                continue  # Skip this pair
+            
+            # Skip if either component has no valid length
+            if comp1['length'] is None or comp2['length'] is None:
+                continue
+            
             distance = ((comp1['pos'][0] - comp2['pos'][0])**2 + 
                        (comp1['pos'][1] - comp2['pos'][1])**2 + 
                        (comp1['pos'][2] - comp2['pos'][2])**2)**0.5
             
-            # Use PBOR-based thresholds (average of both components)
-            avg_pbor = (comp1['pbor'] + comp2['pbor']) / 2.0
-            threshold_touching = avg_pbor + 50.0  # PBOR + 50mm
-            threshold_near = avg_pbor * 2 + 100.0  # PBOR * 2 + 100mm
+            # Calculate expected touching distance based on component types
+            if comp1['type'] == 'ELBO' and comp2['type'] == 'ELBO':
+                expected_distance = comp1['length'] + comp2['length']
+            elif comp1['type'] == 'ELBO':
+                expected_distance = comp1['length']
+            elif comp2['type'] == 'ELBO':
+                expected_distance = comp2['length']
+            elif comp1['type'] == 'CAP' or comp2['type'] == 'CAP':
+                expected_distance = comp1['length'] if comp2['type'] == 'CAP' else comp2['length']
+            else:
+                expected_distance = comp1['length'] + comp2['length']
+            
+            threshold_touching = expected_distance * 1.10
+            threshold_near = expected_distance * 1.50
             
             if distance <= threshold_touching:
                 relationship = 'Touching'
@@ -729,21 +1219,26 @@ def extract_component_adjacency(file_path, excel_file, distance_threshold_close=
                 relationship = 'Separated'
             
             component_pairs.append({
-                'Pipe': current_pipe,
+                'KKS_Pipe': current_pipe,
                 'Branch': current_branch,
+                'Component_1_Name': comp1['spre'],
                 'Component_1_Type': comp1['type'],
-                'Component_1_SPRE': comp1['spre'],
                 'Component_1_PBOR': comp1['pbor'],
+                'Component_1_Length': round(comp1['length'], 2),
                 'Component_1_X': comp1['pos'][0],
                 'Component_1_Y': comp1['pos'][1],
                 'Component_1_Z': comp1['pos'][2],
+                'Component_2_Name': comp2['spre'],
                 'Component_2_Type': comp2['type'],
-                'Component_2_SPRE': comp2['spre'],
                 'Component_2_PBOR': comp2['pbor'],
+                'Component_2_Length': round(comp2['length'], 2),
                 'Component_2_X': comp2['pos'][0],
                 'Component_2_Y': comp2['pos'][1],
                 'Component_2_Z': comp2['pos'][2],
                 'Distance_mm': round(distance, 2),
+                'Expected_Distance_mm': round(expected_distance, 2),
+                'Threshold_Touching': round(threshold_touching, 2),
+                'Threshold_Near': round(threshold_near, 2),
                 'Relationship': relationship
             })
     
@@ -818,6 +1313,16 @@ if __name__ == "__main__":
     print(f"Total branch positions: {len(all_branch_positions)}")
     print(f"Total component pairs: {len(all_component_pairs)}")
     
+    # Detect components at branch ends
+    print(f"\nDetecting components at branch ends...")
+    all_components_at_ends = []
+    for txt_file in txt_files:
+        result = detect_components_at_branch_ends(txt_file, excel_file, all_branch_positions, tolerance=100.0)
+        all_components_at_ends.extend(result['components_at_ends'])
+    
+    # Get combined stats
+    end_detection_stats = detect_components_at_branch_ends(txt_files[0], excel_file, all_branch_positions, tolerance=100.0)['stats']
+    
     # Find connected branches based on coordinates
     print(f"\nFinding connected branches based on coordinates...")
     connected_branches = find_connected_branches(all_branch_positions, tolerance_tight=5.0, tolerance_loose=150.0)
@@ -827,14 +1332,15 @@ if __name__ == "__main__":
     xy_count = sum(1 for c in connected_branches if c['Match_Type'] == 'XY_tight_Z_loose')
     xz_count = sum(1 for c in connected_branches if c['Match_Type'] == 'XZ_tight_Y_loose')
     yz_count = sum(1 for c in connected_branches if c['Match_Type'] == 'YZ_tight_X_loose')
-    print(f"  - XY tight (≤5mm), Z loose (≤150mm): {xy_count}")
-    print(f"  - XZ tight (≤5mm), Y loose (≤150mm): {xz_count}")
-    print(f"  - YZ tight (≤5mm), X loose (≤150mm): {yz_count}")
+    print(f"  - XY tight (<=5mm), Z loose (<=150mm): {xy_count}")
+    print(f"  - XZ tight (<=5mm), Y loose (<=150mm): {xz_count}")
+    print(f"  - YZ tight (<=5mm), X loose (<=150mm): {yz_count}")
     
     # Save connected branches to CSV FIRST (before Excel read which might fail)
     print(f"\nSaving connected branches to: {output_branch_coord_csv}")
     with open(output_branch_coord_csv, 'w', newline='', encoding='utf-8') as csvfile:
-        fieldnames = ['Branch_A', 'Branch_B', 'Branch_A_Pipe', 'Branch_A_Branch',
+        fieldnames = ['Branch_A', 'Branch_A_TCON', 'Branch_B', 'Branch_B_HCON',
+                     'Branch_A_Pipe', 'Branch_A_Branch',
                      'Branch_B_Pipe', 'Branch_B_Branch', 
                      'Connection_X', 'Connection_Y', 'Connection_Z', 
                      'Distance_mm', 'Offset_X_mm', 'Offset_Y_mm', 'Offset_Z_mm', 
@@ -863,14 +1369,142 @@ if __name__ == "__main__":
             writer.writerow(row)
     print(f"Branch connections written: {len(all_branches)}")
     
+    # Save components at branch ends to CSV
+    output_ends_csv = Path(__file__).parent / "TBY" / 'components_at_branch_ends.csv'
+    print(f"\nSaving components at branch ends to: {output_ends_csv}")
+    with open(output_ends_csv, 'w', newline='', encoding='utf-8') as csvfile:
+        fieldnames = ['KKS_Pipe', 'Branch', 'Full_Branch_ID', 'Component_Name', 'Component_Type', 
+                     'Component_Length', 'Position', 'HCON', 'TCON',
+                     'Component_X', 'Component_Y', 'Component_Z',
+                     'Branch_End_X', 'Branch_End_Y', 'Branch_End_Z',
+                     'Distance_mm', 'Threshold_mm']
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames, extrasaction='ignore')
+        writer.writeheader()
+        for row in all_components_at_ends:
+            writer.writerow(row)
+    print(f"Components at branch ends written: {len(all_components_at_ends)}")
+    
+    # Create BWD connections report
+    output_bwd_report_csv = Path(__file__).parent / "TBY" / 'bwd_connections_report.csv'
+    print(f"\nGenerating BWD connections report...")
+    
+    # Create a lookup for components at branch ends
+    components_at_head_lookup = {}  # branch_id -> list of components
+    components_at_tail_lookup = {}  # branch_id -> list of components
+    
+    for comp in all_components_at_ends:
+        branch_id = comp['Full_Branch_ID']
+        if comp['Position'] == 'HEAD':
+            if branch_id not in components_at_head_lookup:
+                components_at_head_lookup[branch_id] = []
+            components_at_head_lookup[branch_id].append({
+                'name': comp['Component_Name'],
+                'type': comp['Component_Type'],
+                'distance': comp['Distance_mm']
+            })
+        elif comp['Position'] == 'TAIL':
+            if branch_id not in components_at_tail_lookup:
+                components_at_tail_lookup[branch_id] = []
+            components_at_tail_lookup[branch_id].append({
+                'name': comp['Component_Name'],
+                'type': comp['Component_Type'],
+                'distance': comp['Distance_mm']
+            })
+    
+    # Build BWD connection report
+    bwd_connections_report = []
+    
+    for branch in all_branch_positions:
+        branch_id = branch['Full_Branch_ID']
+        pipe = branch['Pipe']
+        branch_name = branch['Branch']
+        hcon = branch['HCON']
+        tcon = branch['TCON']
+        
+        # Check if HCON is BWD
+        if hcon == 'BWD':
+            head_components = components_at_head_lookup.get(branch_id, [])
+            if head_components:
+                # Sort by distance and get closest
+                head_components.sort(key=lambda x: x['distance'])
+                closest = head_components[0]
+                has_component = 'Yes'
+                component_name = closest['name']
+                component_type = closest['type']
+                component_distance = closest['distance']
+            else:
+                has_component = 'No'
+                component_name = ''
+                component_type = ''
+                component_distance = None
+            
+            bwd_connections_report.append({
+                'KKS_Pipe': pipe,
+                'Branch': branch_name,
+                'Full_Branch_ID': branch_id,
+                'End_Type': 'HEAD',
+                'Connection_Type': hcon,
+                'Has_Component_At_End': has_component,
+                'Component_Name': component_name,
+                'Component_Type': component_type,
+                'Distance_To_End_mm': component_distance
+            })
+        
+        # Check if TCON is BWD
+        if tcon == 'BWD':
+            tail_components = components_at_tail_lookup.get(branch_id, [])
+            if tail_components:
+                # Sort by distance and get closest
+                tail_components.sort(key=lambda x: x['distance'])
+                closest = tail_components[0]
+                has_component = 'Yes'
+                component_name = closest['name']
+                component_type = closest['type']
+                component_distance = closest['distance']
+            else:
+                has_component = 'No'
+                component_name = ''
+                component_type = ''
+                component_distance = None
+            
+            bwd_connections_report.append({
+                'KKS_Pipe': pipe,
+                'Branch': branch_name,
+                'Full_Branch_ID': branch_id,
+                'End_Type': 'TAIL',
+                'Connection_Type': tcon,
+                'Has_Component_At_End': has_component,
+                'Component_Name': component_name,
+                'Component_Type': component_type,
+                'Distance_To_End_mm': component_distance
+            })
+    
+    # Save BWD connections report to CSV
+    print(f"Saving BWD connections report to: {output_bwd_report_csv}")
+    with open(output_bwd_report_csv, 'w', newline='', encoding='utf-8') as csvfile:
+        fieldnames = ['KKS_Pipe', 'Branch', 'Full_Branch_ID', 'End_Type', 'Connection_Type',
+                     'Has_Component_At_End', 'Component_Name', 'Component_Type', 'Distance_To_End_mm']
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        writer.writeheader()
+        for row in bwd_connections_report:
+            writer.writerow(row)
+    print(f"BWD connections report written: {len(bwd_connections_report)} entries")
+    
+    # Count summary for BWD report
+    bwd_with_component = sum(1 for r in bwd_connections_report if r['Has_Component_At_End'] == 'Yes')
+    bwd_without_component = sum(1 for r in bwd_connections_report if r['Has_Component_At_End'] == 'No')
+    print(f"  - BWD connections WITH component at end: {bwd_with_component}")
+    print(f"  - BWD connections WITHOUT component at end: {bwd_without_component}")
+    
     # Save component adjacency to CSV
     print(f"\nSaving component adjacency to: {output_adjacency_csv}")
     with open(output_adjacency_csv, 'w', newline='', encoding='utf-8') as csvfile:
-        fieldnames = ['Pipe', 'Branch', 'Component_1_Type', 'Component_1_SPRE', 'Component_1_PBOR',
+        fieldnames = ['KKS_Pipe', 'Branch', 
+                     'Component_1_Name', 'Component_1_Type', 'Component_1_PBOR', 'Component_1_Length',
                      'Component_1_X', 'Component_1_Y', 'Component_1_Z',
-                     'Component_2_Type', 'Component_2_SPRE', 'Component_2_PBOR',
+                     'Component_2_Name', 'Component_2_Type', 'Component_2_PBOR', 'Component_2_Length',
                      'Component_2_X', 'Component_2_Y', 'Component_2_Z',
-                     'Distance_mm', 'Relationship']
+                     'Distance_mm', 'Expected_Distance_mm', 'Threshold_Touching', 'Threshold_Near', 'Relationship']
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writeheader()
         for row in all_component_pairs:
@@ -899,11 +1533,18 @@ if __name__ == "__main__":
     welded_count = sum(1 for r in result if r['Welded'] == 'X')
     total_welds = sum(r['Weld_Count'] for r in result)
     
+    # Count BWD branch ends with and without components
+    total_bwd_branch_ends = end_detection_stats['total_bwd_connections']
+    components_at_bwd_ends = end_detection_stats['components_at_head_bwd'] + end_detection_stats['components_at_tail_bwd']
+    
     # Calculate final weld count
-    # Add connected branches (branch-to-branch welds)
-    # Subtract touching component pairs (component-to-component welds that replace pipe-to-component welds)
+    # Start with component welds
+    # Add BWD branch ends (each BWD connection needs a weld)
+    #   Note: connected_branches are already included in BWD branch ends count, so we don't add them separately
+    # Subtract touching component pairs (already counted in component welds)
+    # Subtract components at BWD ends (already counted in component welds)
     # Exclude OLETs and FLANGE-FLANGE pairs from touching count
-    final_weld_count = total_welds + len(connected_branches) - touching_count_filtered
+    final_weld_count = total_welds + total_bwd_branch_ends - touching_count_filtered - components_at_bwd_ends
     
     print(f"\nSummary:")
     print(f"Total components: {len(result)}")
@@ -913,5 +1554,22 @@ if __name__ == "__main__":
     print(f"Total weld count (from components): {total_welds}")
     print(f"Connected branches (branch-to-branch welds): {len(connected_branches)}")
     print(f"Touching component pairs (component-to-component welds, excl. OLETs & FLANGE-FLANGE): {touching_count_filtered}")
-    print(f"Final weld count: {total_welds} + {len(connected_branches)} - {touching_count_filtered} = {final_weld_count}")
+    print(f"BWD branch ends (require welds): {total_bwd_branch_ends}")
+    print(f"  Note: Connected branches ({len(connected_branches)}) are already included in BWD branch ends")
+    print(f"Components at BWD branch ends (already in component welds): {components_at_bwd_ends}")
+    print(f"Final weld count: {total_welds} + {total_bwd_branch_ends} - {touching_count_filtered} - {components_at_bwd_ends} = {final_weld_count}")
+    
+    print(f"\n{'='*80}")
+    print(f"BRANCH END ANALYSIS:")
+    print(f"{'='*80}")
+    print(f"Total HCON BWD connections in project: {end_detection_stats['total_hcon_bwd']}")
+    print(f"Total TCON BWD connections in project: {end_detection_stats['total_tcon_bwd']}")
+    print(f"Total BWD connections (HCON + TCON): {end_detection_stats['total_bwd_connections']}")
+    print(f"\nComponents directly at branch HEADS: {end_detection_stats['components_at_head']}")
+    print(f"  - At HEADS with HCON=BWD: {end_detection_stats['components_at_head_bwd']}")
+    print(f"Components directly at branch TAILS: {end_detection_stats['components_at_tail']}")
+    print(f"  - At TAILS with TCON=BWD: {end_detection_stats['components_at_tail_bwd']}")
+    print(f"\nTotal components at branch ends (HEAD or TAIL): {end_detection_stats['total_components_at_ends']}")
+    print(f"{'='*80}")
+
 
