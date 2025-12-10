@@ -496,14 +496,16 @@ def lookup_and_merge_with_excel(components, excel_file):
             
             # Calculate weld count
             weld_count = 0
-            if p1_conn == 'BWD':
-                weld_count += 1
-            if p2_conn == 'BWD':
-                weld_count += 1
-            if comp_type == 'OLET':
-                weld_count += 1
+            # Exclude WELD type components from weld counting
+            if 'WELD' not in comp_type:
+                if p1_conn == 'BWD':
+                    weld_count += 1
+                if p2_conn == 'BWD':
+                    weld_count += 1
+                if comp_type == 'OLET':
+                    weld_count += 1
             
-            # Mark as welded if BWD connection OR TYPE is OLET
+            # Mark as welded if BWD connection OR TYPE is OLET (but not WELD type)
             welded = 'X' if weld_count > 0 else ''
         else:
             found = ''
@@ -555,7 +557,7 @@ def detect_components_at_branch_ends(file_path, excel_file, branch_positions, to
         if comp_type == 'ELBO':
             if form is not None and pbor > 0:
                 try:
-                    return float(form) + pbor / 2.0
+                    return float(form) * pbor
                 except:
                     return None
             return None
@@ -603,7 +605,8 @@ def detect_components_at_branch_ends(file_path, excel_file, branch_positions, to
             form = None
         
         comp_length = calculate_component_length(comp_type, pbor, pbor1, form)
-        is_welded = (p1_conn == 'BWD' or p2_conn == 'BWD' or comp_type == 'OLET')
+        # Exclude WELD type components from welded classification
+        is_welded = (p1_conn == 'BWD' or p2_conn == 'BWD' or comp_type == 'OLET') and 'WELD' not in comp_type
         
         component_lookup[spre] = {
             'welded': is_welded,
@@ -876,12 +879,12 @@ def extract_component_adjacency(file_path, excel_file, distance_threshold_close=
             float: Component length in mm, or None if cannot be calculated
         """
         if comp_type == 'ELBO':
-            # ELBO: FORM + PBOR/2
+            # ELBO: FORM * PBOR
             # FORM must be numeric (3 or 5)
             if form is not None and pbor > 0:
                 try:
                     form_val = float(form)
-                    return form_val + pbor / 2.0
+                    return form_val * pbor
                 except:
                     return None
             return None
@@ -938,8 +941,8 @@ def extract_component_adjacency(file_path, excel_file, distance_threshold_close=
         # Calculate component length
         comp_length = calculate_component_length(comp_type, pbor, pbor1, form)
         
-        # Include only welded components (BWD or OLET)
-        is_welded = (p1_conn == 'BWD' or p2_conn == 'BWD' or comp_type == 'OLET')
+        # Include only welded components (BWD or OLET), exclude WELD type
+        is_welded = (p1_conn == 'BWD' or p2_conn == 'BWD' or comp_type == 'OLET') and 'WELD' not in comp_type
         welded_components[spre] = {
             'welded': is_welded, 
             'pbor': pbor, 
@@ -1266,14 +1269,15 @@ def save_to_csv(data, output_file):
 if __name__ == "__main__":
     # Define file paths
     txt_files = [
-        Path(__file__).parent / "TBY" / "TBY-0AUX-P.txt",
-        Path(__file__).parent / "TBY" / "TBY-1AUX-P.txt"
+        Path(__file__).parent / "ADI" / "0AUX-P-INN_8_Dec_2025.TXT",
+        Path(__file__).parent / "ADI" / "1AUX-P-INN_8_Dec_2025.TXT",
+        Path(__file__).parent / "ADI" / "2AUX-P-INN_8_Dec_2025.TXT"
     ]
-    excel_file = Path(__file__).parent / "TBY" / "TBY_all_pspecs_wure_macro_08.12.2025.xlsx"
-    output_csv = Path(__file__).parent / "TBY" / "components_with_welds.csv"
-    output_branches_csv = Path(__file__).parent / "TBY" / "branch_connections.csv"
-    output_branch_coord_csv = Path(__file__).parent / "TBY" / "connected_branches.csv"
-    output_adjacency_csv = Path(__file__).parent / "TBY" / "component_adjacency.csv"
+    excel_file = Path(__file__).parent / "ADI" / "ADI_PIPE_SPECS_ALL.xlsx"
+    output_csv = Path(__file__).parent / "ADI" / "components_with_welds.csv"
+    output_branches_csv = Path(__file__).parent / "ADI" / "branch_connections.csv"
+    output_branch_coord_csv = Path(__file__).parent / "ADI" / "connected_branches.csv"
+    output_adjacency_csv = Path(__file__).parent / "ADI" / "component_adjacency.csv"
     
     all_components = []
     all_branches = []
@@ -1370,7 +1374,7 @@ if __name__ == "__main__":
     print(f"Branch connections written: {len(all_branches)}")
     
     # Save components at branch ends to CSV
-    output_ends_csv = Path(__file__).parent / "TBY" / 'components_at_branch_ends.csv'
+    output_ends_csv = Path(__file__).parent / "ADI" / 'components_at_branch_ends.csv'
     print(f"\nSaving components at branch ends to: {output_ends_csv}")
     with open(output_ends_csv, 'w', newline='', encoding='utf-8') as csvfile:
         fieldnames = ['KKS_Pipe', 'Branch', 'Full_Branch_ID', 'Component_Name', 'Component_Type', 
@@ -1385,7 +1389,7 @@ if __name__ == "__main__":
     print(f"Components at branch ends written: {len(all_components_at_ends)}")
     
     # Create BWD connections report
-    output_bwd_report_csv = Path(__file__).parent / "TBY" / 'bwd_connections_report.csv'
+    output_bwd_report_csv = Path(__file__).parent / "ADI" / 'bwd_connections_report.csv'
     print(f"\nGenerating BWD connections report...")
     
     # Create a lookup for components at branch ends

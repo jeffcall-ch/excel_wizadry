@@ -70,7 +70,7 @@ def main():
     # Hard-coded paths for easy execution
     if len(sys.argv) < 2:
         # Use hard-coded default paths
-        input_file = Path(__file__).parent / "TBY_all_pspecs_wure_macro_08.12.2025.csv"
+        input_file = Path(__file__).parent / "ADI_PIPE_SPECS_ALL.csv" 
         output_file = input_file.with_suffix('.xlsx')
     else:
         # Get input file path from command line argument
