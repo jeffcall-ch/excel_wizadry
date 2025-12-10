@@ -1,7 +1,7 @@
 ' ================================================================================
 ' SU-Based Comment Replicator
 ' ================================================================================
-' Purpose: Automatically replicate column P values to all rows with matching
+' Purpose: Automatically replicate column T values to all rows with matching
 '          column D values (case-insensitive)
 '
 ' How to Install:
@@ -13,10 +13,11 @@
 ' 6. Close VBA Editor and save the file as .xlsm (macro-enabled)
 '
 ' How it Works:
-' - When you enter/change a value in column P and press ENTER
+' - When you enter/change a value in column T and press ENTER
 ' - Script checks if the corresponding column D value is valid (not -, empty, N/A, error)
 ' - Finds ALL rows with the same column D value
-' - Copies the P value to all matching rows
+' - Copies the T value to all matching rows
+' - Also copies column H to column U for all matching rows
 ' - Shows a quick status message when done
 ' ================================================================================
 
@@ -179,8 +180,8 @@ Private Sub Worksheet_Change(ByVal Target As Range)
     Dim startTime As Double
     Dim elapsedTime As Double
     
-    ' Exit if multiple cells changed or not in column P
-    If Target.Column <> 16 Then Exit Sub ' Column P = 16
+    ' Exit if multiple cells changed or not in column T
+    If Target.Column <> 20 Then Exit Sub ' Column T = 20
     If Target.Cells.Count > 1 Then Exit Sub
     
     ' Start timer for performance tracking
@@ -207,7 +208,7 @@ Private Sub Worksheet_Change(ByVal Target As Range)
         End If
     End If
     
-    ' Get the P column value to replicate (can be empty to clear)
+    ' Get the T column value to replicate (can be empty to clear)
     pValue = changedCell.Value
     
     ' Find the last used row in column D
@@ -227,8 +228,10 @@ Private Sub Worksheet_Change(ByVal Target As Range)
         If Not IsEmpty(cell.Value) And Not IsError(cell.Value) Then
             ' Case-insensitive comparison
             If UCase(Trim(CStr(cell.Value))) = UCase(Trim(CStr(dValue))) Then
-                ' Copy P value to matching row (overwrite even if empty)
-                Me.Cells(cell.Row, 16).Value = pValue
+                ' Copy T value to matching row (overwrite even if empty)
+                Me.Cells(cell.Row, 20).Value = pValue
+                ' Copy H value to column U for this row
+                Me.Cells(cell.Row, 21).Value = Me.Cells(cell.Row, 8).Value ' Column H = 8, Column U = 21
                 matchCount = matchCount + 1
             End If
         End If
