@@ -32,6 +32,9 @@ Private WithEvents lblFolder As MSForms.Label
 Private WithEvents cboFolderName As MSForms.ComboBox
 Private WithEvents chkSubFolders As MSForms.CheckBox
 
+Private WithEvents lblAttachment As MSForms.Label
+Private WithEvents cboAttachment As MSForms.ComboBox
+
 Private WithEvents btnSearch As MSForms.CommandButton
 Private WithEvents btnClear As MSForms.CommandButton
 
@@ -45,7 +48,7 @@ Private Sub UserForm_Initialize()
     ' Set form properties
     Me.Caption = "Email Search (Simplified)"
     Me.Width = 480
-    Me.Height = 435
+    Me.Height = 475
     
     ' Create all controls programmatically
     CreateLabels
@@ -162,6 +165,17 @@ Private Sub CreateLabels()
         .Width = 80
         .Height = 18
         .Caption = "Folder:"
+        .Font.Size = 10
+    End With
+    
+    ' Attachment Label
+    Set lblAttachment = Me.Controls.Add("Forms.Label.1", "lblAttachment", True)
+    With lblAttachment
+        .Left = 10
+        .Top = 310
+        .Width = 80
+        .Height = 18
+        .Caption = "Attachments:"
         .Font.Size = 10
     End With
 End Sub
@@ -282,6 +296,17 @@ Private Sub CreateComboBoxes()
         .Font.Size = 10
         .Style = fmStyleDropDownList
     End With
+    
+    ' Attachment ComboBox
+    Set cboAttachment = Me.Controls.Add("Forms.ComboBox.1", "cboAttachment", True)
+    With cboAttachment
+        .Left = 100
+        .Top = 310
+        .Width = 360
+        .Height = 24
+        .Font.Size = 10
+        .Style = fmStyleDropDownList
+    End With
 End Sub
 
 Private Sub CreateButtons()
@@ -289,7 +314,7 @@ Private Sub CreateButtons()
     Set btnSearch = Me.Controls.Add("Forms.CommandButton.1", "btnSearch", True)
     With btnSearch
         .Left = 10
-        .Top = 340
+        .Top = 375
         .Width = 100
         .Height = 30
         .Caption = "Search"
@@ -301,7 +326,7 @@ Private Sub CreateButtons()
     Set btnClear = Me.Controls.Add("Forms.CommandButton.1", "btnClear", True)
     With btnClear
         .Left = 120
-        .Top = 340
+        .Top = 375
         .Width = 100
         .Height = 30
         .Caption = "Clear"
@@ -314,7 +339,7 @@ Private Sub CreateStatusLabel()
     Set lblStatus = Me.Controls.Add("Forms.Label.1", "lblStatus", True)
     With lblStatus
         .Left = 10
-        .Top = 385
+        .Top = 420
         .Width = 450
         .Height = 35
         .Caption = "Ready to search. Enter search criteria and click Search."
@@ -336,6 +361,21 @@ Private Sub InitializeControlValues()
         .AddItem "Drafts"
         .AddItem "All Folders (including subfolders)"
         .ListIndex = 4  ' Default to "All Folders"
+    End With
+    
+    ' Populate attachment filter dropdown
+    With cboAttachment
+        .Clear
+        .AddItem "--- (Any)"
+        .AddItem "With Attachments"
+        .AddItem "Without Attachments"
+        .AddItem "PDF Files"
+        .AddItem "Excel Files (.xls, .xlsx)"
+        .AddItem "Word Files (.doc, .docx)"
+        .AddItem "Images (.jpg, .png, .gif)"
+        .AddItem "PowerPoint Files (.ppt, .pptx)"
+        .AddItem "ZIP/Archives"
+        .ListIndex = 0  ' Default to "Any"
     End With
     
     ' Clear date fields
@@ -397,6 +437,13 @@ Private Sub btnSearch_Click()
     
     criteria.FolderName = cboFolderName.Value
     criteria.SearchSubFolders = chkSubFolders.Value
+    
+    ' Add attachment filter
+    If cboAttachment.ListIndex > 0 Then
+        criteria.AttachmentFilter = cboAttachment.Value
+    Else
+        criteria.AttachmentFilter = ""
+    End If
     
     ' Validate: at least one checkbox must be checked if search terms entered
     If Len(criteria.SearchTerms) > 0 Then
@@ -464,6 +511,9 @@ Private Sub btnClear_Click()
     
     ' Reset folder to All Folders
     cboFolderName.ListIndex = 4
+    
+    ' Reset attachment filter
+    cboAttachment.ListIndex = 0
     
     ' Update status
     lblStatus.Caption = "Ready to search. Enter search criteria and click Search."

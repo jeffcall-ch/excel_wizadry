@@ -91,10 +91,13 @@ Public Sub ExecuteSimplifiedSearch(criteria As SearchCriteria, _
         If searchBody Then whereParts.Add ApplyFieldToTerms("body", searchTerms)
         
         ' Combine WHERE clauses with OR (search in subject OR body)
-        If whereParts.Count > 1 Then
-            queryParts.Add "(" & JoinCollection(whereParts, " OR ") & ")"
-        ElseIf whereParts.Count = 1 Then
-            queryParts.Add whereParts(1)
+        ' Each field query already has proper term grouping
+        If whereParts.Count > 0 Then
+            If whereParts.Count > 1 Then
+                queryParts.Add JoinCollection(whereParts, " OR ")
+            Else
+                queryParts.Add whereParts(1)
+            End If
         End If
     End If
     
@@ -115,6 +118,35 @@ Public Sub ExecuteSimplifiedSearch(criteria As SearchCriteria, _
         aqsQuery = aqsQuery & " AND received:>=" & FormatAQSDate(criteria.DateFrom)
     ElseIf criteria.DateTo > 0 Then
         aqsQuery = aqsQuery & " AND received:<=" & FormatAQSDate(criteria.DateTo)
+    End If
+    
+    ' Add attachment filter if provided
+    If Len(Trim(criteria.AttachmentFilter)) > 0 Then
+        Select Case UCase(Trim(criteria.AttachmentFilter))
+            Case "WITH ATTACHMENTS", "WITHATTACHMENTS"
+                aqsQuery = aqsQuery & " AND hasattachment:true"
+                
+            Case "WITHOUT ATTACHMENTS", "WITHOUTATTACHMENTS"
+                aqsQuery = aqsQuery & " AND hasattachment:false"
+                
+            Case "PDF FILES", "PDF"
+                aqsQuery = aqsQuery & " AND attachment:.pdf"
+                
+            Case "EXCEL FILES (.XLS, .XLSX)", "EXCEL"
+                aqsQuery = aqsQuery & " AND (attachment:.xlsx OR attachment:.xls OR attachment:.xlsm)"
+                
+            Case "WORD FILES (.DOC, .DOCX)", "WORD"
+                aqsQuery = aqsQuery & " AND (attachment:.docx OR attachment:.doc)"
+                
+            Case "IMAGES (.JPG, .PNG, .GIF)", "IMAGES"
+                aqsQuery = aqsQuery & " AND (attachment:.jpg OR attachment:.jpeg OR attachment:.png OR attachment:.gif)"
+                
+            Case "POWERPOINT FILES (.PPT, .PPTX)", "POWERPOINT"
+                aqsQuery = aqsQuery & " AND (attachment:.ppt OR attachment:.pptx)"
+                
+            Case "ZIP/ARCHIVES", "ZIP", "ARCHIVES"
+                aqsQuery = aqsQuery & " AND (attachment:.zip OR attachment:.rar OR attachment:.7z)"
+        End Select
     End If
     
     ' Resolve folder
@@ -664,32 +696,32 @@ Private Function BuildAQSQuery(criteria As SearchCriteria) As String
     End If
     
     ' ATTACHMENT FILTERS
-    ' NATIVE AQS: hasattachments:yes/no, attachmentfilenames:pattern
+    ' NATIVE AQS: hasattachment:true/false, attachment:.ext (without wildcards)
     If Len(Trim(criteria.AttachmentFilter)) > 0 Then
         Select Case UCase(Trim(criteria.AttachmentFilter))
             Case "WITH ATTACHMENTS", "WITHATTACHMENTS", "YES"
-                queryParts.Add "hasattachments:yes"
+                queryParts.Add "hasattachment:true"
                 
             Case "WITHOUT ATTACHMENTS", "WITHOUTATTACHMENTS", "NO", "NONE"
-                queryParts.Add "hasattachments:no"
+                queryParts.Add "hasattachment:false"
                 
             Case "PDF", "PDF FILES"
-                queryParts.Add "attachmentfilenames:*.pdf"
+                queryParts.Add "attachment:.pdf"
                 
             Case "EXCEL", "EXCEL FILES (.XLS, .XLSX)", "XLS", "XLSX"
-                queryParts.Add "(attachmentfilenames:*.xlsx OR attachmentfilenames:*.xls OR attachmentfilenames:*.xlsm)"
+                queryParts.Add "(attachment:.xlsx OR attachment:.xls OR attachment:.xlsm)"
                 
             Case "WORD", "WORD FILES (.DOC, .DOCX)", "DOC", "DOCX"
-                queryParts.Add "(attachmentfilenames:*.docx OR attachmentfilenames:*.doc)"
+                queryParts.Add "(attachment:.docx OR attachment:.doc)"
                 
             Case "IMAGES", "IMAGES (.JPG, .PNG, .GIF)", "JPG", "PNG", "GIF"
-                queryParts.Add "(attachmentfilenames:*.jpg OR attachmentfilenames:*.jpeg OR attachmentfilenames:*.png OR attachmentfilenames:*.gif)"
+                queryParts.Add "(attachment:.jpg OR attachment:.jpeg OR attachment:.png OR attachment:.gif)"
                 
             Case "POWERPOINT", "POWERPOINT FILES (.PPT, .PPTX)", "PPT", "PPTX"
-                queryParts.Add "(attachmentfilenames:*.ppt OR attachmentfilenames:*.pptx)"
+                queryParts.Add "(attachment:.ppt OR attachment:.pptx)"
                 
             Case "ZIP", "ZIP/ARCHIVES", "ARCHIVES"
-                queryParts.Add "(attachmentfilenames:*.zip OR attachmentfilenames:*.rar OR attachmentfilenames:*.7z)"
+                queryParts.Add "(attachment:.zip OR attachment:.rar OR attachment:.7z)"
         End Select
     End If
     
@@ -875,11 +907,8 @@ Private Function ApplyFieldToTerms(fieldName As String, searchTerms As String) A
         result = Replace(result, "  ", " ")
     Loop
     
-    ' Wrap in parentheses if contains multiple terms with operators
-    If hasAnd Or hasOr Then
-        result = "(" & result & ")"
-    End If
-    
+    ' Don't add parentheses - AQS handles operator precedence correctly
+    ' AND has higher precedence than OR, so no wrapping needed
     ApplyFieldToTerms = result
 End Function
 
