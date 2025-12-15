@@ -445,6 +445,24 @@ Private Function ResolveFolder(folderName As String) As Outlook.Folder
         Exit Function
     End If
     
+    ' Handle "Current Folder" - return the active explorer's current folder
+    If InStr(1, trimmedName, "CURRENT FOLDER") > 0 Or _
+       trimmedName = "CURRENT FOLDER" Or _
+       trimmedName = "CURRENT" Then
+        Debug.Print "ResolveFolder: 'Current Folder' detected"
+        On Error Resume Next
+        Set folder = Application.ActiveExplorer.CurrentFolder
+        On Error GoTo ErrorHandler
+        If folder Is Nothing Then
+            Debug.Print "ResolveFolder: No active explorer, falling back to Inbox"
+            Set folder = ns.GetDefaultFolder(olFolderInbox)
+        Else
+            Debug.Print "ResolveFolder: Using current folder: " & folder.Name
+        End If
+        Set ResolveFolder = folder
+        Exit Function
+    End If
+    
     ' Check common system folders first
     Select Case trimmedName
         Case "INBOX"

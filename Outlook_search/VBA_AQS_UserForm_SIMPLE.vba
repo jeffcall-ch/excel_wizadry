@@ -398,12 +398,13 @@ Private Sub InitializeControlValues()
     ' Populate folder dropdown
     With cboFolderName
         .Clear
+        .AddItem "Current Folder"
         .AddItem "Inbox"
         .AddItem "Sent Items"
         .AddItem "Deleted Items"
         .AddItem "Drafts"
         .AddItem "All Folders (including subfolders)"
-        .ListIndex = 4  ' Default to "All Folders"
+        .ListIndex = 5  ' Default to "All Folders"
     End With
     
     ' Populate attachment filter dropdown
@@ -554,7 +555,7 @@ Private Sub btnClear_Click()
     chkSubFolders.Value = True
     
     ' Reset dropdowns
-    cboFolderName.ListIndex = 4
+    cboFolderName.ListIndex = 5
     cboAttachment.ListIndex = 0
     
     lblStatus.Caption = "Ready to search."
