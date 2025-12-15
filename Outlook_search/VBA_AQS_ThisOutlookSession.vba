@@ -120,33 +120,13 @@ Public Sub ExecuteSimplifiedSearch(criteria As SearchCriteria, _
         aqsQuery = aqsQuery & " AND received:<=" & FormatAQSDate(criteria.DateTo)
     End If
     
-    ' Add attachment filter if provided
+    ' Add attachment filter if provided (token-based: "" / "NOATT" / "HASATT|PDF|XLS|...")
     If Len(Trim(criteria.AttachmentFilter)) > 0 Then
-        Select Case UCase(Trim(criteria.AttachmentFilter))
-            Case "WITH ATTACHMENTS", "WITHATTACHMENTS"
-                aqsQuery = aqsQuery & " AND hasattachment:true"
-                
-            Case "WITHOUT ATTACHMENTS", "WITHOUTATTACHMENTS"
-                aqsQuery = aqsQuery & " AND hasattachment:false"
-                
-            Case "PDF FILES", "PDF"
-                aqsQuery = aqsQuery & " AND attachment:.pdf"
-                
-            Case "EXCEL FILES (.XLS, .XLSX)", "EXCEL"
-                aqsQuery = aqsQuery & " AND (attachment:.xlsx OR attachment:.xls OR attachment:.xlsm)"
-                
-            Case "WORD FILES (.DOC, .DOCX)", "WORD"
-                aqsQuery = aqsQuery & " AND (attachment:.docx OR attachment:.doc)"
-                
-            Case "IMAGES (.JPG, .PNG, .GIF)", "IMAGES"
-                aqsQuery = aqsQuery & " AND (attachment:.jpg OR attachment:.jpeg OR attachment:.png OR attachment:.gif)"
-                
-            Case "POWERPOINT FILES (.PPT, .PPTX)", "POWERPOINT"
-                aqsQuery = aqsQuery & " AND (attachment:.ppt OR attachment:.pptx)"
-                
-            Case "ZIP/ARCHIVES", "ZIP", "ARCHIVES"
-                aqsQuery = aqsQuery & " AND (attachment:.zip OR attachment:.rar OR attachment:.7z)"
-        End Select
+        Dim attFilter As String
+        attFilter = BuildAttachmentAQS(criteria.AttachmentFilter)
+        If Len(attFilter) > 0 Then
+            aqsQuery = aqsQuery & " AND " & attFilter
+        End If
     End If
     
     ' Resolve folder
@@ -697,32 +677,13 @@ Private Function BuildAQSQuery(criteria As SearchCriteria) As String
     
     ' ATTACHMENT FILTERS
     ' NATIVE AQS: hasattachment:true/false, attachment:.ext (without wildcards)
+    ' Token format from form: "" / "NOATT" / "HASATT|PDF|XLS|DOC|IMG|PPT|ZIP"
     If Len(Trim(criteria.AttachmentFilter)) > 0 Then
-        Select Case UCase(Trim(criteria.AttachmentFilter))
-            Case "WITH ATTACHMENTS", "WITHATTACHMENTS", "YES"
-                queryParts.Add "hasattachment:true"
-                
-            Case "WITHOUT ATTACHMENTS", "WITHOUTATTACHMENTS", "NO", "NONE"
-                queryParts.Add "hasattachment:false"
-                
-            Case "PDF", "PDF FILES"
-                queryParts.Add "attachment:.pdf"
-                
-            Case "EXCEL", "EXCEL FILES (.XLS, .XLSX)", "XLS", "XLSX"
-                queryParts.Add "(attachment:.xlsx OR attachment:.xls OR attachment:.xlsm)"
-                
-            Case "WORD", "WORD FILES (.DOC, .DOCX)", "DOC", "DOCX"
-                queryParts.Add "(attachment:.docx OR attachment:.doc)"
-                
-            Case "IMAGES", "IMAGES (.JPG, .PNG, .GIF)", "JPG", "PNG", "GIF"
-                queryParts.Add "(attachment:.jpg OR attachment:.jpeg OR attachment:.png OR attachment:.gif)"
-                
-            Case "POWERPOINT", "POWERPOINT FILES (.PPT, .PPTX)", "PPT", "PPTX"
-                queryParts.Add "(attachment:.ppt OR attachment:.pptx)"
-                
-            Case "ZIP", "ZIP/ARCHIVES", "ARCHIVES"
-                queryParts.Add "(attachment:.zip OR attachment:.rar OR attachment:.7z)"
-        End Select
+        Dim attFilter As String
+        attFilter = BuildAttachmentAQS(criteria.AttachmentFilter)
+        If Len(attFilter) > 0 Then
+            queryParts.Add attFilter
+        End If
     End If
     
     ' SIZE FILTERS
@@ -910,6 +871,75 @@ Private Function ApplyFieldToTerms(fieldName As String, searchTerms As String) A
     ' Don't add parentheses - AQS handles operator precedence correctly
     ' AND has higher precedence than OR, so no wrapping needed
     ApplyFieldToTerms = result
+End Function
+
+'-----------------------------------------------------------
+' Function: BuildAttachmentAQS
+' Purpose: Convert token-based attachment filter to AQS
+' Parameters:
+'   tokenString (String) - Format: "" / "NOATT" / "HASATT|PDF|XLS|DOC|IMG|PPT|ZIP"
+' Returns: AQS filter string
+' Notes: Handles multiple attachment types with OR logic
+'-----------------------------------------------------------
+Private Function BuildAttachmentAQS(tokenString As String) As String
+    Dim tokens() As String
+    Dim i As Integer
+    Dim typeFilters As Collection
+    Dim hasAttFilter As Boolean
+    Dim token As String
+    Dim result As String
+    
+    tokenString = Trim(tokenString)
+    
+    ' Empty = no filter
+    If Len(tokenString) = 0 Then
+        BuildAttachmentAQS = ""
+        Exit Function
+    End If
+    
+    ' NOATT = no attachments
+    If UCase(tokenString) = "NOATT" Then
+        BuildAttachmentAQS = "hasattachment:false"
+        Exit Function
+    End If
+    
+    ' Parse HASATT|TYPE|TYPE|...
+    tokens = Split(tokenString, "|")
+    Set typeFilters = New Collection
+    hasAttFilter = False
+    
+    For i = LBound(tokens) To UBound(tokens)
+        token = UCase(Trim(tokens(i)))
+        
+        If token = "HASATT" Then
+            hasAttFilter = True
+        ElseIf token = "PDF" Then
+            typeFilters.Add "attachment:.pdf"
+        ElseIf token = "XLS" Then
+            typeFilters.Add "(attachment:.xlsx OR attachment:.xls OR attachment:.xlsm)"
+        ElseIf token = "DOC" Then
+            typeFilters.Add "(attachment:.docx OR attachment:.doc)"
+        ElseIf token = "IMG" Then
+            typeFilters.Add "(attachment:.jpg OR attachment:.jpeg OR attachment:.png OR attachment:.gif)"
+        ElseIf token = "PPT" Then
+            typeFilters.Add "(attachment:.ppt OR attachment:.pptx)"
+        ElseIf token = "ZIP" Then
+            typeFilters.Add "(attachment:.zip OR attachment:.rar OR attachment:.7z)"
+        End If
+    Next i
+    
+    ' Build result
+    If hasAttFilter Then
+        If typeFilters.Count > 0 Then
+            ' Has attachments + specific types
+            result = "hasattachment:true AND (" & JoinCollection(typeFilters, " OR ") & ")"
+        Else
+            ' Just has attachments (no type filter)
+            result = "hasattachment:true"
+        End If
+    End If
+    
+    BuildAttachmentAQS = result
 End Function
 
 ' ============================================

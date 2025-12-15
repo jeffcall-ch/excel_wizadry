@@ -1,12 +1,28 @@
 ' ============================================
-' UserForm: frmEmailSearch (SIMPLIFIED VERSION)
-' Purpose: Programmatic search form with minimal UI
-' Features: Single search box + checkboxes for search scope
-' Date: 2024-12-15
+' UserForm: frmEmailSearch (MODERN UI)
+' Purpose: Email search with modern Outlook-inspired design
+' Features: Panel-based layout, refined typography, better visual hierarchy
+' Date: 2025-12-15
 ' ============================================
 
 Option Explicit
 
+' --------------------------------------------
+' THEME CONSTANTS
+' --------------------------------------------
+Private Const UI_FONT As String = "Segoe UI"
+Private Const UI_BG As Long = &HFFFFFF          ' White background
+Private Const UI_PANEL As Long = &HF0F0F0       ' Light gray panel (darker for contrast)
+Private Const UI_TEXT As Long = &H000000        ' Black text
+Private Const UI_MUTED As Long = &H666666       ' Darker muted gray for labels
+Private Const UI_LINE As Long = &HD0D0D0        ' Darker gray separator
+Private Const UI_ACCENT As Long = &HC35600      ' Stronger accent (darker orange-blue)
+Private Const UI_BORDER As Long = &HC0C0C0      ' Panel border
+
+Private Const M As Single = 14                  ' Margin
+Private Const G As Single = 12                  ' Gap
+
+' --------------------------------------------
 ' Module-level controls (WithEvents for event handling)
 Private WithEvents lblFrom As MSForms.Label
 Private WithEvents lblTo As MSForms.Label
@@ -40,312 +56,330 @@ Private WithEvents btnClear As MSForms.CommandButton
 
 Private WithEvents lblStatus As MSForms.Label
 
+' New layout elements
+Private lblHeader As MSForms.Label
+Private lblSubHeader As MSForms.Label
+Private pnlHeaderLine As MSForms.Label
+
+Private fraPeople As MSForms.Frame
+Private fraQuery As MSForms.Frame
+Private fraScope As MSForms.Frame
+Private fraFilters As MSForms.Frame
+
 ' ============================================
 ' FORM INITIALIZATION
 ' ============================================
 
 Private Sub UserForm_Initialize()
-    ' Set form properties
-    Me.Caption = "Email Search (Simplified)"
-    Me.Width = 480
-    Me.Height = 475
-    
-    ' Create all controls programmatically
+    ApplyTheme
+    CreateHeader
+    CreatePanels
     CreateLabels
     CreateTextBoxes
     CreateCheckBoxes
     CreateComboBoxes
     CreateButtons
     CreateStatusLabel
-    
-    ' Populate controls with default values
     InitializeControlValues
+End Sub
+
+Private Sub ApplyTheme()
+    Me.Caption = "Email Search"
+    Me.Width = 640
+    Me.Height = 580
+    Me.BackColor = UI_BG
 End Sub
 
 ' ============================================
 ' CONTROL CREATION
 ' ============================================
 
-Private Sub CreateLabels()
-    ' From Label
-    Set lblFrom = Me.Controls.Add("Forms.Label.1", "lblFrom", True)
-    With lblFrom
-        .Left = 10
-        .Top = 10
-        .Width = 80
-        .Height = 18
-        .Caption = "From:"
-        .Font.Size = 10
-    End With
-    
-    ' To Label
-    Set lblTo = Me.Controls.Add("Forms.Label.1", "lblTo", True)
-    With lblTo
-        .Left = 10
-        .Top = 40
-        .Width = 80
-        .Height = 18
-        .Caption = "To:"
-        .Font.Size = 10
-    End With
-    
-    ' CC Label
-    Set lblCC = Me.Controls.Add("Forms.Label.1", "lblCC", True)
-    With lblCC
-        .Left = 10
-        .Top = 70
-        .Width = 80
-        .Height = 18
-        .Caption = "CC:"
-        .Font.Size = 10
-    End With
-    
-    ' Search Terms Label
-    Set lblSearchTerms = Me.Controls.Add("Forms.Label.1", "lblSearchTerms", True)
-    With lblSearchTerms
-        .Left = 10
-        .Top = 110
-        .Width = 80
-        .Height = 18
-        .Caption = "Search Terms:"
-        .Font.Size = 10
+Private Sub CreateHeader()
+    Set lblHeader = Me.Controls.Add("Forms.Label.1", "lblHeader", True)
+    With lblHeader
+        .Left = M
+        .Top = M
+        .Width = Me.Width - (2 * M)
+        .Height = 22
+        .Caption = "Search mail"
+        .Font.Name = UI_FONT
+        .Font.Size = 14
         .Font.Bold = True
+        .ForeColor = UI_TEXT
+        .BackStyle = fmBackStyleTransparent
     End With
-    
-    ' Search Help Label (operator reminder)
-    Set lblSearchHelp = Me.Controls.Add("Forms.Label.1", "lblSearchHelp", True)
-    With lblSearchHelp
-        .Left = 100
-        .Top = 135
-        .Width = 360
-        .Height = 14
-        .Caption = "Operators: , (OR)  + (AND)  * (wildcard)  ENTER (search)"
-        .Font.Size = 8
-        .ForeColor = RGB(100, 100, 100)  ' Gray text
+
+    Set lblSubHeader = Me.Controls.Add("Forms.Label.1", "lblSubHeader", True)
+    With lblSubHeader
+        .Left = M
+        .Top = lblHeader.Top + lblHeader.Height + 2
+        .Width = Me.Width - (2 * M)
+        .Height = 16
+        .Caption = "Enter criteria and press Enter or click Search."
+        .Font.Name = UI_FONT
+        .Font.Size = 9
+        .ForeColor = UI_MUTED
+        .BackStyle = fmBackStyleTransparent
     End With
-    
-    ' Search In Label
-    Set lblSearchIn = Me.Controls.Add("Forms.Label.1", "lblSearchIn", True)
-    With lblSearchIn
-        .Left = 10
-        .Top = 160
-        .Width = 80
-        .Height = 18
-        .Caption = "Search In:"
-        .Font.Size = 10
-    End With
-    
-    ' Date From Label
-    Set lblDateFrom = Me.Controls.Add("Forms.Label.1", "lblDateFrom", True)
-    With lblDateFrom
-        .Left = 10
-        .Top = 205
-        .Width = 80
-        .Height = 18
-        .Caption = "Date From:"
-        .Font.Size = 10
-    End With
-    
-    ' Date To Label
-    Set lblDateTo = Me.Controls.Add("Forms.Label.1", "lblDateTo", True)
-    With lblDateTo
-        .Left = 10
-        .Top = 235
-        .Width = 80
-        .Height = 18
-        .Caption = "Date To:"
-        .Font.Size = 10
-    End With
-    
-    ' Folder Label
-    Set lblFolder = Me.Controls.Add("Forms.Label.1", "lblFolder", True)
-    With lblFolder
-        .Left = 10
-        .Top = 275
-        .Width = 80
-        .Height = 18
-        .Caption = "Folder:"
-        .Font.Size = 10
-    End With
-    
-    ' Attachment Label
-    Set lblAttachment = Me.Controls.Add("Forms.Label.1", "lblAttachment", True)
-    With lblAttachment
-        .Left = 10
-        .Top = 310
-        .Width = 80
-        .Height = 18
-        .Caption = "Attachments:"
-        .Font.Size = 10
+
+    Set pnlHeaderLine = Me.Controls.Add("Forms.Label.1", "pnlHeaderLine", True)
+    With pnlHeaderLine
+        .Left = M
+        .Top = lblSubHeader.Top + lblSubHeader.Height + 10
+        .Width = Me.Width - (2 * M)
+        .Height = 1
+        .BackColor = UI_LINE
+        .Caption = ""
     End With
 End Sub
+
+Private Sub CreatePanels()
+    Dim topY As Single
+    Dim leftX As Single, rightX As Single
+    Dim colW As Single
+
+    topY = pnlHeaderLine.Top + 10
+    leftX = M
+    colW = (Me.Width - (2 * M) - G) / 2
+    rightX = leftX + colW + G
+
+    Set fraPeople = AddPanel("fraPeople", "People", leftX, topY, colW, 135)
+    Set fraQuery = AddPanel("fraQuery", "Keywords", rightX, topY, colW, 135)
+
+    topY = topY + fraPeople.Height + G
+    Set fraScope = AddPanel("fraScope", "Scope", leftX, topY, colW, 138)
+    Set fraFilters = AddPanel("fraFilters", "Filters", rightX, topY, colW, 138)
+End Sub
+
+Private Function AddPanel(ByVal name As String, ByVal title As String, _
+                              ByVal x As Single, ByVal y As Single, _
+                              ByVal w As Single, ByVal h As Single) As MSForms.Frame
+    Dim f As MSForms.Frame
+    Set f = Me.Controls.Add("Forms.Frame.1", name, True)
+    With f
+        .Left = x
+        .Top = y
+        .Width = w
+        .Height = h
+        .Caption = title
+        .Font.Name = UI_FONT
+        .Font.Size = 10
+        .Font.Bold = True
+        .ForeColor = UI_TEXT
+        .BackColor = UI_PANEL
+        .BorderColor = UI_BORDER
+        .BorderStyle = fmBorderStyleSingle
+        .SpecialEffect = fmSpecialEffectFlat
+    End With
+    Set AddPanel = f
+End Function
+
+Private Sub CreateLabels()
+    ' PEOPLE panel labels
+    Set lblFrom = AddLabel(fraPeople, "From", 10, 26, 50)
+    Set lblTo = AddLabel(fraPeople, "To", 10, 60, 50)
+    Set lblCC = AddLabel(fraPeople, "CC", 10, 94, 50)
+
+    ' QUERY panel labels
+    Set lblSearchTerms = AddLabel(fraQuery, "Search terms", 10, 26, 120)
+    lblSearchTerms.Font.Bold = True
+
+    Set lblSearchHelp = fraQuery.Controls.Add("Forms.Label.1", "lblSearchHelp", True)
+    With lblSearchHelp
+        .Left = 10
+        .Top = 96
+        .Width = fraQuery.Width - 20
+        .Height = 28
+        .Caption = "Operators: comma = OR, plus = AND, * = wildcard. Press Enter to search."
+        .Font.Name = UI_FONT
+        .Font.Size = 8
+        .ForeColor = UI_MUTED
+        .BackStyle = fmBackStyleTransparent
+    End With
+
+    ' FILTERS panel labels
+    Set lblDateFrom = AddLabel(fraFilters, "Date from", 10, 26, 50)
+    Set lblDateTo = AddLabel(fraFilters, "Date to", 10, 60, 50)
+    
+    ' Date format help text
+    Dim lblDateHelp As MSForms.Label
+    Set lblDateHelp = fraFilters.Controls.Add("Forms.Label.1", "lblDateHelp", True)
+    With lblDateHelp
+        .Left = 65
+        .Top = 80
+        .Width = fraFilters.Width - 75
+        .Height = 12
+        .Caption = "Format: dd.mm.yyyy"
+        .Font.Name = UI_FONT
+        .Font.Size = 8
+        .ForeColor = UI_MUTED
+        .BackStyle = fmBackStyleTransparent
+    End With
+End Sub
+
+Private Function AddLabel(ByVal host As Object, ByVal caption As String, _
+                              ByVal x As Single, ByVal y As Single, ByVal w As Single) As MSForms.Label
+    Dim l As MSForms.Label
+    Set l = host.Controls.Add("Forms.Label.1", "lbl_" & Replace(caption, " ", "_") & "_" & CStr(x) & "_" & CStr(y), True)
+    With l
+        .Left = x
+        .Top = y
+        .Width = w
+        .Height = 16
+        .Caption = caption
+        .Font.Name = UI_FONT
+        .Font.Size = 9
+        .ForeColor = UI_MUTED
+        .BackStyle = fmBackStyleTransparent
+    End With
+    Set AddLabel = l
+End Function
 
 Private Sub CreateTextBoxes()
-    ' From TextBox
-    Set txtFrom = Me.Controls.Add("Forms.TextBox.1", "txtFrom", True)
-    With txtFrom
-        .Left = 100
-        .Top = 10
-        .Width = 360
-        .Height = 24
-        .Font.Size = 10
-        .EnterKeyBehavior = False  ' Single line - Enter triggers default action
-    End With
-    
-    ' To TextBox
-    Set txtTo = Me.Controls.Add("Forms.TextBox.1", "txtTo", True)
-    With txtTo
-        .Left = 100
-        .Top = 40
-        .Width = 360
-        .Height = 24
-        .Font.Size = 10
-        .EnterKeyBehavior = False
-    End With
-    
-    ' CC TextBox
-    Set txtCC = Me.Controls.Add("Forms.TextBox.1", "txtCC", True)
-    With txtCC
-        .Left = 100
-        .Top = 70
-        .Width = 360
-        .Height = 24
-        .Font.Size = 10
-        .EnterKeyBehavior = False
-    End With
-    
-    ' Search Terms TextBox (wide, bold border)
-    Set txtSearchTerms = Me.Controls.Add("Forms.TextBox.1", "txtSearchTerms", True)
-    With txtSearchTerms
-        .Left = 100
-        .Top = 110
-        .Width = 360
-        .Height = 24
-        .Font.Size = 10
-        .Font.Bold = True
-        .EnterKeyBehavior = False  ' Single line - Enter triggers search
-    End With
-    
-    ' Date From TextBox
-    Set txtDateFrom = Me.Controls.Add("Forms.TextBox.1", "txtDateFrom", True)
-    With txtDateFrom
-        .Left = 100
-        .Top = 205
-        .Width = 100
-        .Height = 24
-        .Font.Size = 10
-    End With
-    
-    ' Date To TextBox
-    Set txtDateTo = Me.Controls.Add("Forms.TextBox.1", "txtDateTo", True)
-    With txtDateTo
-        .Left = 100
-        .Top = 235
-        .Width = 100
-        .Height = 24
-        .Font.Size = 10
-    End With
-End Sub
+    Dim tbW As Single
+    tbW = fraPeople.Width - 70
 
-Private Sub CreateCheckBoxes()
-    ' Subject CheckBox
-    Set chkSubject = Me.Controls.Add("Forms.CheckBox.1", "chkSubject", True)
+    Set txtFrom = AddTextBox(fraPeople, "txtFrom", 65, 22, tbW)
+    Set txtTo = AddTextBox(fraPeople, "txtTo", 65, 56, tbW)
+    Set txtCC = AddTextBox(fraPeople, "txtCC", 65, 90, tbW)
+
+    Set txtSearchTerms = AddTextBox(fraQuery, "txtSearchTerms", 10, 46, fraQuery.Width - 20)
+    txtSearchTerms.Font.Bold = True
+
+    ' Add Subject and Body checkboxes in Keywords panel
+    Set chkSubject = fraQuery.Controls.Add("Forms.CheckBox.1", "chkSubject", True)
     With chkSubject
-        .Left = 100
-        .Top = 160
-        .Width = 80
+        .Left = 10
+        .Top = 72
+        .Width = 100
         .Height = 18
         .Caption = "Subject"
+        .Font.Name = UI_FONT
         .Font.Size = 9
-        .Value = True  ' Default checked
+        .Value = True
     End With
-    
-    ' Body CheckBox
-    Set chkBody = Me.Controls.Add("Forms.CheckBox.1", "chkBody", True)
+
+    Set chkBody = fraQuery.Controls.Add("Forms.CheckBox.1", "chkBody", True)
     With chkBody
-        .Left = 190
-        .Top = 160
-        .Width = 80
+        .Left = 120
+        .Top = 72
+        .Width = 100
         .Height = 18
         .Caption = "Body"
+        .Font.Name = UI_FONT
         .Font.Size = 9
-        .Value = True  ' Default checked
+        .Value = True
     End With
-    
-    ' Include Subfolders CheckBox
-    Set chkSubFolders = Me.Controls.Add("Forms.CheckBox.1", "chkSubFolders", True)
+
+    Set txtDateFrom = AddTextBox(fraFilters, "txtDateFrom", 65, 22, fraFilters.Width - 75)
+    Set txtDateTo = AddTextBox(fraFilters, "txtDateTo", 65, 56, fraFilters.Width - 75)
+End Sub
+
+Private Function AddTextBox(ByVal host As Object, ByVal name As String, _
+                                ByVal x As Single, ByVal y As Single, ByVal w As Single) As MSForms.TextBox
+    Dim t As MSForms.TextBox
+    Set t = host.Controls.Add("Forms.TextBox.1", name, True)
+    With t
+        .Left = x
+        .Top = y
+        .Width = w
+        .Height = 22
+        .Font.Name = UI_FONT
+        .Font.Size = 10
+        .BorderStyle = fmBorderStyleSingle
+        .BorderColor = UI_BORDER
+        .SpecialEffect = fmSpecialEffectFlat
+        .EnterKeyBehavior = False
+    End With
+    Set AddTextBox = t
+End Function
+
+Private Sub CreateCheckBoxes()
+    Set chkSubFolders = fraScope.Controls.Add("Forms.CheckBox.1", "chkSubFolders", True)
     With chkSubFolders
-        .Left = 100
-        .Top = 300
-        .Width = 150
+        .Left = 10
+        .Top = 26
+        .Width = fraScope.Width - 20
         .Height = 18
-        .Caption = "Include Subfolders"
+        .Caption = "Include subfolders"
+        .Font.Name = UI_FONT
         .Font.Size = 9
-        .Value = True  ' Default checked
+        .Value = True
     End With
 End Sub
 
 Private Sub CreateComboBoxes()
-    ' Folder ComboBox
-    Set cboFolderName = Me.Controls.Add("Forms.ComboBox.1", "cboFolderName", True)
+    ' Folder label + combobox
+    Set lblFolder = AddLabel(fraScope, "Folder", 10, 46, 80)
+    Set cboFolderName = fraScope.Controls.Add("Forms.ComboBox.1", "cboFolderName", True)
     With cboFolderName
-        .Left = 100
-        .Top = 275
-        .Width = 360
-        .Height = 24
+        .Left = 10
+        .Top = 60
+        .Width = fraScope.Width - 20
+        .Height = 22
+        .Font.Name = UI_FONT
         .Font.Size = 10
         .Style = fmStyleDropDownList
     End With
-    
-    ' Attachment ComboBox
-    Set cboAttachment = Me.Controls.Add("Forms.ComboBox.1", "cboAttachment", True)
+
+    ' Attachment label + combobox
+    Set lblAttachment = AddLabel(fraFilters, "Attachments", 10, 84, 90)
+    Set cboAttachment = fraFilters.Controls.Add("Forms.ComboBox.1", "cboAttachment", True)
     With cboAttachment
-        .Left = 100
-        .Top = 310
-        .Width = 360
-        .Height = 24
+        .Left = 10
+        .Top = 100
+        .Width = fraFilters.Width - 20
+        .Height = 22
+        .Font.Name = UI_FONT
         .Font.Size = 10
         .Style = fmStyleDropDownList
     End With
 End Sub
 
 Private Sub CreateButtons()
-    ' Search Button
     Set btnSearch = Me.Controls.Add("Forms.CommandButton.1", "btnSearch", True)
     With btnSearch
-        .Left = 10
-        .Top = 375
-        .Width = 100
+        .Left = M
+        .Top = fraScope.Top + fraScope.Height + G
+        .Width = 130
         .Height = 30
         .Caption = "Search"
+        .Font.Name = UI_FONT
         .Font.Size = 10
         .Font.Bold = True
+        .BackColor = UI_ACCENT
+        .ForeColor = vbWhite
+        .TakeFocusOnClick = False
     End With
-    
-    ' Clear Button
+
     Set btnClear = Me.Controls.Add("Forms.CommandButton.1", "btnClear", True)
     With btnClear
-        .Left = 120
-        .Top = 375
-        .Width = 100
+        .Left = btnSearch.Left + btnSearch.Width + 10
+        .Top = btnSearch.Top
+        .Width = 110
         .Height = 30
         .Caption = "Clear"
+        .Font.Name = UI_FONT
         .Font.Size = 10
+        .BackColor = &HEFEFEF
+        .ForeColor = UI_TEXT
+        .TakeFocusOnClick = False
     End With
 End Sub
 
 Private Sub CreateStatusLabel()
-    ' Status Label (bottom of form)
     Set lblStatus = Me.Controls.Add("Forms.Label.1", "lblStatus", True)
     With lblStatus
-        .Left = 10
-        .Top = 420
-        .Width = 450
-        .Height = 35
-        .Caption = "Ready to search. Enter search criteria and click Search."
+        .Left = M
+        .Top = btnSearch.Top + btnSearch.Height + 10
+        .Width = Me.Width - (2 * M)
+        .Height = 34
+        .Caption = "Ready to search."
+        .Font.Name = UI_FONT
         .Font.Size = 9
-        .BackColor = &H8000000F  ' Light gray
+        .BackColor = &HFAFAFA
         .BorderStyle = fmBorderStyleSingle
+        .ForeColor = UI_TEXT
         .TextAlign = fmTextAlignLeft
         .WordWrap = True
     End With
@@ -381,6 +415,9 @@ Private Sub InitializeControlValues()
     ' Clear date fields
     txtDateFrom.Value = ""
     txtDateTo.Value = ""
+    
+    lblStatus.Caption = "Ready to search."
+    txtFrom.SetFocus
 End Sub
 
 ' ============================================
@@ -416,6 +453,20 @@ Private Sub txtCC_KeyPress(ByVal KeyAscii As MSForms.ReturnInteger)
     End If
 End Sub
 
+Private Sub txtDateFrom_KeyPress(ByVal KeyAscii As MSForms.ReturnInteger)
+    If KeyAscii = 13 Then
+        KeyAscii = 0
+        btnSearch_Click
+    End If
+End Sub
+
+Private Sub txtDateTo_KeyPress(ByVal KeyAscii As MSForms.ReturnInteger)
+    If KeyAscii = 13 Then
+        KeyAscii = 0
+        btnSearch_Click
+    End If
+End Sub
+
 Private Sub btnSearch_Click()
     On Error GoTo ErrorHandler
     
@@ -438,12 +489,8 @@ Private Sub btnSearch_Click()
     criteria.FolderName = cboFolderName.Value
     criteria.SearchSubFolders = chkSubFolders.Value
     
-    ' Add attachment filter
-    If cboAttachment.ListIndex > 0 Then
-        criteria.AttachmentFilter = cboAttachment.Value
-    Else
-        criteria.AttachmentFilter = ""
-    End If
+    ' Add attachment filter - convert dropdown selection to token format
+    criteria.AttachmentFilter = BuildAttachmentFilterToken()
     
     ' Validate: at least one checkbox must be checked if search terms entered
     If Len(criteria.SearchTerms) > 0 Then
@@ -459,22 +506,24 @@ Private Sub btnSearch_Click()
         Exit Sub
     End If
     
-    ' Parse dates if provided
+    ' Parse dates if provided (dd.mm.yyyy format)
     If Len(Trim(txtDateFrom.Value)) > 0 Then
-        If IsDate(txtDateFrom.Value) Then
-            criteria.DateFrom = CDate(txtDateFrom.Value)
+        Dim parsedDateFrom As Date
+        If ParseDDMMYYYY(txtDateFrom.Value, parsedDateFrom) Then
+            criteria.DateFrom = parsedDateFrom
         Else
-            MsgBox "Invalid 'Date From' format. Please use mm/dd/yyyy.", vbExclamation, "Invalid Date"
+            MsgBox "Invalid 'Date From' format. Please use dd.mm.yyyy.", vbExclamation, "Invalid Date"
             txtDateFrom.SetFocus
             Exit Sub
         End If
     End If
     
     If Len(Trim(txtDateTo.Value)) > 0 Then
-        If IsDate(txtDateTo.Value) Then
-            criteria.DateTo = CDate(txtDateTo.Value)
+        Dim parsedDateTo As Date
+        If ParseDDMMYYYY(txtDateTo.Value, parsedDateTo) Then
+            criteria.DateTo = parsedDateTo
         Else
-            MsgBox "Invalid 'Date To' format. Please use mm/dd/yyyy.", vbExclamation, "Invalid Date"
+            MsgBox "Invalid 'Date To' format. Please use dd.mm.yyyy.", vbExclamation, "Invalid Date"
             txtDateTo.SetFocus
             Exit Sub
         End If
@@ -516,7 +565,7 @@ Private Sub btnClear_Click()
     cboAttachment.ListIndex = 0
     
     ' Update status
-    lblStatus.Caption = "Ready to search. Enter search criteria and click Search."
+    lblStatus.Caption = "Ready to search."
     
     ' Focus on first field
     txtFrom.SetFocus
@@ -525,6 +574,80 @@ End Sub
 ' ============================================
 ' SEARCH TERM PARSER (Operator Conversion)
 ' ============================================
+
+'-----------------------------------------------------------
+' Function: BuildAttachmentFilterToken
+' Purpose: Convert dropdown selection to backend token format
+' Returns: Token string ("" / "NOATT" / "HASATT|PDF" / etc.)
+' Notes: Backend expects specific token format for attachment filters
+'-----------------------------------------------------------
+Private Function BuildAttachmentFilterToken() As String
+    Select Case cboAttachment.ListIndex
+        Case 0  ' --- (Any)
+            BuildAttachmentFilterToken = ""
+        Case 1  ' With Attachments
+            BuildAttachmentFilterToken = "HASATT"
+        Case 2  ' Without Attachments
+            BuildAttachmentFilterToken = "NOATT"
+        Case 3  ' PDF Files
+            BuildAttachmentFilterToken = "HASATT|PDF"
+        Case 4  ' Excel Files (.xls, .xlsx)
+            BuildAttachmentFilterToken = "HASATT|XLS"
+        Case 5  ' Word Files (.doc, .docx)
+            BuildAttachmentFilterToken = "HASATT|DOC"
+        Case 6  ' Images (.jpg, .png, .gif)
+            BuildAttachmentFilterToken = "HASATT|IMG"
+        Case 7  ' PowerPoint Files (.ppt, .pptx)
+            BuildAttachmentFilterToken = "HASATT|PPT"
+        Case 8  ' ZIP/Archives
+            BuildAttachmentFilterToken = "HASATT|ZIP"
+        Case Else
+            BuildAttachmentFilterToken = ""
+    End Select
+End Function
+
+'-----------------------------------------------------------
+' Function: ParseDDMMYYYY
+' Purpose: Parse date string in dd.mm.yyyy format
+' Parameters:
+'   dateStr (String) - Date string in dd.mm.yyyy format
+'   outDate (Date) - Output parameter for parsed date
+' Returns: Boolean - True if parsing succeeded, False otherwise
+'-----------------------------------------------------------
+Private Function ParseDDMMYYYY(ByVal dateStr As String, ByRef outDate As Date) As Boolean
+    On Error GoTo ParseError
+    
+    Dim parts() As String
+    Dim day As Integer, month As Integer, year As Integer
+    
+    ' Split by dot
+    parts = Split(Trim(dateStr), ".")
+    
+    ' Must have exactly 3 parts
+    If UBound(parts) - LBound(parts) + 1 <> 3 Then
+        ParseDDMMYYYY = False
+        Exit Function
+    End If
+    
+    ' Parse day, month, year
+    day = CInt(parts(0))
+    month = CInt(parts(1))
+    year = CInt(parts(2))
+    
+    ' Validate ranges
+    If day < 1 Or day > 31 Or month < 1 Or month > 12 Or year < 1900 Or year > 2100 Then
+        ParseDDMMYYYY = False
+        Exit Function
+    End If
+    
+    ' Create date using DateSerial
+    outDate = DateSerial(year, month, day)
+    ParseDDMMYYYY = True
+    Exit Function
+    
+ParseError:
+    ParseDDMMYYYY = False
+End Function
 
 '-----------------------------------------------------------
 ' Function: ParseSearchTerms
