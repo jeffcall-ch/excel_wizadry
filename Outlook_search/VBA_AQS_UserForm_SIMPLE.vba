@@ -1,5 +1,5 @@
 ' ============================================
-' UserForm: frmEmailSearch (MODERN UI)
+' UserForm: frmEmailSearch (LAYOUT OPTIMIZED)
 ' Purpose: Email search with modern Outlook-inspired design
 ' Features: Panel-based layout, refined typography, better visual hierarchy
 ' Date: 2025-12-15
@@ -12,18 +12,19 @@ Option Explicit
 ' --------------------------------------------
 Private Const UI_FONT As String = "Segoe UI"
 Private Const UI_BG As Long = &HFFFFFF          ' White background
-Private Const UI_PANEL As Long = &HF0F0F0       ' Light gray panel (darker for contrast)
+Private Const UI_PANEL As Long = &HF0F0F0       ' Light gray panel
 Private Const UI_TEXT As Long = &H000000        ' Black text
 Private Const UI_MUTED As Long = &H666666       ' Darker muted gray for labels
 Private Const UI_LINE As Long = &HD0D0D0        ' Darker gray separator
-Private Const UI_ACCENT As Long = &HC35600      ' Stronger accent (darker orange-blue)
+Private Const UI_ACCENT As Long = &HC35600      ' Stronger accent (Search button)
 Private Const UI_BORDER As Long = &HC0C0C0      ' Panel border
 
-Private Const M As Single = 14                  ' Margin
-Private Const G As Single = 12                  ' Gap
+Private Const M As Single = 14                  ' Margin (14pt)
+Private Const G As Single = 12                  ' Gap (12pt)
 
 ' --------------------------------------------
 ' Module-level controls (WithEvents for event handling)
+' --------------------------------------------
 Private WithEvents lblFrom As MSForms.Label
 Private WithEvents lblTo As MSForms.Label
 Private WithEvents lblCC As MSForms.Label
@@ -56,11 +57,10 @@ Private WithEvents btnClear As MSForms.CommandButton
 
 Private WithEvents lblStatus As MSForms.Label
 
-' New layout elements
+' Layout elements
 Private lblHeader As MSForms.Label
 Private lblSubHeader As MSForms.Label
 Private pnlHeaderLine As MSForms.Label
-
 Private fraPeople As MSForms.Frame
 Private fraQuery As MSForms.Frame
 Private fraScope As MSForms.Frame
@@ -86,7 +86,8 @@ End Sub
 Private Sub ApplyTheme()
     Me.Caption = "Email Search"
     Me.Width = 640
-    Me.Height = 580
+    ' *** OPTIMIZED: Reduced height for tighter fit ***
+    Me.Height = 465 
     Me.BackColor = UI_BG
 End Sub
 
@@ -140,6 +141,7 @@ Private Sub CreatePanels()
 
     topY = pnlHeaderLine.Top + 10
     leftX = M
+    ' Calculate column width based on total form width
     colW = (Me.Width - (2 * M) - G) / 2
     rightX = leftX + colW + G
 
@@ -236,17 +238,22 @@ Private Function AddLabel(ByVal host As Object, ByVal caption As String, _
 End Function
 
 Private Sub CreateTextBoxes()
-    Dim tbW As Single
-    tbW = fraPeople.Width - 70
+    Dim tbW_People As Single 
+    Dim tbW_Query As Single  
 
-    Set txtFrom = AddTextBox(fraPeople, "txtFrom", 65, 22, tbW)
-    Set txtTo = AddTextBox(fraPeople, "txtTo", 65, 56, tbW)
-    Set txtCC = AddTextBox(fraPeople, "txtCC", 65, 90, tbW)
+    ' *** OPTIMIZED: Shorter width for People textboxes ***
+    tbW_People = 200 
 
-    Set txtSearchTerms = AddTextBox(fraQuery, "txtSearchTerms", 10, 46, fraQuery.Width - 20)
+    Set txtFrom = AddTextBox(fraPeople, "txtFrom", 65, 22, tbW_People)
+    Set txtTo = AddTextBox(fraPeople, "txtTo", 65, 56, tbW_People)
+    Set txtCC = AddTextBox(fraPeople, "txtCC", 65, 90, tbW_People)
+
+    ' *** OPTIMIZED: Shorter width for Search Terms textbox ***
+    tbW_Query = 250 
+    Set txtSearchTerms = AddTextBox(fraQuery, "txtSearchTerms", 10, 46, tbW_Query)
     txtSearchTerms.Font.Bold = True
 
-    ' Add Subject and Body checkboxes in Keywords panel
+    ' Add Subject and Body checkboxes in Keywords panel (grouped with search terms)
     Set chkSubject = fraQuery.Controls.Add("Forms.CheckBox.1", "chkSubject", True)
     With chkSubject
         .Left = 10
@@ -309,7 +316,7 @@ Private Sub CreateCheckBoxes()
 End Sub
 
 Private Sub CreateComboBoxes()
-    ' Folder label + combobox
+    ' Folder label + combobox (Scope panel)
     Set lblFolder = AddLabel(fraScope, "Folder", 10, 46, 80)
     Set cboFolderName = fraScope.Controls.Add("Forms.ComboBox.1", "cboFolderName", True)
     With cboFolderName
@@ -322,7 +329,7 @@ Private Sub CreateComboBoxes()
         .Style = fmStyleDropDownList
     End With
 
-    ' Attachment label + combobox
+    ' Attachment label + combobox (Filters panel)
     Set lblAttachment = AddLabel(fraFilters, "Attachments", 10, 84, 90)
     Set cboAttachment = fraFilters.Controls.Add("Forms.ComboBox.1", "cboAttachment", True)
     With cboAttachment
@@ -337,6 +344,7 @@ Private Sub CreateComboBoxes()
 End Sub
 
 Private Sub CreateButtons()
+    ' Positioned below the main panels
     Set btnSearch = Me.Controls.Add("Forms.CommandButton.1", "btnSearch", True)
     With btnSearch
         .Left = M
@@ -350,6 +358,7 @@ Private Sub CreateButtons()
         .BackColor = UI_ACCENT
         .ForeColor = vbWhite
         .TakeFocusOnClick = False
+        .Default = True  ' Makes Enter key trigger this button from anywhere in the form
     End With
 
     Set btnClear = Me.Controls.Add("Forms.CommandButton.1", "btnClear", True)
@@ -412,6 +421,11 @@ Private Sub InitializeControlValues()
         .ListIndex = 0  ' Default to "Any"
     End With
     
+    ' Set search scope defaults
+    chkSubject.Value = True
+    chkBody.Value = True
+    chkSubFolders.Value = True
+    
     ' Clear date fields
     txtDateFrom.Value = ""
     txtDateTo.Value = ""
@@ -421,50 +435,32 @@ Private Sub InitializeControlValues()
 End Sub
 
 ' ============================================
-' BUTTON EVENT HANDLERS
+' BUTTON EVENT HANDLERS (Functionality)
 ' ============================================
 
-' ENTER KEY HANDLER - Execute search when Enter pressed in any textbox
+' ENTER KEY HANDLER - Execute search when Enter pressed in any relevant textbox
 Private Sub txtSearchTerms_KeyPress(ByVal KeyAscii As MSForms.ReturnInteger)
-    If KeyAscii = 13 Then  ' Enter key
-        KeyAscii = 0  ' Suppress beep
-        btnSearch_Click  ' Execute search
-    End If
+    If KeyAscii = 13 Then KeyAscii = 0: btnSearch_Click
 End Sub
 
 Private Sub txtFrom_KeyPress(ByVal KeyAscii As MSForms.ReturnInteger)
-    If KeyAscii = 13 Then
-        KeyAscii = 0
-        btnSearch_Click
-    End If
+    If KeyAscii = 13 Then KeyAscii = 0: btnSearch_Click
 End Sub
 
 Private Sub txtTo_KeyPress(ByVal KeyAscii As MSForms.ReturnInteger)
-    If KeyAscii = 13 Then
-        KeyAscii = 0
-        btnSearch_Click
-    End If
+    If KeyAscii = 13 Then KeyAscii = 0: btnSearch_Click
 End Sub
 
 Private Sub txtCC_KeyPress(ByVal KeyAscii As MSForms.ReturnInteger)
-    If KeyAscii = 13 Then
-        KeyAscii = 0
-        btnSearch_Click
-    End If
+    If KeyAscii = 13 Then KeyAscii = 0: btnSearch_Click
 End Sub
 
 Private Sub txtDateFrom_KeyPress(ByVal KeyAscii As MSForms.ReturnInteger)
-    If KeyAscii = 13 Then
-        KeyAscii = 0
-        btnSearch_Click
-    End If
+    If KeyAscii = 13 Then KeyAscii = 0: btnSearch_Click
 End Sub
 
 Private Sub txtDateTo_KeyPress(ByVal KeyAscii As MSForms.ReturnInteger)
-    If KeyAscii = 13 Then
-        KeyAscii = 0
-        btnSearch_Click
-    End If
+    If KeyAscii = 13 Then KeyAscii = 0: btnSearch_Click
 End Sub
 
 Private Sub btnSearch_Click()
@@ -473,12 +469,11 @@ Private Sub btnSearch_Click()
     Dim criteria As SearchCriteria
     Dim rawSearchTerms As String
     
-    ' Build criteria from form fields
+    ' 1. Collect and parse data
     criteria.FromAddress = Trim(txtFrom.Value)
     criteria.ToAddress = Trim(txtTo.Value)
     criteria.CcAddress = Trim(txtCC.Value)
     
-    ' Parse search terms: convert , to OR, + to AND, keep * as wildcard
     rawSearchTerms = Trim(txtSearchTerms.Value)
     If Len(rawSearchTerms) > 0 Then
         criteria.SearchTerms = ParseSearchTerms(rawSearchTerms)
@@ -488,11 +483,10 @@ Private Sub btnSearch_Click()
     
     criteria.FolderName = cboFolderName.Value
     criteria.SearchSubFolders = chkSubFolders.Value
-    
-    ' Add attachment filter - convert dropdown selection to token format
     criteria.AttachmentFilter = BuildAttachmentFilterToken()
     
-    ' Validate: at least one checkbox must be checked if search terms entered
+    ' 2. Validation Checks
+    ' Check if search location is selected if terms exist
     If Len(criteria.SearchTerms) > 0 Then
         If Not (chkSubject.Value Or chkBody.Value) Then
             MsgBox "Please check where to search (Subject, Body, or both).", vbExclamation, "No Search Location"
@@ -500,13 +494,13 @@ Private Sub btnSearch_Click()
         End If
     End If
     
-    ' Validate: at least SOMETHING to search for
+    ' Check for any criteria
     If Len(criteria.FromAddress) = 0 And Len(criteria.ToAddress) = 0 And Len(criteria.CcAddress) = 0 And Len(criteria.SearchTerms) = 0 Then
         MsgBox "Please enter at least one search criterion (From, To, CC, or Search Terms).", vbExclamation, "No Search Criteria"
         Exit Sub
     End If
     
-    ' Parse dates if provided (dd.mm.yyyy format)
+    ' Parse Date From
     If Len(Trim(txtDateFrom.Value)) > 0 Then
         Dim parsedDateFrom As Date
         If ParseDDMMYYYY(txtDateFrom.Value, parsedDateFrom) Then
@@ -518,6 +512,7 @@ Private Sub btnSearch_Click()
         End If
     End If
     
+    ' Parse Date To
     If Len(Trim(txtDateTo.Value)) > 0 Then
         Dim parsedDateTo As Date
         If ParseDDMMYYYY(txtDateTo.Value, parsedDateTo) Then
@@ -529,10 +524,10 @@ Private Sub btnSearch_Click()
         End If
     End If
     
-    ' Update status
+    ' 3. Execute Search
     lblStatus.Caption = "Searching..."
     
-    ' Execute search via ThisOutlookSession - pass checkboxes for WHERE to search
+    ' Execute search via ThisOutlookSession - criteria is passed by value (copy)
     ThisOutlookSession.ExecuteSimplifiedSearch criteria, chkSubject.Value, chkBody.Value
     
     lblStatus.Caption = "Search launched. Results shown in Outlook window."
@@ -553,34 +548,23 @@ Private Sub btnClear_Click()
     txtDateFrom.Value = ""
     txtDateTo.Value = ""
     
-    ' Reset checkboxes to default (both checked)
+    ' Reset checkboxes to default
     chkSubject.Value = True
     chkBody.Value = True
     chkSubFolders.Value = True
     
-    ' Reset folder to All Folders
+    ' Reset dropdowns
     cboFolderName.ListIndex = 4
-    
-    ' Reset attachment filter
     cboAttachment.ListIndex = 0
     
-    ' Update status
     lblStatus.Caption = "Ready to search."
-    
-    ' Focus on first field
     txtFrom.SetFocus
 End Sub
 
 ' ============================================
-' SEARCH TERM PARSER (Operator Conversion)
+' UTILITY FUNCTIONS
 ' ============================================
 
-'-----------------------------------------------------------
-' Function: BuildAttachmentFilterToken
-' Purpose: Convert dropdown selection to backend token format
-' Returns: Token string ("" / "NOATT" / "HASATT|PDF" / etc.)
-' Notes: Backend expects specific token format for attachment filters
-'-----------------------------------------------------------
 Private Function BuildAttachmentFilterToken() As String
     Select Case cboAttachment.ListIndex
         Case 0  ' --- (Any)
@@ -606,14 +590,6 @@ Private Function BuildAttachmentFilterToken() As String
     End Select
 End Function
 
-'-----------------------------------------------------------
-' Function: ParseDDMMYYYY
-' Purpose: Parse date string in dd.mm.yyyy format
-' Parameters:
-'   dateStr (String) - Date string in dd.mm.yyyy format
-'   outDate (Date) - Output parameter for parsed date
-' Returns: Boolean - True if parsing succeeded, False otherwise
-'-----------------------------------------------------------
 Private Function ParseDDMMYYYY(ByVal dateStr As String, ByRef outDate As Date) As Boolean
     On Error GoTo ParseError
     
@@ -634,13 +610,7 @@ Private Function ParseDDMMYYYY(ByVal dateStr As String, ByRef outDate As Date) A
     month = CInt(parts(1))
     year = CInt(parts(2))
     
-    ' Validate ranges
-    If day < 1 Or day > 31 Or month < 1 Or month > 12 Or year < 1900 Or year > 2100 Then
-        ParseDDMMYYYY = False
-        Exit Function
-    End If
-    
-    ' Create date using DateSerial
+    ' Create date using DateSerial (handles date validity automatically)
     outDate = DateSerial(year, month, day)
     ParseDDMMYYYY = True
     Exit Function
@@ -649,28 +619,15 @@ ParseError:
     ParseDDMMYYYY = False
 End Function
 
-'-----------------------------------------------------------
-' Function: ParseSearchTerms
-' Purpose: Convert user-friendly operators to AQS syntax
-' Parameters:
-'   rawTerms (String) - User input with , + * operators
-' Returns: Parsed string with OR/AND operators
-' Notes: Comma (,) = OR, Plus (+) = AND, Asterisk (*) = wildcard (kept as-is)
-'        Examples:
-'          "invoice, receipt" → "invoice OR receipt"
-'          "urgent+meeting" → "urgent AND meeting"
-'          "proj*" → "proj*" (wildcard stays)
-'          "invoice, urgent+project*" → "invoice OR urgent AND project*"
-'-----------------------------------------------------------
 Private Function ParseSearchTerms(rawTerms As String) As String
     Dim result As String
     
     result = rawTerms
     
-    ' Replace comma with OR (spaces around for clarity)
+    ' Replace comma with OR
     result = Replace(result, ",", " OR ")
     
-    ' Replace plus with AND (spaces around for clarity)
+    ' Replace plus with AND
     result = Replace(result, "+", " AND ")
     
     ' Clean up multiple spaces
@@ -678,6 +635,5 @@ Private Function ParseSearchTerms(rawTerms As String) As String
         result = Replace(result, "  ", " ")
     Loop
     
-    ' Trim final result
     ParseSearchTerms = Trim(result)
 End Function
