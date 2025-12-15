@@ -1269,15 +1269,14 @@ def save_to_csv(data, output_file):
 if __name__ == "__main__":
     # Define file paths
     txt_files = [
-        Path(__file__).parent / "ADI" / "0AUX-P-INN_8_Dec_2025.TXT",
-        Path(__file__).parent / "ADI" / "1AUX-P-INN_8_Dec_2025.TXT",
-        Path(__file__).parent / "ADI" / "2AUX-P-INN_8_Dec_2025.TXT"
+        Path(__file__).parent / "TBY" / "TBY-0AUX-P.txt",
+        Path(__file__).parent / "TBY" / "TBY-1AUX-P.txt"
     ]
-    excel_file = Path(__file__).parent / "ADI" / "ADI_PIPE_SPECS_ALL.xlsx"
-    output_csv = Path(__file__).parent / "ADI" / "components_with_welds.csv"
-    output_branches_csv = Path(__file__).parent / "ADI" / "branch_connections.csv"
-    output_branch_coord_csv = Path(__file__).parent / "ADI" / "connected_branches.csv"
-    output_adjacency_csv = Path(__file__).parent / "ADI" / "component_adjacency.csv"
+    excel_file = Path(__file__).parent / "TBY" / "TBY_all_pspecs_wure_macro_08.12.2025.xlsx"
+    output_csv = Path(__file__).parent / "TBY" / "components_with_welds.csv"
+    output_branches_csv = Path(__file__).parent / "TBY" / "branch_connections.csv"
+    output_branch_coord_csv = Path(__file__).parent / "TBY" / "connected_branches.csv"
+    output_adjacency_csv = Path(__file__).parent / "TBY" / "component_adjacency.csv"
     
     all_components = []
     all_branches = []
@@ -1374,7 +1373,7 @@ if __name__ == "__main__":
     print(f"Branch connections written: {len(all_branches)}")
     
     # Save components at branch ends to CSV
-    output_ends_csv = Path(__file__).parent / "ADI" / 'components_at_branch_ends.csv'
+    output_ends_csv = Path(__file__).parent / "TBY" / 'components_at_branch_ends.csv'
     print(f"\nSaving components at branch ends to: {output_ends_csv}")
     with open(output_ends_csv, 'w', newline='', encoding='utf-8') as csvfile:
         fieldnames = ['KKS_Pipe', 'Branch', 'Full_Branch_ID', 'Component_Name', 'Component_Type', 
@@ -1389,7 +1388,7 @@ if __name__ == "__main__":
     print(f"Components at branch ends written: {len(all_components_at_ends)}")
     
     # Create BWD connections report
-    output_bwd_report_csv = Path(__file__).parent / "ADI" / 'bwd_connections_report.csv'
+    output_bwd_report_csv = Path(__file__).parent / "TBY" / 'bwd_connections_report.csv'
     print(f"\nGenerating BWD connections report...")
     
     # Create a lookup for components at branch ends
