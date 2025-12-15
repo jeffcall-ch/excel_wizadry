@@ -91,10 +91,10 @@ Public Sub ExecuteSimplifiedSearch(criteria As SearchCriteria, _
         If searchBody Then whereParts.Add ApplyFieldToTerms("body", searchTerms)
         
         ' Combine WHERE clauses with OR (search in subject OR body)
-        ' Each field query already has proper term grouping
+        ' If more than one field, wrap the OR group in double parentheses for correct AND/OR precedence
         If whereParts.Count > 0 Then
             If whereParts.Count > 1 Then
-                queryParts.Add JoinCollection(whereParts, " OR ")
+                queryParts.Add "((" & JoinCollection(whereParts, " OR ") & "))"
             Else
                 queryParts.Add whereParts(1)
             End If
@@ -856,18 +856,18 @@ Private Function ApplyFieldToTerms(fieldName As String, searchTerms As String) A
     Dim token As String
     Dim hasAnd As Boolean
     Dim hasOr As Boolean
-    
+
     ' Check if expression contains operators
     hasAnd = InStr(1, searchTerms, " AND ", vbTextCompare) > 0
     hasOr = InStr(1, searchTerms, " OR ", vbTextCompare) > 0
-    
+
     ' Split by spaces to tokenize
     tokens = Split(searchTerms, " ")
-    
+
     result = ""
     For i = LBound(tokens) To UBound(tokens)
         token = Trim(tokens(i))
-        
+
         If Len(token) > 0 Then
             ' Check if token is an operator
             If UCase(token) = "AND" Or UCase(token) = "OR" Then
@@ -879,15 +879,18 @@ Private Function ApplyFieldToTerms(fieldName As String, searchTerms As String) A
             End If
         End If
     Next i
-    
+
     ' Clean up extra spaces
     result = Trim(result)
     Do While InStr(result, "  ") > 0
         result = Replace(result, "  ", " ")
     Loop
-    
-    ' Don't add parentheses - AQS handles operator precedence correctly
-    ' AND has higher precedence than OR, so no wrapping needed
+
+    ' If the searchTerms contains OR, wrap the result in parentheses for correct precedence
+    If hasOr Then
+        result = "(" & result & ")"
+    End If
+
     ApplyFieldToTerms = result
 End Function
 
