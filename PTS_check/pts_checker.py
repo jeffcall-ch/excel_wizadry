@@ -189,7 +189,7 @@ def calculate_requested_dates(df_plan, df_general, df_constraints, matched_activ
         df_holidays: Optional DataFrame with holiday periods
     
     Returns:
-        List of conflict messages (empty if no conflicts)
+        Tuple of (conflicts list, dependency_map) where dependency_map tracks formula relationships
     """
     
     def ensure_weekday(date):
@@ -206,7 +206,7 @@ def calculate_requested_dates(df_plan, df_general, df_constraints, matched_activ
     
     if mobilisation_name not in matched_activities:
         print(f"Warning: Mobilisation milestone '{mobilisation_name}' not found in matched activities")
-        return []
+        return [], {}
     
     mobilisation_idx = matched_activities[mobilisation_name]
     mobilisation_start = df_plan.at[mobilisation_idx, 'Start']
@@ -219,7 +219,7 @@ def calculate_requested_dates(df_plan, df_general, df_constraints, matched_activ
         print(f"  Start date: {anchor_date.strftime('%d/%m/%Y')}")
     except Exception as e:
         print(f"Error parsing mobilisation start date: {e}")
-        return []
+        return [], {}
     
     # Parse holiday periods if provided
     holiday_periods = []
@@ -238,6 +238,11 @@ def calculate_requested_dates(df_plan, df_general, df_constraints, matched_activ
             'sources': ['Anchor milestone (reference point)']
         }
     }
+    
+    # Track dependency relationships for formula building
+    # Structure: {activity_name: {'reference_activity': name, 'weeks': num, 'direction': 'before'/'after'}}
+    dependency_map = {}
+    dependency_map[mobilisation_name] = {'reference': 'anchor', 'weeks': 0, 'direction': 'anchor'}
     
     # Track conflicts
     conflicts = []
@@ -279,6 +284,7 @@ def calculate_requested_dates(df_plan, df_general, df_constraints, matched_activ
                     reason = f"{int(total_weeks)}W before '{to_activity}'{comment_suffix}. Originally {from_date_initial.strftime('%d/%m/%Y')} (based on {int(duration_weeks)}W), shifted by {adder_weeks}W due to {holiday_desc}"
                 else:
                     from_date = from_date_initial
+                    total_weeks = duration_weeks
                     reason = f"{int(duration_weeks)}W before '{to_activity}'{comment_suffix}"
                 
                 if from_activity in activity_dates:
@@ -301,6 +307,13 @@ def calculate_requested_dates(df_plan, df_general, df_constraints, matched_activ
                         'date': from_date,
                         'sources': [reason]
                     }
+                    # Store dependency for formula building
+                    if from_activity not in dependency_map:
+                        dependency_map[from_activity] = {
+                            'reference': to_activity,
+                            'weeks': total_weeks,
+                            'direction': 'before'
+                        }
                     progress_made = True
             
             # FORWARD calculation: if "From" date is known but "To" date needs to be calculated/verified
@@ -319,6 +332,7 @@ def calculate_requested_dates(df_plan, df_general, df_constraints, matched_activ
                     reason = f"{int(total_weeks)}W after '{from_activity}'{comment_suffix}. Originally {to_date_initial.strftime('%d/%m/%Y')} (based on {int(duration_weeks)}W), shifted by {adder_weeks}W due to {holiday_desc}"
                 else:
                     to_date = to_date_initial
+                    total_weeks = duration_weeks
                     reason = f"{int(duration_weeks)}W after '{from_activity}'{comment_suffix}"
                 
                 if to_activity in activity_dates:
@@ -341,6 +355,13 @@ def calculate_requested_dates(df_plan, df_general, df_constraints, matched_activ
                         'date': to_date,
                         'sources': [reason]
                     }
+                    # Store dependency for formula building
+                    if to_activity not in dependency_map:
+                        dependency_map[to_activity] = {
+                            'reference': from_activity,
+                            'weeks': total_weeks,
+                            'direction': 'after'
+                        }
                     progress_made = True
         
         # If no progress was made, we're done
@@ -362,7 +383,7 @@ def calculate_requested_dates(df_plan, df_general, df_constraints, matched_activ
             # Set comment (use the first source)
             df_plan.at[row_idx, 'Comment'] = date_info['sources'][0]
     
-    return conflicts
+    return conflicts, dependency_map
 
 
 def calculate_current_lengths(df_plan, df_constraints, matched_activities):
@@ -476,16 +497,17 @@ def process_pts_file(project_plan_path, general_file_path, similarity_threshold=
     # Create new columns after the rightmost column
     insert_position = rightmost_col_idx + 1
     
-    # Add "Current length", "Requested date" and "Comment" columns
+    # Add "Current length", "Requested date", "Requested dates editable" and "Comment" columns
     df_plan.insert(insert_position, 'Current length', '')
     df_plan.insert(insert_position + 1, 'Requested date', '')
-    df_plan.insert(insert_position + 2, 'Comment', '')
-    df_plan.insert(insert_position + 3, 'Similarity Score %', '')
+    df_plan.insert(insert_position + 2, 'Requested dates editable', '')
+    df_plan.insert(insert_position + 3, 'Comment', '')
+    df_plan.insert(insert_position + 4, 'Similarity Score %', '')
     
     # Add category columns
     category_columns = ['Important for GP', 'Piping', 'Hangers', 'Additional Material', 'Valves']
     for i, cat_col in enumerate(category_columns):
-        df_plan.insert(insert_position + 4 + i, cat_col, '')
+        df_plan.insert(insert_position + 5 + i, cat_col, '')
     
     # Process each activity - NEW APPROACH: Find best match for each important activity
     print(f"\nMatching activities (threshold: {similarity_threshold}%)...")
@@ -558,7 +580,7 @@ def process_pts_file(project_plan_path, general_file_path, similarity_threshold=
     
     # Calculate requested dates based on constraints
     print(f"\nCalculating requested dates based on dependencies...")
-    conflicts = calculate_requested_dates(df_plan, df_general, df_constraints, matched_activities, df_holidays)
+    conflicts, dependency_map = calculate_requested_dates(df_plan, df_general, df_constraints, matched_activities, df_holidays)
     
     # Calculate current lengths between activities
     print(f"\nCalculating current durations between activities...")
@@ -592,7 +614,7 @@ def process_pts_file(project_plan_path, general_file_path, similarity_threshold=
     # Use openpyxl for formatting
     from openpyxl import load_workbook
     from openpyxl.utils import get_column_letter
-    from openpyxl.styles import Alignment, PatternFill
+    from openpyxl.styles import Alignment, PatternFill, numbers
     from openpyxl.worksheet.filters import FilterColumn, Filters
     
     # First save the full dataframe with pandas
@@ -620,11 +642,14 @@ def process_pts_file(project_plan_path, general_file_path, similarity_threshold=
     wb = load_workbook(output_path)
     ws = wb.active
     
-    # Find column indices for category columns, Activity Name, and Similarity Score
+    # Find column indices for various columns
     activity_name_col = None
     similarity_score_col = None
     important_for_gp_col = None
+    requested_date_col = None
+    requested_dates_editable_col = None
     category_col_indices = []
+    
     for idx, col in enumerate(df_plan_sorted.columns, 1):
         if col == 'Activity Name':
             activity_name_col = idx
@@ -632,8 +657,68 @@ def process_pts_file(project_plan_path, general_file_path, similarity_threshold=
             similarity_score_col = idx
         if col == 'Important for GP':
             important_for_gp_col = idx
+        if col == 'Requested date':
+            requested_date_col = idx
+        if col == 'Requested dates editable':
+            requested_dates_editable_col = idx
         if col in category_columns:
             category_col_indices.append(idx)
+    
+    # Build formulas for "Requested dates editable" column
+    print(f"\nBuilding Excel formulas for editable date column...")
+    
+    # Create a mapping of activity name to Excel row number
+    activity_row_map = {}
+    for idx, row in df_plan_sorted.iterrows():
+        for activity_name, plan_idx in matched_activities.items():
+            if df_plan_sorted.at[idx, 'Activity ID'] == df_plan.at[plan_idx, 'Activity ID']:
+                # Excel row = pandas index + 2 (1 for 0-indexing, 1 for header)
+                activity_row_map[activity_name] = idx + 2
+                break
+    
+    # Find anchor activity name
+    anchor_name = "Lot 5 - Erection General Piping - Contractor On Site Mobilisation"
+    
+    # Set formulas for each activity in "Requested dates editable" column
+    formula_count = 0
+    for activity_name, excel_row in activity_row_map.items():
+        cell = ws.cell(row=excel_row, column=requested_dates_editable_col)
+        
+        if activity_name == anchor_name:
+            # Anchor: reference the "Requested date" column
+            ref_cell = get_column_letter(requested_date_col) + str(excel_row)
+            cell.value = f"={ref_cell}"
+            formula_count += 1
+        elif activity_name in dependency_map:
+            dep_info = dependency_map[activity_name]
+            reference_activity = dep_info['reference']
+            weeks = dep_info['weeks']
+            direction = dep_info['direction']
+            
+            if reference_activity in activity_row_map:
+                # Reference cell in the "Requested dates editable" column
+                ref_row = activity_row_map[reference_activity]
+                ref_cell = get_column_letter(requested_dates_editable_col) + str(ref_row)
+                
+                if direction == 'before':
+                    # This activity is BEFORE the reference, so subtract weeks
+                    cell.value = f"={ref_cell}-{weeks}*7"
+                elif direction == 'after':
+                    # This activity is AFTER the reference, so add weeks
+                    cell.value = f"={ref_cell}+{weeks}*7"
+                
+                formula_count += 1
+        
+        # Apply date format to the cell
+        cell.number_format = 'DD/MM/YYYY'
+    
+    print(f"Added {formula_count} formulas to 'Requested dates editable' column")
+    
+    # Apply date format to "Requested date" column
+    if requested_date_col:
+        for row in range(2, ws.max_row + 1):
+            cell = ws.cell(row=row, column=requested_date_col)
+            cell.number_format = 'DD/MM/YYYY'
     
     # Add autofilter to top row
     ws.auto_filter.ref = ws.dimensions
@@ -697,6 +782,7 @@ def process_pts_file(project_plan_path, general_file_path, similarity_threshold=
     print(f"  - Important activities: {important_count} (filtered by default)")
     print(f"  - Activities with score < 95%: {len(low_score_rows)} (highlighted in yellow)")
     print(f"  - Activities with calculated dates: {df_plan_sorted['Requested date'].notna().sum()}")
+    print(f"  - Formulas in 'Requested dates editable': {formula_count}")
     if conflicts:
         print(f"  - Conflicts detected: {len(conflicts)} (see 'Conflicts' sheet)")
     print(f"  - Applied autofilter (showing important activities), column widths, wrap text, and freeze panes at C2")
