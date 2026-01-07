@@ -515,6 +515,7 @@ def process_pts_file(project_plan_path, general_file_path, similarity_threshold=
     match_details = []
     low_score_rows = []  # Track rows with score < 95%
     matched_activities = {}  # Dictionary to store activity name -> row index mapping
+    unmatched_activities = []  # Track important activities that couldn't be matched
     
     # For each important activity, find the best matching project activity
     for _, important_row in df_general.iterrows():
@@ -567,6 +568,9 @@ def process_pts_file(project_plan_path, general_file_path, similarity_threshold=
                 'Score': best_score,
                 'Row': best_plan_idx
             })
+        else:
+            # No match found - track it
+            unmatched_activities.append(important_activity)
     
     print(f"\nMatched {matched_count} activities out of {df_plan['Activity Name'].notna().sum()} total activities")
     
@@ -786,6 +790,17 @@ def process_pts_file(project_plan_path, general_file_path, similarity_threshold=
     if conflicts:
         print(f"  - Conflicts detected: {len(conflicts)} (see 'Conflicts' sheet)")
     print(f"  - Applied autofilter (showing important activities), column widths, wrap text, and freeze panes at C2")
+    
+    # Report unmatched important activities at the very end
+    if unmatched_activities:
+        print(f"\n{'='*80}")
+        print(f"⚠️  WARNING: {len(unmatched_activities)} IMPORTANT ACTIVITY(IES) NOT FOUND IN PROJECT PLAN")
+        print(f"{'='*80}")
+        print("These activities won't have calculated dates and may break dependency chains:")
+        for idx, activity in enumerate(unmatched_activities, 1):
+            print(f"  {idx}. {activity}")
+        print(f"\nThis will prevent date calculation for activities that depend on these!")
+        print(f"{'='*80}")
     
     return output_path, matched_count, match_details
 
