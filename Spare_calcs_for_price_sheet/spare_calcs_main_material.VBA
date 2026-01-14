@@ -238,13 +238,13 @@ Sub CalculateSpares()
                         spareValue = RoundUpToInteger(qtyPcs * PERCENT_E_SMALL)
                         ruleNum = "#10a"
                         noteText = "Rule #10a: Standard components qty > " & THRESHOLD_2 & _
-                                   " and Type < " & TYPE_THRESHOLD & " -> spare = ceiling(qty * " & _
+                                   " and DN < " & TYPE_THRESHOLD & " -> spare = ceiling(qty * " & _
                                    PercentText(PERCENT_E_SMALL) & ") " & unitLabel & "."
                     Else
                         spareValue = RoundUpToInteger(qtyPcs * PERCENT_E_LARGE)
                         ruleNum = "#10b"
                         noteText = "Rule #10b: Standard components qty > " & THRESHOLD_2 & _
-                                   " and Type >= " & TYPE_THRESHOLD & " -> spare = ceiling(qty * " & _
+                                   " and DN >= " & TYPE_THRESHOLD & " -> spare = ceiling(qty * " & _
                                    PercentText(PERCENT_E_LARGE) & ") " & unitLabel & "."
                     End If
                 End If
@@ -315,12 +315,12 @@ Sub CalculateSpares()
                     If typeValue < TYPE_THRESHOLD Then
                         spareValue = RoundUpToInteger(qtyM * PERCENT_F_SMALL)
                         ruleNum = "#11a"
-                        noteText = "Rule #11a: Standard meter qty with Type < " & TYPE_THRESHOLD & _
+                        noteText = "Rule #11a: Standard meter qty with DN < " & TYPE_THRESHOLD & _
                                    " -> spare = ceiling(qty * " & PercentText(PERCENT_F_SMALL) & ") " & unitLabel & "."
                     Else
                         spareValue = RoundUpToInteger(qtyM * PERCENT_F_LARGE)
                         ruleNum = "#11b"
-                        noteText = "Rule #11b: Standard meter qty with Type >= " & TYPE_THRESHOLD & _
+                        noteText = "Rule #11b: Standard meter qty with DN >= " & TYPE_THRESHOLD & _
                                    " -> spare = ceiling(qty * " & PercentText(PERCENT_F_LARGE) & ") " & unitLabel & "."
                     End If
                 End If
@@ -451,13 +451,13 @@ Sub AddRulesDocumentation(ws As Worksheet, lastDataRow As Long, ruleColumn As St
     currentRow = currentRow + 1
     ws.Range(ruleColumn & currentRow).value = "  Rule #9: If 5 < QTY <= 20 -> Spare = 1"
     currentRow = currentRow + 1
-    ws.Range(ruleColumn & currentRow).value = "  Rule #10a: If QTY pcs > 20 and Type < 50 -> Spare = ceiling(QTY x 10%)"
+    ws.Range(ruleColumn & currentRow).value = "  Rule #10a: If QTY pcs > 20 and DN < 50 -> Spare = ceiling(QTY x 10%)"
     currentRow = currentRow + 1
-    ws.Range(ruleColumn & currentRow).value = "  Rule #10b: If QTY pcs > 20 and Type >= 50 -> Spare = ceiling(QTY x 5%)"
+    ws.Range(ruleColumn & currentRow).value = "  Rule #10b: If QTY pcs > 20 and DN >= 50 -> Spare = ceiling(QTY x 5%)"
     currentRow = currentRow + 1
-    ws.Range(ruleColumn & currentRow).value = "  Rule #11a: If QTY m > 0 and Type < 50 -> Spare = ceiling(QTY x 15%)"
+    ws.Range(ruleColumn & currentRow).value = "  Rule #11a: If QTY m > 0 and DN < 50 -> Spare = ceiling(QTY x 15%)"
     currentRow = currentRow + 1
-    ws.Range(ruleColumn & currentRow).value = "  Rule #11b: If QTY m > 0 and Type >= 50 -> Spare = ceiling(QTY x 10%)"
+    ws.Range(ruleColumn & currentRow).value = "  Rule #11b: If QTY m > 0 and DN >= 50 -> Spare = ceiling(QTY x 10%)"
     currentRow = currentRow + 2
     
     ' Notes
@@ -468,7 +468,7 @@ Sub AddRulesDocumentation(ws As Worksheet, lastDataRow As Long, ruleColumn As St
     currentRow = currentRow + 1
     ws.Range(ruleColumn & currentRow).value = "  - All percentages are rounded UP to next integer (ceiling function)"
     currentRow = currentRow + 1
-    ws.Range(ruleColumn & currentRow).value = "  - Type value is extracted from column C (e.g., '50mm' -> 50)"
+    ws.Range(ruleColumn & currentRow).value = "  - DN value is extracted from column C (e.g., '50mm' -> 50)"
     currentRow = currentRow + 1
     ws.Range(ruleColumn & currentRow).value = "  - Component classification is case-insensitive"
     

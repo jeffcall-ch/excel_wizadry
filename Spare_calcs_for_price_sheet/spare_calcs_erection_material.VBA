@@ -41,6 +41,8 @@ Sub CalculateFastenerSpares()
     Dim spareValue As Long
     Dim noteText As String
     Dim ruleNum As String
+    Dim baseSpare As Long
+    Dim totalQty As Long
     Dim processedCount As Long
     Dim nutWasherBoltCount As Long
     Dim gasketCount As Long
@@ -69,15 +71,16 @@ Sub CalculateFastenerSpares()
     
     ws.Range(COL_SPARE & HEADER_ROW).value = "Spare"
     
-    lastRow = FindLastRow(ws, HEADER_ROW, COL_DESCRIPTION, COL_QTY)
+    lastRow = FindLastDataRow(ws, HEADER_ROW)
     
     If lastRow < HEADER_ROW + 1 Then
         MsgBox "No data found to process.", vbInformation
         GoTo CleanUp
     End If
     
-    ' Clear existing spare column (values and comments)
-    ws.Range(COL_SPARE & (HEADER_ROW + 1) & ":" & COL_SPARE & lastRow).Clear
+    ' Clear existing spare column (values and comments only, preserve formatting)
+    ws.Range(COL_SPARE & (HEADER_ROW + 1) & ":" & COL_SPARE & lastRow).ClearContents
+    ws.Range(COL_SPARE & (HEADER_ROW + 1) & ":" & COL_SPARE & lastRow).ClearComments
     
     descArr = ws.Range(COL_DESCRIPTION & (HEADER_ROW + 1) & ":" & COL_DESCRIPTION & lastRow).value
     qtyArr = ws.Range(COL_QTY & (HEADER_ROW + 1) & ":" & COL_QTY & lastRow).value
@@ -115,23 +118,29 @@ Sub CalculateFastenerSpares()
             ' NUT/WASHER/BOLT
             If isNutWasherBolt Then
                 If qty <= NWB_THRESHOLD_1 Then
-                    spareValue = RoundUpToNext10(qty * NWB_PERCENT_LOW)
+                    baseSpare = RoundUpToInteger(qty * NWB_PERCENT_LOW)
+                    totalQty = RoundUpToNext10(qty + baseSpare)
+                    spareValue = totalQty - qty
                     ruleNum = "#1"
                     noteText = "Rule #1: Nut/Washer/Bolt qty <= " & NWB_THRESHOLD_1 & _
-                               " -> spare = " & PercentText(NWB_PERCENT_LOW) & _
-                               " of qty rounded up to the next 10."
+                               " -> base spare = " & PercentText(NWB_PERCENT_LOW) & _
+                               " of qty = " & baseSpare & "; total rounded to next 10 = " & totalQty & "; spare = " & spareValue & "."
                 ElseIf qty <= NWB_THRESHOLD_2 Then
-                    spareValue = RoundUpToNext10(qty * NWB_PERCENT_MID)
+                    baseSpare = RoundUpToInteger(qty * NWB_PERCENT_MID)
+                    totalQty = RoundUpToNext10(qty + baseSpare)
+                    spareValue = totalQty - qty
                     ruleNum = "#2"
                     noteText = "Rule #2: Nut/Washer/Bolt qty between " & (NWB_THRESHOLD_1 + 1) & _
-                               " and " & NWB_THRESHOLD_2 & " -> spare = " & PercentText(NWB_PERCENT_MID) & _
-                               " of qty rounded up to the next 10."
+                               " and " & NWB_THRESHOLD_2 & " -> base spare = " & PercentText(NWB_PERCENT_MID) & _
+                               " of qty = " & baseSpare & "; total rounded to next 10 = " & totalQty & "; spare = " & spareValue & "."
                 Else
-                    spareValue = RoundUpToNext10(qty * NWB_PERCENT_HIGH)
+                    baseSpare = RoundUpToInteger(qty * NWB_PERCENT_HIGH)
+                    totalQty = RoundUpToNext10(qty + baseSpare)
+                    spareValue = totalQty - qty
                     ruleNum = "#3"
                     noteText = "Rule #3: Nut/Washer/Bolt qty > " & NWB_THRESHOLD_2 & _
-                               " -> spare = " & PercentText(NWB_PERCENT_HIGH) & _
-                               " of qty rounded up to the next 10."
+                               " -> base spare = " & PercentText(NWB_PERCENT_HIGH) & _
+                               " of qty = " & baseSpare & "; total rounded to next 10 = " & totalQty & "; spare = " & spareValue & "."
                 End If
             
             ' GASKET
@@ -143,17 +152,21 @@ Sub CalculateFastenerSpares()
                                " -> spare = " & PercentText(GASKET_PERCENT_LOW) & _
                                " of qty rounded up to the next integer."
                 ElseIf qty <= GASKET_THRESHOLD_2 Then
-                    spareValue = RoundUpToNext10(qty * GASKET_PERCENT_MID)
+                    baseSpare = RoundUpToInteger(qty * GASKET_PERCENT_MID)
+                    totalQty = RoundUpToNext10(qty + baseSpare)
+                    spareValue = totalQty - qty
                     ruleNum = "#5"
                     noteText = "Rule #5: Gasket qty between " & (GASKET_THRESHOLD_1 + 1) & _
-                               " and " & GASKET_THRESHOLD_2 & " -> spare = " & PercentText(GASKET_PERCENT_MID) & _
-                               " of qty rounded up to the next 10."
+                               " and " & GASKET_THRESHOLD_2 & " -> base spare = " & PercentText(GASKET_PERCENT_MID) & _
+                               " of qty = " & baseSpare & "; total rounded to next 10 = " & totalQty & "; spare = " & spareValue & "."
                 Else
-                    spareValue = RoundUpToNext10(qty * GASKET_PERCENT_HIGH)
+                    baseSpare = RoundUpToInteger(qty * GASKET_PERCENT_HIGH)
+                    totalQty = RoundUpToNext10(qty + baseSpare)
+                    spareValue = totalQty - qty
                     ruleNum = "#6"
                     noteText = "Rule #6: Gasket qty > " & GASKET_THRESHOLD_2 & _
-                               " -> spare = " & PercentText(GASKET_PERCENT_HIGH) & _
-                               " of qty rounded up to the next 10."
+                               " -> base spare = " & PercentText(GASKET_PERCENT_HIGH) & _
+                               " of qty = " & baseSpare & "; total rounded to next 10 = " & totalQty & "; spare = " & spareValue & "."
                 End If
             
             ' STANDARD
@@ -247,21 +260,21 @@ Sub AddFastenerRulesDocumentation(ws As Worksheet, lastDataRow As Long, ruleColu
     ws.Range(ruleColumn & currentRow).Font.Bold = True
     currentRow = currentRow + 1
     
-    ws.Range(ruleColumn & currentRow).value = "  Rule #1: If QTY <= 30 -> Spare = 100% of QTY, rounded up to next 10"
+    ws.Range(ruleColumn & currentRow).value = "  Rule #1: If QTY <= 30 -> Base spare = 100% of QTY; Total (QTY + base spare) rounded up to next 10"
     currentRow = currentRow + 1
-    ws.Range(ruleColumn & currentRow).value = "           Examples: QTY=5->10, QTY=15->20, QTY=30->30"
+    ws.Range(ruleColumn & currentRow).value = "           Examples: QTY=5->base=5,total=10,spare=5; QTY=15->base=15,total=30,spare=15; QTY=25->base=25,total=50,spare=25"
     ws.Range(ruleColumn & currentRow).Font.Italic = True
     currentRow = currentRow + 1
     
-    ws.Range(ruleColumn & currentRow).value = "  Rule #2: If 30 < QTY <= 100 -> Spare = 50% of QTY, rounded up to next 10"
+    ws.Range(ruleColumn & currentRow).value = "  Rule #2: If 30 < QTY <= 100 -> Base spare = 50% of QTY; Total (QTY + base spare) rounded up to next 10"
     currentRow = currentRow + 1
-    ws.Range(ruleColumn & currentRow).value = "           Examples: QTY=40->20, QTY=60->30, QTY=100->50"
+    ws.Range(ruleColumn & currentRow).value = "           Examples: QTY=40->base=20,total=60,spare=20; QTY=50->base=25,total=80,spare=30; QTY=60->base=30,total=90,spare=30"
     ws.Range(ruleColumn & currentRow).Font.Italic = True
     currentRow = currentRow + 1
     
-    ws.Range(ruleColumn & currentRow).value = "  Rule #3: If QTY > 100 -> Spare = 20% of QTY, rounded up to next 10"
+    ws.Range(ruleColumn & currentRow).value = "  Rule #3: If QTY > 100 -> Base spare = 20% of QTY; Total (QTY + base spare) rounded up to next 10"
     currentRow = currentRow + 1
-    ws.Range(ruleColumn & currentRow).value = "           Examples: QTY=150->30, QTY=250->50, QTY=500->100"
+    ws.Range(ruleColumn & currentRow).value = "           Examples: QTY=150->base=30,total=180,spare=30; QTY=200->base=40,total=240,spare=40; QTY=250->base=50,total=300,spare=50"
     ws.Range(ruleColumn & currentRow).Font.Italic = True
     currentRow = currentRow + 2
     
@@ -276,15 +289,15 @@ Sub AddFastenerRulesDocumentation(ws As Worksheet, lastDataRow As Long, ruleColu
     ws.Range(ruleColumn & currentRow).Font.Italic = True
     currentRow = currentRow + 1
     
-    ws.Range(ruleColumn & currentRow).value = "  Rule #5: If 30 < QTY <= 500 -> Spare = 50% of QTY, rounded up to next 10"
+    ws.Range(ruleColumn & currentRow).value = "  Rule #5: If 30 < QTY <= 500 -> Base spare = 50% of QTY; Total (QTY + base spare) rounded up to next 10"
     currentRow = currentRow + 1
-    ws.Range(ruleColumn & currentRow).value = "           Examples: QTY=40->20, QTY=100->50, QTY=500->250"
+    ws.Range(ruleColumn & currentRow).value = "           Examples: QTY=40->base=20,total=60,spare=20; QTY=100->base=50,total=150,spare=50; QTY=200->base=100,total=300,spare=100"
     ws.Range(ruleColumn & currentRow).Font.Italic = True
     currentRow = currentRow + 1
     
-    ws.Range(ruleColumn & currentRow).value = "  Rule #6: If QTY > 500 -> Spare = 30% of QTY, rounded up to next 10"
+    ws.Range(ruleColumn & currentRow).value = "  Rule #6: If QTY > 500 -> Base spare = 30% of QTY; Total (QTY + base spare) rounded up to next 10"
     currentRow = currentRow + 1
-    ws.Range(ruleColumn & currentRow).value = "           Examples: QTY=600->180, QTY=1000->300"
+    ws.Range(ruleColumn & currentRow).value = "           Examples: QTY=600->base=180,total=780,spare=180; QTY=700->base=210,total=910,spare=210; QTY=1000->base=300,total=1300,spare=300"
     ws.Range(ruleColumn & currentRow).Font.Italic = True
     currentRow = currentRow + 2
     
@@ -378,21 +391,49 @@ Function GetStringValue(cellValue As Variant) As String
     End If
 End Function
 
-Function FindLastRow(ws As Worksheet, headerRow As Long, colDesc As String, colQty As String) As Long
+Function FindLastDataRow(ws As Worksheet, headerRow As Long) As Long
+    ' Find the last row where columns A, B, C, and D all have non-empty values
     Dim maxRow As Long
-    Dim lastRowDesc As Long, lastRowQty As Long
+    Dim testRow As Long
+    Dim valA As Variant, valB As Variant, valC As Variant, valD As Variant
     
-    lastRowDesc = ws.Cells(ws.Rows.Count, colDesc).End(xlUp).Row
-    lastRowQty = ws.Cells(ws.Rows.Count, colQty).End(xlUp).Row
+    ' Find the maximum row that has data in any of the columns A-D
+    maxRow = ws.Cells(ws.Rows.Count, "A").End(xlUp).Row
+    If ws.Cells(ws.Rows.Count, "B").End(xlUp).Row > maxRow Then
+        maxRow = ws.Cells(ws.Rows.Count, "B").End(xlUp).Row
+    End If
+    If ws.Cells(ws.Rows.Count, "C").End(xlUp).Row > maxRow Then
+        maxRow = ws.Cells(ws.Rows.Count, "C").End(xlUp).Row
+    End If
+    If ws.Cells(ws.Rows.Count, "D").End(xlUp).Row > maxRow Then
+        maxRow = ws.Cells(ws.Rows.Count, "D").End(xlUp).Row
+    End If
     
-    maxRow = Application.WorksheetFunction.Max(lastRowDesc, lastRowQty)
-    
+    ' If no data found beyond header, return header row
     If maxRow <= headerRow Then
-        FindLastRow = headerRow
+        FindLastDataRow = headerRow
         Exit Function
     End If
     
-    FindLastRow = maxRow
+    ' Search backwards from maxRow to find the last row where A, B, C, D all have values
+    For testRow = maxRow To headerRow + 1 Step -1
+        valA = ws.Cells(testRow, "A").Value
+        valB = ws.Cells(testRow, "B").Value
+        valC = ws.Cells(testRow, "C").Value
+        valD = ws.Cells(testRow, "D").Value
+        
+        ' Check if all four cells have non-empty values
+        If Not IsEmpty(valA) And Not IsEmpty(valB) And _
+           Not IsEmpty(valC) And Not IsEmpty(valD) And _
+           Len(Trim(CStr(valA))) > 0 And Len(Trim(CStr(valB))) > 0 And _
+           Len(Trim(CStr(valC))) > 0 And Len(Trim(CStr(valD))) > 0 Then
+            FindLastDataRow = testRow
+            Exit Function
+        End If
+    Next testRow
+    
+    ' If no valid row found, return header row
+    FindLastDataRow = headerRow
 End Function
 
 Function GetNumericValue(cellValue As Variant) As Double
