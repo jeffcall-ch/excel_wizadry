@@ -12,10 +12,11 @@ Sub CalculateSpares()
     Const COL_QTY_M As String = "F"
     Const COL_SPARE As String = "H"
     
-    ' Seal ring keywords
-    Const SEAL_KEYWORDS As String = "seal ring,seal,ring"
+    ' Seal ring keywords/filters
+    Const SEAL_REQUIRED_KEYWORDS As String = "seal,ring,fkm"
+    Const SEAL_EXCLUDED_KEYWORDS As String = "elbow,flange,tee,reducer"
     Const SEAL_MIN_SPARE_LOW_QTY As Long = 5
-    Const SEAL_MIN_SPARE_HIGH_QTY As Long = 3
+    Const SEAL_MIN_SPARE_HIGH_QTY As Long = 5
     Const SEAL_PERCENT As Double = 0.1
     Const SEAL_QTY_THRESHOLD As Long = 10
     
@@ -55,6 +56,7 @@ Sub CalculateSpares()
     Dim spareValue As Long
     Dim noteText As String
     Dim ruleNum As String
+    Dim unitLabel As String
     Dim processedCount As Long
     Dim criticalCount As Long
     Dim sealCount As Long
@@ -126,7 +128,7 @@ Sub CalculateSpares()
         If qtyPcs < 0 Then qtyPcs = 0
         If qtyM < 0 Then qtyM = 0
         
-        isSeal = HasAnyKeyword(description, SEAL_KEYWORDS)
+        isSeal = IsSealComponent(description, SEAL_REQUIRED_KEYWORDS, SEAL_EXCLUDED_KEYWORDS)
         isCritical = HasAnyKeyword(description, CRITICAL_KEYWORDS)
         isMapress = HasMapressWithFitting(description, MAPRESS_KEYWORD, MAPRESS_FITTING_KEYWORDS)
         
@@ -136,16 +138,21 @@ Sub CalculateSpares()
         
         If qtyPcs > 0 Or qtyM > 0 Then
             If qtyPcs > 0 Then
+                unitLabel = "pcs"
                 ' SEAL RING
                 If isSeal Then
                     If qtyPcs <= SEAL_QTY_THRESHOLD Then
                         spareValue = SEAL_MIN_SPARE_LOW_QTY
                         ruleNum = "#1"
-                        noteText = "Rule #1: SEAL, QTY<=" & SEAL_QTY_THRESHOLD
+                        noteText = "Rule #1: Seal components qty <= " & SEAL_QTY_THRESHOLD & _
+                                   " -> spare = fixed minimum of " & SEAL_MIN_SPARE_LOW_QTY & _
+                                   " " & unitLabel & "."
                     Else
                         spareValue = Application.WorksheetFunction.Max(SEAL_MIN_SPARE_HIGH_QTY, RoundUpToInteger(qtyPcs * SEAL_PERCENT))
                         ruleNum = "#2"
-                        noteText = "Rule #2: SEAL, QTY>" & SEAL_QTY_THRESHOLD
+                        noteText = "Rule #2: Seal components qty > " & SEAL_QTY_THRESHOLD & _
+                                   " -> spare = max(" & SEAL_MIN_SPARE_HIGH_QTY & ", ceiling(qty * " & _
+                                   PercentText(SEAL_PERCENT) & ")) " & unitLabel & "."
                     End If
                 
                 ' CRITICAL
@@ -153,11 +160,15 @@ Sub CalculateSpares()
                     If qtyPcs <= CRITICAL_QTY_THRESHOLD Then
                         spareValue = Application.WorksheetFunction.Max(CRITICAL_MIN_SPARE, RoundUpToInteger(qtyPcs * CRITICAL_PERCENT_LOW_QTY))
                         ruleNum = "#3"
-                        noteText = "Rule #3: CRITICAL, QTY<=" & CRITICAL_QTY_THRESHOLD
+                        noteText = "Rule #3: Critical components qty <= " & CRITICAL_QTY_THRESHOLD & _
+                                   " -> spare = max(" & CRITICAL_MIN_SPARE & ", ceiling(qty * " & _
+                                   PercentText(CRITICAL_PERCENT_LOW_QTY) & ")) " & unitLabel & "."
                     Else
                         spareValue = Application.WorksheetFunction.Max(CRITICAL_MIN_SPARE, RoundUpToInteger(qtyPcs * CRITICAL_PERCENT_HIGH_QTY))
                         ruleNum = "#4"
-                        noteText = "Rule #4: CRITICAL, QTY>" & CRITICAL_QTY_THRESHOLD
+                        noteText = "Rule #4: Critical components qty > " & CRITICAL_QTY_THRESHOLD & _
+                                   " -> spare = max(" & CRITICAL_MIN_SPARE & ", ceiling(qty * " & _
+                                   PercentText(CRITICAL_PERCENT_HIGH_QTY) & ")) " & unitLabel & "."
                     End If
                 
                 ' MAPRESS
@@ -165,15 +176,18 @@ Sub CalculateSpares()
                     If qtyPcs > MAPRESS_QTY_THRESHOLD Then
                         spareValue = RoundUpToInteger(qtyPcs * MAPRESS_PERCENT)
                         ruleNum = "#7"
-                        noteText = "Rule #7: MAPRESS, QTY>" & MAPRESS_QTY_THRESHOLD
+                        noteText = "Rule #7: MAPRESS fittings qty > " & MAPRESS_QTY_THRESHOLD & _
+                                   " -> spare = ceiling(qty * " & PercentText(MAPRESS_PERCENT) & ") " & unitLabel & "."
                     ElseIf qtyPcs <= THRESHOLD_1 Then
                         spareValue = 0
                         ruleNum = "#5"
-                        noteText = "Rule #5: MAPRESS, QTY<=" & THRESHOLD_1
+                        noteText = "Rule #5: MAPRESS fittings qty <= " & THRESHOLD_1 & _
+                                   " -> spare = 0 " & unitLabel & "."
                     Else
                         spareValue = 1
                         ruleNum = "#6"
-                        noteText = "Rule #6: MAPRESS, " & THRESHOLD_1 & "<QTY<=" & MAPRESS_QTY_THRESHOLD
+                        noteText = "Rule #6: MAPRESS fittings qty between " & (THRESHOLD_1 + 1) & _
+                                   " and " & MAPRESS_QTY_THRESHOLD & " -> spare = 1 " & unitLabel & "."
                     End If
                 
                 ' STANDARD
@@ -181,66 +195,85 @@ Sub CalculateSpares()
                     If qtyPcs <= THRESHOLD_1 Then
                         spareValue = 0
                         ruleNum = "#8"
-                        noteText = "Rule #8: STD, QTY<=" & THRESHOLD_1
+                        noteText = "Rule #8: Standard components qty <= " & THRESHOLD_1 & _
+                                   " -> spare = 0 " & unitLabel & "."
                     ElseIf qtyPcs <= THRESHOLD_2 Then
                         spareValue = 1
                         ruleNum = "#9"
-                        noteText = "Rule #9: STD, " & THRESHOLD_1 & "<QTY<=" & THRESHOLD_2
+                        noteText = "Rule #9: Standard components qty between " & (THRESHOLD_1 + 1) & _
+                                   " and " & THRESHOLD_2 & " -> spare = 1 " & unitLabel & "."
                     ElseIf typeValue < TYPE_THRESHOLD Then
                         spareValue = RoundUpToInteger(qtyPcs * PERCENT_E_SMALL)
                         ruleNum = "#10a"
-                        noteText = "Rule #10a: STD pcs, QTY>" & THRESHOLD_2 & ", Type<" & TYPE_THRESHOLD
+                        noteText = "Rule #10a: Standard components qty > " & THRESHOLD_2 & _
+                                   " and Type < " & TYPE_THRESHOLD & " -> spare = ceiling(qty * " & _
+                                   PercentText(PERCENT_E_SMALL) & ") " & unitLabel & "."
                     Else
                         spareValue = RoundUpToInteger(qtyPcs * PERCENT_E_LARGE)
                         ruleNum = "#10b"
-                        noteText = "Rule #10b: STD pcs, QTY>" & THRESHOLD_2 & ", Type>=" & TYPE_THRESHOLD
+                        noteText = "Rule #10b: Standard components qty > " & THRESHOLD_2 & _
+                                   " and Type >= " & TYPE_THRESHOLD & " -> spare = ceiling(qty * " & _
+                                   PercentText(PERCENT_E_LARGE) & ") " & unitLabel & "."
                     End If
                 End If
             
             ' QTY M
             ElseIf qtyM > 0 Then
+                unitLabel = "m"
                 If isSeal Then
                     If qtyM <= SEAL_QTY_THRESHOLD Then
                         spareValue = SEAL_MIN_SPARE_LOW_QTY
                         ruleNum = "#1"
-                        noteText = "Rule #1: SEAL(m), QTY<=" & SEAL_QTY_THRESHOLD
+                        noteText = "Rule #1: Seal components qty <= " & SEAL_QTY_THRESHOLD & _
+                                   " -> spare = fixed minimum of " & SEAL_MIN_SPARE_LOW_QTY & _
+                                   " " & unitLabel & "."
                     Else
                         spareValue = Application.WorksheetFunction.Max(SEAL_MIN_SPARE_HIGH_QTY, RoundUpToInteger(qtyM * SEAL_PERCENT))
                         ruleNum = "#2"
-                        noteText = "Rule #2: SEAL(m), QTY>" & SEAL_QTY_THRESHOLD
+                        noteText = "Rule #2: Seal components qty > " & SEAL_QTY_THRESHOLD & _
+                                   " -> spare = max(" & SEAL_MIN_SPARE_HIGH_QTY & ", ceiling(qty * " & _
+                                   PercentText(SEAL_PERCENT) & ")) " & unitLabel & "."
                     End If
                 
                 ElseIf isCritical Then
                     If qtyM <= CRITICAL_QTY_THRESHOLD Then
                         spareValue = Application.WorksheetFunction.Max(CRITICAL_MIN_SPARE, RoundUpToInteger(qtyM * CRITICAL_PERCENT_LOW_QTY))
                         ruleNum = "#3"
-                        noteText = "Rule #3: CRITICAL(m), QTY<=" & CRITICAL_QTY_THRESHOLD
+                        noteText = "Rule #3: Critical components qty <= " & CRITICAL_QTY_THRESHOLD & _
+                                   " -> spare = max(" & CRITICAL_MIN_SPARE & ", ceiling(qty * " & _
+                                   PercentText(CRITICAL_PERCENT_LOW_QTY) & ")) " & unitLabel & "."
                     Else
                         spareValue = Application.WorksheetFunction.Max(CRITICAL_MIN_SPARE, RoundUpToInteger(qtyM * CRITICAL_PERCENT_HIGH_QTY))
                         ruleNum = "#4"
-                        noteText = "Rule #4: CRITICAL(m), QTY>" & CRITICAL_QTY_THRESHOLD
+                        noteText = "Rule #4: Critical components qty > " & CRITICAL_QTY_THRESHOLD & _
+                                   " -> spare = max(" & CRITICAL_MIN_SPARE & ", ceiling(qty * " & _
+                                   PercentText(CRITICAL_PERCENT_HIGH_QTY) & ")) " & unitLabel & "."
                     End If
                 
                 ElseIf isMapress Then
                     If qtyM > MAPRESS_QTY_THRESHOLD Then
                         spareValue = RoundUpToInteger(qtyM * MAPRESS_PERCENT)
                         ruleNum = "#7"
-                        noteText = "Rule #7: MAPRESS(m), QTY>" & MAPRESS_QTY_THRESHOLD
+                        noteText = "Rule #7: MAPRESS fittings qty > " & MAPRESS_QTY_THRESHOLD & _
+                                   " -> spare = ceiling(qty * " & PercentText(MAPRESS_PERCENT) & ") " & unitLabel & "."
                     Else
                         spareValue = 0
                         ruleNum = "#5"
-                        noteText = "Rule #5: MAPRESS(m), QTY<=" & MAPRESS_QTY_THRESHOLD
+                        noteText = "Rule #5: MAPRESS fittings qty <= " & MAPRESS_QTY_THRESHOLD & _
+                                   " -> spare = 0 " & unitLabel & "."
                     End If
                 
                 Else
                     If typeValue < TYPE_THRESHOLD Then
                         spareValue = RoundUpToInteger(qtyM * PERCENT_F_SMALL)
                         ruleNum = "#11a"
-                        noteText = "Rule #11a: STD(m), Type<" & TYPE_THRESHOLD
+                        noteText = "Rule #11a: Standard meter qty with Type < " & TYPE_THRESHOLD & _
+                                   " -> spare = ceiling(qty * " & PercentText(PERCENT_F_SMALL) & ") " & unitLabel & "."
                     Else
                         spareValue = RoundUpToInteger(qtyM * PERCENT_F_LARGE)
                         ruleNum = "#11b"
-                        noteText = "Rule #11b: STD(m), Type>=" & TYPE_THRESHOLD
+                        noteText = "Rule #11b: Standard meter qty with Type >= " & TYPE_THRESHOLD & _
+                                   " -> spare = ceiling(qty * " & PercentText(PERCENT_F_LARGE) & ") " & unitLabel & "."
                     End If
                 End If
             End If
@@ -315,13 +348,13 @@ Sub AddRulesDocumentation(ws As Worksheet, lastDataRow As Long, ruleColumn As St
     currentRow = currentRow + 2
     
     ' SEAL RING RULES
-    ws.Range(ruleColumn & currentRow).value = "SEAL RING COMPONENTS (keywords: seal ring, seal, ring)"
+    ws.Range(ruleColumn & currentRow).value = "SEAL RING COMPONENTS (require: seal, ring, FKM; exclude: elbow, flange, tee, reducer)"
     ws.Range(ruleColumn & currentRow).Font.Bold = True
     currentRow = currentRow + 1
     
     ws.Range(ruleColumn & currentRow).value = "  Rule #1: If QTY <= 10 -> Spare = 5 (absolute minimum)"
     currentRow = currentRow + 1
-    ws.Range(ruleColumn & currentRow).value = "  Rule #2: If QTY > 10 -> Spare = max(3, ceiling(QTY x 10%))"
+    ws.Range(ruleColumn & currentRow).value = "  Rule #2: If QTY > 10 -> Spare = max(5, ceiling(QTY x 10%))"
     currentRow = currentRow + 2
     
     ' CRITICAL RULES
@@ -399,6 +432,13 @@ Sub AddCellNote(cell As Range, noteText As String)
     End If
 End Sub
 
+Function IsSealComponent(description As String, requiredKeywords As String, excludedKeywords As String) As Boolean
+    If Len(Trim(description)) = 0 Then Exit Function
+    If Not HasAllKeywords(description, requiredKeywords) Then Exit Function
+    If HasForbiddenKeyword(description, excludedKeywords) Then Exit Function
+    IsSealComponent = True
+End Function
+
 Function HasMapressWithFitting(description As String, mapressWord As String, fittingWords As String) As Boolean
     Dim descLower As String
     HasMapressWithFitting = False
@@ -428,6 +468,44 @@ Function HasAnyKeyword(description As String, keywordList As String) As Boolean
                 Exit Function
             End If
         End If
+    Next keyword
+End Function
+
+Function HasAllKeywords(description As String, keywordList As String) As Boolean
+    Dim keywords() As String
+    Dim keyword As Variant
+    Dim descLower As String
+    Dim token As String
+    HasAllKeywords = False
+    If Len(Trim(description)) = 0 Then Exit Function
+    If Len(Trim(keywordList)) = 0 Then Exit Function
+    descLower = LCase(Trim(description))
+    keywords = Split(keywordList, ",")
+    For Each keyword In keywords
+        token = LCase(Trim(CStr(keyword)))
+        If Len(token) = 0 Then GoTo ContinueLoop
+        If InStr(1, descLower, token, vbTextCompare) = 0 Then Exit Function
+ContinueLoop:
+    Next keyword
+    HasAllKeywords = True
+End Function
+
+Function HasForbiddenKeyword(description As String, keywordList As String) As Boolean
+    Dim keywords() As String
+    Dim keyword As Variant
+    Dim descLower As String
+    HasForbiddenKeyword = False
+    If Len(Trim(description)) = 0 Then Exit Function
+    If Len(Trim(keywordList)) = 0 Then Exit Function
+    descLower = LCase(Trim(description))
+    keywords = Split(keywordList, ",")
+    For Each keyword In keywords
+        If Len(Trim(CStr(keyword))) = 0 Then GoTo NextKeyword
+        If InStr(1, descLower, LCase(Trim(CStr(keyword))), vbTextCompare) > 0 Then
+            HasForbiddenKeyword = True
+            Exit Function
+        End If
+NextKeyword:
     Next keyword
 End Function
 
@@ -529,6 +607,10 @@ Function GetNumericValue(cellValue As Variant) As Double
     Else
         GetNumericValue = 0
     End If
+End Function
+
+Function PercentText(value As Double) As String
+    PercentText = Format$(value * 100, "0.##") & "%"
 End Function
 
 Function RoundUpToInteger(value As Double) As Long

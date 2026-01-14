@@ -117,15 +117,21 @@ Sub CalculateFastenerSpares()
                 If qty <= NWB_THRESHOLD_1 Then
                     spareValue = RoundUpToNext10(qty * NWB_PERCENT_LOW)
                     ruleNum = "#1"
-                    noteText = "Rule #1: NUT/BOLT, QTY<=" & NWB_THRESHOLD_1
+                    noteText = "Rule #1: Nut/Washer/Bolt qty <= " & NWB_THRESHOLD_1 & _
+                               " -> spare = " & PercentText(NWB_PERCENT_LOW) & _
+                               " of qty rounded up to the next 10."
                 ElseIf qty <= NWB_THRESHOLD_2 Then
                     spareValue = RoundUpToNext10(qty * NWB_PERCENT_MID)
                     ruleNum = "#2"
-                    noteText = "Rule #2: NUT/BOLT, " & NWB_THRESHOLD_1 & "<QTY<=" & NWB_THRESHOLD_2
+                    noteText = "Rule #2: Nut/Washer/Bolt qty between " & (NWB_THRESHOLD_1 + 1) & _
+                               " and " & NWB_THRESHOLD_2 & " -> spare = " & PercentText(NWB_PERCENT_MID) & _
+                               " of qty rounded up to the next 10."
                 Else
                     spareValue = RoundUpToNext10(qty * NWB_PERCENT_HIGH)
                     ruleNum = "#3"
-                    noteText = "Rule #3: NUT/BOLT, QTY>" & NWB_THRESHOLD_2
+                    noteText = "Rule #3: Nut/Washer/Bolt qty > " & NWB_THRESHOLD_2 & _
+                               " -> spare = " & PercentText(NWB_PERCENT_HIGH) & _
+                               " of qty rounded up to the next 10."
                 End If
             
             ' GASKET
@@ -133,15 +139,21 @@ Sub CalculateFastenerSpares()
                 If qty <= GASKET_THRESHOLD_1 Then
                     spareValue = RoundUpToInteger(qty * GASKET_PERCENT_LOW)
                     ruleNum = "#4"
-                    noteText = "Rule #4: GASKET, QTY<=" & GASKET_THRESHOLD_1
+                    noteText = "Rule #4: Gasket qty <= " & GASKET_THRESHOLD_1 & _
+                               " -> spare = " & PercentText(GASKET_PERCENT_LOW) & _
+                               " of qty rounded up to the next integer."
                 ElseIf qty <= GASKET_THRESHOLD_2 Then
                     spareValue = RoundUpToNext10(qty * GASKET_PERCENT_MID)
                     ruleNum = "#5"
-                    noteText = "Rule #5: GASKET, " & GASKET_THRESHOLD_1 & "<QTY<=" & GASKET_THRESHOLD_2
+                    noteText = "Rule #5: Gasket qty between " & (GASKET_THRESHOLD_1 + 1) & _
+                               " and " & GASKET_THRESHOLD_2 & " -> spare = " & PercentText(GASKET_PERCENT_MID) & _
+                               " of qty rounded up to the next 10."
                 Else
                     spareValue = RoundUpToNext10(qty * GASKET_PERCENT_HIGH)
                     ruleNum = "#6"
-                    noteText = "Rule #6: GASKET, QTY>" & GASKET_THRESHOLD_2
+                    noteText = "Rule #6: Gasket qty > " & GASKET_THRESHOLD_2 & _
+                               " -> spare = " & PercentText(GASKET_PERCENT_HIGH) & _
+                               " of qty rounded up to the next 10."
                 End If
             
             ' STANDARD
@@ -149,11 +161,15 @@ Sub CalculateFastenerSpares()
                 If qty < STANDARD_THRESHOLD Then
                     spareValue = RoundUpToInteger(qty * STANDARD_PERCENT_LOW)
                     ruleNum = "#7"
-                    noteText = "Rule #7: STD, QTY<" & STANDARD_THRESHOLD
+                    noteText = "Rule #7: Standard components qty < " & STANDARD_THRESHOLD & _
+                               " -> spare = " & PercentText(STANDARD_PERCENT_LOW) & _
+                               " of qty rounded up to the next integer."
                 Else
                     spareValue = RoundUpToInteger(qty * STANDARD_PERCENT_HIGH)
                     ruleNum = "#8"
-                    noteText = "Rule #8: STD, QTY>=" & STANDARD_THRESHOLD
+                    noteText = "Rule #8: Standard components qty >= " & STANDARD_THRESHOLD & _
+                               " -> spare = " & PercentText(STANDARD_PERCENT_HIGH) & _
+                               " of qty rounded up to the next integer."
                 End If
             End If
             
@@ -389,6 +405,10 @@ Function GetNumericValue(cellValue As Variant) As Double
     Else
         GetNumericValue = 0
     End If
+End Function
+
+Function PercentText(value As Double) As String
+    PercentText = Format$(value * 100, "0.##") & "%"
 End Function
 
 Function RoundUpToInteger(value As Double) As Long
