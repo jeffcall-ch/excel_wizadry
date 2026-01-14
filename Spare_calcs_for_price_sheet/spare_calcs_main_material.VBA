@@ -6,6 +6,8 @@ Sub CalculateSpares()
     '============================================================
     Const HEADER_ROW As Long = 7
     
+    Const COL_MATERIAL As String = "A"
+    Const COL_TYPE_LABEL As String = "B"
     Const COL_TYPE As String = "C"
     Const COL_DESCRIPTION As String = "D"
     Const COL_QTY_PCS As String = "E"
@@ -50,22 +52,29 @@ Sub CalculateSpares()
     Dim ws As Worksheet
     Dim lastRow As Long
     Dim i As Long
+    Dim typeLabel As String
     Dim typeValue As Double
     Dim qtyPcs As Double
     Dim qtyM As Double
-    Dim spareValue As Long
+    Dim spareValue As Double
     Dim noteText As String
     Dim ruleNum As String
     Dim unitLabel As String
+    Dim tubiPercent As Double
+    Dim tubiBaseSpare As Long
+    Dim tubiTotalQty As Long
     Dim processedCount As Long
     Dim criticalCount As Long
     Dim sealCount As Long
     Dim mapressCount As Long
+    Dim tubiCount As Long
     Dim isCritical As Boolean
     Dim isSeal As Boolean
     Dim isMapress As Boolean
+    Dim isTubi As Boolean
     Dim description As String
     
+    Dim typeLabelArr As Variant
     Dim typeArr As Variant
     Dim descArr As Variant
     Dim qtyPcsArr As Variant
@@ -92,16 +101,18 @@ Sub CalculateSpares()
     
     ws.Range(COL_SPARE & HEADER_ROW).value = "Spare"
     
-    lastRow = FindLastDataRow(ws, HEADER_ROW, COL_TYPE, COL_QTY_PCS, COL_QTY_M)
+    lastRow = FindLastDataRow(ws, HEADER_ROW, COL_MATERIAL, COL_TYPE_LABEL, COL_TYPE, COL_DESCRIPTION)
     
     If lastRow < HEADER_ROW + 1 Then
         MsgBox "No data found to process.", vbInformation
         GoTo CleanUp
     End If
     
-    ' Clear existing spare column (values and comments)
-    ws.Range(COL_SPARE & (HEADER_ROW + 1) & ":" & COL_SPARE & lastRow).Clear
+    ' Clear existing spare column (values and comments only, preserve formatting)
+    ws.Range(COL_SPARE & (HEADER_ROW + 1) & ":" & COL_SPARE & lastRow).ClearContents
+    ws.Range(COL_SPARE & (HEADER_ROW + 1) & ":" & COL_SPARE & lastRow).ClearComments
     
+    typeLabelArr = ws.Range(COL_TYPE_LABEL & (HEADER_ROW + 1) & ":" & COL_TYPE_LABEL & lastRow).value
     typeArr = ws.Range(COL_TYPE & (HEADER_ROW + 1) & ":" & COL_TYPE & lastRow).value
     descArr = ws.Range(COL_DESCRIPTION & (HEADER_ROW + 1) & ":" & COL_DESCRIPTION & lastRow).value
     qtyPcsArr = ws.Range(COL_QTY_PCS & (HEADER_ROW + 1) & ":" & COL_QTY_PCS & lastRow).value
@@ -114,6 +125,7 @@ Sub CalculateSpares()
     criticalCount = 0
     sealCount = 0
     mapressCount = 0
+    tubiCount = 0
     
     For i = 1 To UBound(typeArr, 1)
         spareValue = 0
@@ -123,6 +135,7 @@ Sub CalculateSpares()
         description = GetStringValue(descArr(i, 1))
         qtyPcs = GetNumericValue(qtyPcsArr(i, 1))
         qtyM = GetNumericValue(qtyMArr(i, 1))
+        typeLabel = GetStringValue(typeLabelArr(i, 1))
         typeValue = ExtractNumericFromType(typeArr(i, 1))
         
         If qtyPcs < 0 Then qtyPcs = 0
@@ -130,11 +143,14 @@ Sub CalculateSpares()
         
         isSeal = IsSealComponent(description, SEAL_REQUIRED_KEYWORDS, SEAL_EXCLUDED_KEYWORDS)
         isCritical = HasAnyKeyword(description, CRITICAL_KEYWORDS)
+        isTubi = IsTubiComponent(typeLabel, CStr(typeArr(i, 1)), description)
         isMapress = HasMapressWithFitting(description, MAPRESS_KEYWORD, MAPRESS_FITTING_KEYWORDS)
+        If isTubi Then isMapress = False
         
         If isSeal Then sealCount = sealCount + 1
         If isCritical And Not isSeal Then criticalCount = criticalCount + 1
-        If isMapress And Not isSeal And Not isCritical Then mapressCount = mapressCount + 1
+        If isTubi And Not isSeal And Not isCritical Then tubiCount = tubiCount + 1
+        If isMapress And Not isSeal And Not isCritical And Not isTubi Then mapressCount = mapressCount + 1
         
         If qtyPcs > 0 Or qtyM > 0 Then
             If qtyPcs > 0 Then
@@ -170,6 +186,22 @@ Sub CalculateSpares()
                                    " -> spare = max(" & CRITICAL_MIN_SPARE & ", ceiling(qty * " & _
                                    PercentText(CRITICAL_PERCENT_HIGH_QTY) & ")) " & unitLabel & "."
                     End If
+                
+                ' TUBI
+                ElseIf isTubi Then
+                    If typeValue > 0 And typeValue < TYPE_THRESHOLD Then
+                        tubiPercent = PERCENT_F_SMALL
+                    Else
+                        tubiPercent = PERCENT_F_LARGE
+                    End If
+                    tubiBaseSpare = RoundUpToInteger(qtyPcs * tubiPercent)
+                    tubiTotalQty = RoundUpToMultiple(qtyPcs + tubiBaseSpare, 6)
+                    spareValue = Application.WorksheetFunction.Max(0, tubiTotalQty - qtyPcs)
+                    ruleNum = "#T1"
+                    noteText = "Rule #T1: TUBI components -> base spare = ceiling(qty * " & _
+                               PercentText(tubiPercent) & ") = " & tubiBaseSpare & " " & unitLabel & _
+                               "; adjusted total rounded to next multiple of 6 = " & tubiTotalQty & _
+                               "; spare = " & spareValue & " " & unitLabel & "."
                 
                 ' MAPRESS
                 ElseIf isMapress Then
@@ -250,6 +282,22 @@ Sub CalculateSpares()
                                    PercentText(CRITICAL_PERCENT_HIGH_QTY) & ")) " & unitLabel & "."
                     End If
                 
+                ' TUBI
+                ElseIf isTubi Then
+                    If typeValue > 0 And typeValue < TYPE_THRESHOLD Then
+                        tubiPercent = PERCENT_F_SMALL
+                    Else
+                        tubiPercent = PERCENT_F_LARGE
+                    End If
+                    tubiBaseSpare = RoundUpToInteger(qtyM * tubiPercent)
+                    tubiTotalQty = RoundUpToMultiple(qtyM + tubiBaseSpare, 6)
+                    spareValue = Application.WorksheetFunction.Max(0, tubiTotalQty - qtyM)
+                    ruleNum = "#T1"
+                    noteText = "Rule #T1: TUBI components -> base spare = ceiling(qty * " & _
+                               PercentText(tubiPercent) & ") = " & tubiBaseSpare & " " & unitLabel & _
+                               "; adjusted total rounded to next multiple of 6 = " & tubiTotalQty & _
+                               "; spare = " & spareValue & " " & unitLabel & "."
+                
                 ElseIf isMapress Then
                     If qtyM > MAPRESS_QTY_THRESHOLD Then
                         spareValue = RoundUpToInteger(qtyM * MAPRESS_PERCENT)
@@ -305,6 +353,7 @@ Sub CalculateSpares()
            "Processed: " & processedCount & " rows" & vbCrLf & _
            "Seal rings: " & sealCount & " rows" & vbCrLf & _
            "Critical components: " & criticalCount & " rows" & vbCrLf & _
+            "TUBI components: " & tubiCount & " rows" & vbCrLf & _
            "MAPRESS fittings: " & mapressCount & " rows" & vbCrLf & _
            "Skipped: " & (lastRow - HEADER_ROW - processedCount) & " rows" & vbCrLf & vbCrLf & _
            "Rules documentation added below data.", _
@@ -343,7 +392,7 @@ Sub AddRulesDocumentation(ws As Worksheet, lastDataRow As Long, ruleColumn As St
     ws.Range(ruleColumn & currentRow).Font.Size = 12
     currentRow = currentRow + 1
     
-    ws.Range(ruleColumn & currentRow).value = "Priority: SEAL > CRITICAL > MAPRESS > STANDARD"
+    ws.Range(ruleColumn & currentRow).value = "Priority: SEAL > CRITICAL > TUBI > MAPRESS > STANDARD"
     ws.Range(ruleColumn & currentRow).Font.Italic = True
     currentRow = currentRow + 2
     
@@ -368,6 +417,17 @@ Sub AddRulesDocumentation(ws As Worksheet, lastDataRow As Long, ruleColumn As St
     currentRow = currentRow + 1
     ws.Range(ruleColumn & currentRow).value = "  Note: Minimum 3 spares always enforced for critical components"
     ws.Range(ruleColumn & currentRow).Font.Italic = True
+    currentRow = currentRow + 2
+
+    ' TUBI RULES
+    ws.Range(ruleColumn & currentRow).value = "TUBI COMPONENTS (Type column = 'TUBI'; qty rounded to multiples of 6)"
+    ws.Range(ruleColumn & currentRow).Font.Bold = True
+    currentRow = currentRow + 1
+    ws.Range(ruleColumn & currentRow).value = "  Rule #T1: Base spare = ceiling(QTY x 15%) if DN < 50, else ceiling(QTY x 10%);"
+    currentRow = currentRow + 1
+    ws.Range(ruleColumn & currentRow).value = "             add to original QTY, round total up to the next multiple of 6,"
+    currentRow = currentRow + 1
+    ws.Range(ruleColumn & currentRow).value = "             spare = rounded total - original QTY"
     currentRow = currentRow + 2
     
     ' MAPRESS RULES
@@ -437,6 +497,20 @@ Function IsSealComponent(description As String, requiredKeywords As String, excl
     If Not HasAllKeywords(description, requiredKeywords) Then Exit Function
     If HasForbiddenKeyword(description, excludedKeywords) Then Exit Function
     IsSealComponent = True
+End Function
+
+Function IsTubiComponent(typeLabel As String, typeCellValue As String, description As String) As Boolean
+    If ContainsKeyword(typeLabel, "tubi") Then
+        IsTubiComponent = True
+        Exit Function
+    End If
+    If ContainsKeyword(typeCellValue, "tubi") Then
+        IsTubiComponent = True
+        Exit Function
+    End If
+    If ContainsKeyword(description, "tubi") Then
+        IsTubiComponent = True
+    End If
 End Function
 
 Function HasMapressWithFitting(description As String, mapressWord As String, fittingWords As String) As Boolean
@@ -509,6 +583,15 @@ NextKeyword:
     Next keyword
 End Function
 
+Function ContainsKeyword(textValue As String, keyword As String) As Boolean
+    ContainsKeyword = False
+    If Len(Trim(textValue)) = 0 Then Exit Function
+    If Len(Trim(keyword)) = 0 Then Exit Function
+    If InStr(1, textValue, keyword, vbTextCompare) > 0 Then
+        ContainsKeyword = True
+    End If
+End Function
+
 Function GetStringValue(cellValue As Variant) As String
     If IsEmpty(cellValue) Then
         GetStringValue = ""
@@ -538,22 +621,34 @@ Function ValidateParameters(headerRow As Long, threshold1 As Long, threshold2 As
     End If
 End Function
 
-Function FindLastDataRow(ws As Worksheet, headerRow As Long, colType As String, colE As String, colF As String) As Long
+Function FindLastDataRow(ws As Worksheet, headerRow As Long, colA As String, colB As String, colC As String, colD As String) As Long
+    Dim i As Long
     Dim maxRow As Long
-    Dim lastRowC As Long, lastRowE As Long, lastRowF As Long
     
-    lastRowC = ws.Cells(ws.Rows.Count, colType).End(xlUp).Row
-    lastRowE = ws.Cells(ws.Rows.Count, colE).End(xlUp).Row
-    lastRowF = ws.Cells(ws.Rows.Count, colF).End(xlUp).Row
-    
-    maxRow = Application.WorksheetFunction.Max(lastRowC, lastRowE, lastRowF)
+    ' Find the maximum row with any data in the checked columns
+    maxRow = ws.Cells(ws.Rows.Count, colA).End(xlUp).Row
+    maxRow = Application.WorksheetFunction.Max(maxRow, ws.Cells(ws.Rows.Count, colB).End(xlUp).Row)
+    maxRow = Application.WorksheetFunction.Max(maxRow, ws.Cells(ws.Rows.Count, colC).End(xlUp).Row)
+    maxRow = Application.WorksheetFunction.Max(maxRow, ws.Cells(ws.Rows.Count, colD).End(xlUp).Row)
     
     If maxRow <= headerRow Then
         FindLastDataRow = headerRow
         Exit Function
     End If
     
-    FindLastDataRow = maxRow
+    ' Search backwards from maxRow to find the last row where ALL columns A, B, C, D have values
+    For i = maxRow To headerRow + 1 Step -1
+        If Len(Trim(CStr(ws.Cells(i, colA).Value))) > 0 And _
+           Len(Trim(CStr(ws.Cells(i, colB).Value))) > 0 And _
+           Len(Trim(CStr(ws.Cells(i, colC).Value))) > 0 And _
+           Len(Trim(CStr(ws.Cells(i, colD).Value))) > 0 Then
+            FindLastDataRow = i
+            Exit Function
+        End If
+    Next i
+    
+    ' If no row found with all columns filled, return header row
+    FindLastDataRow = headerRow
 End Function
 
 Function ExtractNumericFromType(typeCell As Variant) As Double
@@ -621,6 +716,18 @@ Function RoundUpToInteger(value As Double) As Long
     Else
         RoundUpToInteger = Int(value)
     End If
+End Function
+
+Function RoundUpToMultiple(value As Double, multiple As Long) As Long
+    If multiple <= 0 Then
+        RoundUpToMultiple = RoundUpToInteger(value)
+        Exit Function
+    End If
+    If value <= 0 Then
+        RoundUpToMultiple = 0
+        Exit Function
+    End If
+    RoundUpToMultiple = CLng(Application.WorksheetFunction.Ceiling_Math(value, multiple))
 End Function
 
 
