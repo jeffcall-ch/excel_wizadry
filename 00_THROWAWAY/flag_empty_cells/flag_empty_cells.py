@@ -91,7 +91,7 @@ def flag_empty_cells(input_file):
 
 if __name__ == "__main__":
     # Input file path
-    input_file = r"C:\Users\szil\Repos\excel_wizadry\00_THROWAWAY\flag_empty_cells\TBY_Pipe_List_08.01.2025.xlsx"
+    input_file = r"C:\Users\szil\Repos\excel_wizadry\00_THROWAWAY\flag_empty_cells\TBY_Pipe_List_15.01.2026_.xlsx"
     
     # Process the file
     output_file = flag_empty_cells(input_file)

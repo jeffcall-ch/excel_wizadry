@@ -23,17 +23,11 @@ Sub CalculateSpares()
     Const SEAL_QTY_THRESHOLD As Long = 10
     
     ' Critical component keywords
-    Const CRITICAL_KEYWORDS As String = "nipple,nipples,union,connection,connections,welding,adaptor"
+    Const CRITICAL_KEYWORDS As String = "nipple,nipples,union,connection,connections,welding,adaptor,coupling,threaded"
     Const CRITICAL_MIN_SPARE As Long = 3
     Const CRITICAL_PERCENT_LOW_QTY As Double = 0.5
     Const CRITICAL_PERCENT_HIGH_QTY As Double = 0.1
     Const CRITICAL_QTY_THRESHOLD As Long = 10
-    
-    ' MAPRESS fitting keywords
-    Const MAPRESS_KEYWORD As String = "mapress"
-    Const MAPRESS_FITTING_KEYWORDS As String = "cap,coupling,elbow,flange,tee"
-    Const MAPRESS_PERCENT As Double = 0.1
-    Const MAPRESS_QTY_THRESHOLD As Long = 20
     
     ' Standard thresholds
     Const THRESHOLD_1 As Long = 5
@@ -41,7 +35,7 @@ Sub CalculateSpares()
     Const TYPE_THRESHOLD As Double = 50
     
     ' Standard percentages
-    Const PERCENT_E_SMALL As Double = 0.1
+    Const PERCENT_E_SMALL As Double = 0.075
     Const PERCENT_E_LARGE As Double = 0.05
     Const PERCENT_F_SMALL As Double = 0.15
     Const PERCENT_F_LARGE As Double = 0.1
@@ -66,11 +60,9 @@ Sub CalculateSpares()
     Dim processedCount As Long
     Dim criticalCount As Long
     Dim sealCount As Long
-    Dim mapressCount As Long
     Dim tubiCount As Long
     Dim isCritical As Boolean
     Dim isSeal As Boolean
-    Dim isMapress As Boolean
     Dim isTubi As Boolean
     Dim description As String
     
@@ -124,7 +116,6 @@ Sub CalculateSpares()
     processedCount = 0
     criticalCount = 0
     sealCount = 0
-    mapressCount = 0
     tubiCount = 0
     
     For i = 1 To UBound(typeArr, 1)
@@ -144,13 +135,10 @@ Sub CalculateSpares()
         isSeal = IsSealComponent(description, SEAL_REQUIRED_KEYWORDS, SEAL_EXCLUDED_KEYWORDS)
         isCritical = HasAnyKeyword(description, CRITICAL_KEYWORDS)
         isTubi = IsTubiComponent(typeLabel, CStr(typeArr(i, 1)), description)
-        isMapress = HasMapressWithFitting(description, MAPRESS_KEYWORD, MAPRESS_FITTING_KEYWORDS)
-        If isTubi Then isMapress = False
         
         If isSeal Then sealCount = sealCount + 1
         If isCritical And Not isSeal Then criticalCount = criticalCount + 1
         If isTubi And Not isSeal And Not isCritical Then tubiCount = tubiCount + 1
-        If isMapress And Not isSeal And Not isCritical And Not isTubi Then mapressCount = mapressCount + 1
         
         If qtyPcs > 0 Or qtyM > 0 Then
             If qtyPcs > 0 Then
@@ -203,47 +191,28 @@ Sub CalculateSpares()
                                "; adjusted total rounded to next multiple of 6 = " & tubiTotalQty & _
                                "; spare = " & spareValue & " " & unitLabel & "."
                 
-                ' MAPRESS
-                ElseIf isMapress Then
-                    If qtyPcs > MAPRESS_QTY_THRESHOLD Then
-                        spareValue = RoundUpToInteger(qtyPcs * MAPRESS_PERCENT)
-                        ruleNum = "#7"
-                        noteText = "Rule #7: MAPRESS fittings qty > " & MAPRESS_QTY_THRESHOLD & _
-                                   " -> spare = ceiling(qty * " & PercentText(MAPRESS_PERCENT) & ") " & unitLabel & "."
-                    ElseIf qtyPcs <= THRESHOLD_1 Then
-                        spareValue = 0
-                        ruleNum = "#5"
-                        noteText = "Rule #5: MAPRESS fittings qty <= " & THRESHOLD_1 & _
-                                   " -> spare = 0 " & unitLabel & "."
-                    Else
-                        spareValue = 1
-                        ruleNum = "#6"
-                        noteText = "Rule #6: MAPRESS fittings qty between " & (THRESHOLD_1 + 1) & _
-                                   " and " & MAPRESS_QTY_THRESHOLD & " -> spare = 1 " & unitLabel & "."
-                    End If
-                
                 ' STANDARD
                 Else
                     If qtyPcs <= THRESHOLD_1 Then
                         spareValue = 0
-                        ruleNum = "#8"
-                        noteText = "Rule #8: Standard components qty <= " & THRESHOLD_1 & _
+                        ruleNum = "#5"
+                        noteText = "Rule #5: Standard components qty <= " & THRESHOLD_1 & _
                                    " -> spare = 0 " & unitLabel & "."
                     ElseIf qtyPcs <= THRESHOLD_2 Then
                         spareValue = 1
-                        ruleNum = "#9"
-                        noteText = "Rule #9: Standard components qty between " & (THRESHOLD_1 + 1) & _
+                        ruleNum = "#6"
+                        noteText = "Rule #6: Standard components qty between " & (THRESHOLD_1 + 1) & _
                                    " and " & THRESHOLD_2 & " -> spare = 1 " & unitLabel & "."
                     ElseIf typeValue < TYPE_THRESHOLD Then
                         spareValue = RoundUpToInteger(qtyPcs * PERCENT_E_SMALL)
-                        ruleNum = "#10a"
-                        noteText = "Rule #10a: Standard components qty > " & THRESHOLD_2 & _
+                        ruleNum = "#7a"
+                        noteText = "Rule #7a: Standard components qty > " & THRESHOLD_2 & _
                                    " and DN < " & TYPE_THRESHOLD & " -> spare = ceiling(qty * " & _
                                    PercentText(PERCENT_E_SMALL) & ") " & unitLabel & "."
                     Else
                         spareValue = RoundUpToInteger(qtyPcs * PERCENT_E_LARGE)
-                        ruleNum = "#10b"
-                        noteText = "Rule #10b: Standard components qty > " & THRESHOLD_2 & _
+                        ruleNum = "#7b"
+                        noteText = "Rule #7b: Standard components qty > " & THRESHOLD_2 & _
                                    " and DN >= " & TYPE_THRESHOLD & " -> spare = ceiling(qty * " & _
                                    PercentText(PERCENT_E_LARGE) & ") " & unitLabel & "."
                     End If
@@ -298,29 +267,16 @@ Sub CalculateSpares()
                                "; adjusted total rounded to next multiple of 6 = " & tubiTotalQty & _
                                "; spare = " & spareValue & " " & unitLabel & "."
                 
-                ElseIf isMapress Then
-                    If qtyM > MAPRESS_QTY_THRESHOLD Then
-                        spareValue = RoundUpToInteger(qtyM * MAPRESS_PERCENT)
-                        ruleNum = "#7"
-                        noteText = "Rule #7: MAPRESS fittings qty > " & MAPRESS_QTY_THRESHOLD & _
-                                   " -> spare = ceiling(qty * " & PercentText(MAPRESS_PERCENT) & ") " & unitLabel & "."
-                    Else
-                        spareValue = 0
-                        ruleNum = "#5"
-                        noteText = "Rule #5: MAPRESS fittings qty <= " & MAPRESS_QTY_THRESHOLD & _
-                                   " -> spare = 0 " & unitLabel & "."
-                    End If
-                
                 Else
                     If typeValue < TYPE_THRESHOLD Then
                         spareValue = RoundUpToInteger(qtyM * PERCENT_F_SMALL)
-                        ruleNum = "#11a"
-                        noteText = "Rule #11a: Standard meter qty with DN < " & TYPE_THRESHOLD & _
+                        ruleNum = "#8a"
+                        noteText = "Rule #8a: Standard meter qty with DN < " & TYPE_THRESHOLD & _
                                    " -> spare = ceiling(qty * " & PercentText(PERCENT_F_SMALL) & ") " & unitLabel & "."
                     Else
                         spareValue = RoundUpToInteger(qtyM * PERCENT_F_LARGE)
-                        ruleNum = "#11b"
-                        noteText = "Rule #11b: Standard meter qty with DN >= " & TYPE_THRESHOLD & _
+                        ruleNum = "#8b"
+                        noteText = "Rule #8b: Standard meter qty with DN >= " & TYPE_THRESHOLD & _
                                    " -> spare = ceiling(qty * " & PercentText(PERCENT_F_LARGE) & ") " & unitLabel & "."
                     End If
                 End If
@@ -354,7 +310,6 @@ Sub CalculateSpares()
            "Seal rings: " & sealCount & " rows" & vbCrLf & _
            "Critical components: " & criticalCount & " rows" & vbCrLf & _
             "TUBI components: " & tubiCount & " rows" & vbCrLf & _
-           "MAPRESS fittings: " & mapressCount & " rows" & vbCrLf & _
            "Skipped: " & (lastRow - HEADER_ROW - processedCount) & " rows" & vbCrLf & vbCrLf & _
            "Rules documentation added below data.", _
            vbInformation, "Calculation Complete"
@@ -392,7 +347,7 @@ Sub AddRulesDocumentation(ws As Worksheet, lastDataRow As Long, ruleColumn As St
     ws.Range(ruleColumn & currentRow).Font.Size = 12
     currentRow = currentRow + 1
     
-    ws.Range(ruleColumn & currentRow).value = "Priority: SEAL > CRITICAL > TUBI > MAPRESS > STANDARD"
+    ws.Range(ruleColumn & currentRow).value = "Priority: SEAL > CRITICAL > TUBI > STANDARD"
     ws.Range(ruleColumn & currentRow).Font.Italic = True
     currentRow = currentRow + 2
     
@@ -407,7 +362,7 @@ Sub AddRulesDocumentation(ws As Worksheet, lastDataRow As Long, ruleColumn As St
     currentRow = currentRow + 2
     
     ' CRITICAL RULES
-    ws.Range(ruleColumn & currentRow).value = "CRITICAL COMPONENTS (keywords: nipple, union, connection, welding, adaptor)"
+    ws.Range(ruleColumn & currentRow).value = "CRITICAL COMPONENTS (keywords: nipple, union, connection, welding, adaptor, coupling, threaded)"
     ws.Range(ruleColumn & currentRow).Font.Bold = True
     currentRow = currentRow + 1
     
@@ -430,8 +385,8 @@ Sub AddRulesDocumentation(ws As Worksheet, lastDataRow As Long, ruleColumn As St
     ws.Range(ruleColumn & currentRow).value = "             spare = rounded total - original QTY"
     currentRow = currentRow + 2
     
-    ' MAPRESS RULES
-    ws.Range(ruleColumn & currentRow).value = "MAPRESS FITTINGS (keywords: mapress + cap/coupling/elbow/flange/tee)"
+    ' STANDARD RULES
+    ws.Range(ruleColumn & currentRow).value = "STANDARD COMPONENTS (all others)"
     ws.Range(ruleColumn & currentRow).Font.Bold = True
     currentRow = currentRow + 1
     
@@ -439,25 +394,13 @@ Sub AddRulesDocumentation(ws As Worksheet, lastDataRow As Long, ruleColumn As St
     currentRow = currentRow + 1
     ws.Range(ruleColumn & currentRow).value = "  Rule #6: If 5 < QTY <= 20 -> Spare = 1"
     currentRow = currentRow + 1
-    ws.Range(ruleColumn & currentRow).value = "  Rule #7: If QTY > 20 -> Spare = ceiling(QTY x 10%)"
-    currentRow = currentRow + 2
-    
-    ' STANDARD RULES
-    ws.Range(ruleColumn & currentRow).value = "STANDARD COMPONENTS (all others)"
-    ws.Range(ruleColumn & currentRow).Font.Bold = True
+    ws.Range(ruleColumn & currentRow).value = "  Rule #7a: If QTY pcs > 20 and DN < 50 -> Spare = ceiling(QTY x 7.5%)"
     currentRow = currentRow + 1
-    
-    ws.Range(ruleColumn & currentRow).value = "  Rule #8: If QTY <= 5 -> Spare = 0"
+    ws.Range(ruleColumn & currentRow).value = "  Rule #7b: If QTY pcs > 20 and DN >= 50 -> Spare = ceiling(QTY x 5%)"
     currentRow = currentRow + 1
-    ws.Range(ruleColumn & currentRow).value = "  Rule #9: If 5 < QTY <= 20 -> Spare = 1"
+    ws.Range(ruleColumn & currentRow).value = "  Rule #8a: If QTY m > 0 and DN < 50 -> Spare = ceiling(QTY x 15%)"
     currentRow = currentRow + 1
-    ws.Range(ruleColumn & currentRow).value = "  Rule #10a: If QTY pcs > 20 and DN < 50 -> Spare = ceiling(QTY x 10%)"
-    currentRow = currentRow + 1
-    ws.Range(ruleColumn & currentRow).value = "  Rule #10b: If QTY pcs > 20 and DN >= 50 -> Spare = ceiling(QTY x 5%)"
-    currentRow = currentRow + 1
-    ws.Range(ruleColumn & currentRow).value = "  Rule #11a: If QTY m > 0 and DN < 50 -> Spare = ceiling(QTY x 15%)"
-    currentRow = currentRow + 1
-    ws.Range(ruleColumn & currentRow).value = "  Rule #11b: If QTY m > 0 and DN >= 50 -> Spare = ceiling(QTY x 10%)"
+    ws.Range(ruleColumn & currentRow).value = "  Rule #8b: If QTY m > 0 and DN >= 50 -> Spare = ceiling(QTY x 10%)"
     currentRow = currentRow + 2
     
     ' Notes

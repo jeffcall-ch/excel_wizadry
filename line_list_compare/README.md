@@ -18,7 +18,6 @@ python line_list_compare.py compare.xlsx my_result.xlsx
 ## 📁 Core Files
 
 - **`line_list_compare.py`** - Complete comparison engine with CLI
-- **`excel_compare.py`** - Legacy version (older functionality)
 - **`compare.xlsx`** - Sample input file with multiple sheets
 - **`original_VBA.vba`** - Original VBA reference code
 - **`README.md`** - This documentation
