@@ -11,12 +11,15 @@ Sub CalculateFastenerSpares()
     Const COL_SPARE As String = "F"
     
     ' Nut/Washer/Bolt keywords
-    Const NUT_WASHER_BOLT_KEYWORDS As String = "nut,washer,bolt"
+    Const NUT_WASHER_KEYWORDS As String = "nut,washer"
+    Const BOLT_KEYWORD As String = "bolt"
     Const NWB_THRESHOLD_1 As Long = 30
     Const NWB_THRESHOLD_2 As Long = 100
+    Const NWB_THRESHOLD_3 As Long = 400
     Const NWB_PERCENT_LOW As Double = 1#
     Const NWB_PERCENT_MID As Double = 0.5
-    Const NWB_PERCENT_HIGH As Double = 0.2
+    Const NWB_PERCENT_HIGH As Double = 0.35
+    Const NWB_PERCENT_VERY_HIGH As Double = 0.2
     
     ' Gasket keywords
     Const GASKET_KEYWORD As String = "gasket"
@@ -44,10 +47,12 @@ Sub CalculateFastenerSpares()
     Dim baseSpare As Long
     Dim totalQty As Long
     Dim processedCount As Long
-    Dim nutWasherBoltCount As Long
+    Dim nutWasherCount As Long
+    Dim boltCount As Long
     Dim gasketCount As Long
     Dim standardCount As Long
-    Dim isNutWasherBolt As Boolean
+    Dim isNutWasher As Boolean
+    Dim isBolt As Boolean
     Dim isGasket As Boolean
     Dim description As String
     
@@ -89,7 +94,8 @@ Sub CalculateFastenerSpares()
     ReDim notesArr(1 To UBound(descArr, 1))
     
     processedCount = 0
-    nutWasherBoltCount = 0
+    nutWasherCount = 0
+    boltCount = 0
     gasketCount = 0
     standardCount = 0
     
@@ -103,11 +109,14 @@ Sub CalculateFastenerSpares()
         
         If qty < 0 Then qty = 0
         
-        isNutWasherBolt = HasAnyKeyword(description, NUT_WASHER_BOLT_KEYWORDS)
+        isNutWasher = HasAnyKeyword(description, NUT_WASHER_KEYWORDS)
+        isBolt = HasKeyword(description, BOLT_KEYWORD)
         isGasket = HasKeyword(description, GASKET_KEYWORD)
         
-        If isNutWasherBolt Then
-            nutWasherBoltCount = nutWasherBoltCount + 1
+        If isNutWasher Then
+            nutWasherCount = nutWasherCount + 1
+        ElseIf isBolt Then
+            boltCount = boltCount + 1
         ElseIf isGasket Then
             gasketCount = gasketCount + 1
         Else
@@ -115,31 +124,75 @@ Sub CalculateFastenerSpares()
         End If
         
         If qty > 0 Then
-            ' NUT/WASHER/BOLT
-            If isNutWasherBolt Then
+            ' NUT/WASHER (new rounding: ≤100->next 10, 101-150->150, >150->next 100)
+            If isNutWasher Then
+                If qty <= NWB_THRESHOLD_1 Then
+                    baseSpare = RoundUpToInteger(qty * NWB_PERCENT_LOW)
+                    totalQty = RoundUpNutWasher(qty + baseSpare)
+                    spareValue = totalQty - qty
+                    ruleNum = "#1"
+                    noteText = "Rule #1: Nut/Washer qty <= " & NWB_THRESHOLD_1 & _
+                               " -> base spare = " & PercentText(NWB_PERCENT_LOW) & _
+                               " of qty = " & baseSpare & "; total rounded (≤100->next 10, 101-500->next 50, >500->next 100) = " & totalQty & "; spare = " & spareValue & "."
+                ElseIf qty <= NWB_THRESHOLD_2 Then
+                    baseSpare = RoundUpToInteger(qty * NWB_PERCENT_MID)
+                    totalQty = RoundUpNutWasher(qty + baseSpare)
+                    spareValue = totalQty - qty
+                    ruleNum = "#2"
+                    noteText = "Rule #2: Nut/Washer qty between " & (NWB_THRESHOLD_1 + 1) & _
+                               " and " & NWB_THRESHOLD_2 & " -> base spare = " & PercentText(NWB_PERCENT_MID) & _
+                               " of qty = " & baseSpare & "; total rounded (≤100->next 10, 101-500->next 50, >500->next 100) = " & totalQty & "; spare = " & spareValue & "."
+                ElseIf qty <= NWB_THRESHOLD_3 Then
+                    baseSpare = RoundUpToInteger(qty * NWB_PERCENT_HIGH)
+                    totalQty = RoundUpNutWasher(qty + baseSpare)
+                    spareValue = totalQty - qty
+                    ruleNum = "#3"
+                    noteText = "Rule #3: Nut/Washer qty between " & (NWB_THRESHOLD_2 + 1) & _
+                               " and " & NWB_THRESHOLD_3 & " -> base spare = " & PercentText(NWB_PERCENT_HIGH) & _
+                               " of qty = " & baseSpare & "; total rounded (≤100->next 10, 101-500->next 50, >500->next 100) = " & totalQty & "; spare = " & spareValue & "."
+                Else
+                    baseSpare = RoundUpToInteger(qty * NWB_PERCENT_VERY_HIGH)
+                    totalQty = RoundUpNutWasher(qty + baseSpare)
+                    spareValue = totalQty - qty
+                    ruleNum = "#4"
+                    noteText = "Rule #4: Nut/Washer qty > " & NWB_THRESHOLD_3 & _
+                               " -> base spare = " & PercentText(NWB_PERCENT_VERY_HIGH) & _
+                               " of qty = " & baseSpare & "; total rounded (≤100->next 10, 101-500->next 50, >500->next 100) = " & totalQty & "; spare = " & spareValue & "."
+                End If
+            
+            ' BOLT (keeps old rounding: round to next 10)
+            ElseIf isBolt Then
                 If qty <= NWB_THRESHOLD_1 Then
                     baseSpare = RoundUpToInteger(qty * NWB_PERCENT_LOW)
                     totalQty = RoundUpToNext10(qty + baseSpare)
                     spareValue = totalQty - qty
-                    ruleNum = "#1"
-                    noteText = "Rule #1: Nut/Washer/Bolt qty <= " & NWB_THRESHOLD_1 & _
+                    ruleNum = "#1B"
+                    noteText = "Rule #1B: Bolt qty <= " & NWB_THRESHOLD_1 & _
                                " -> base spare = " & PercentText(NWB_PERCENT_LOW) & _
                                " of qty = " & baseSpare & "; total rounded to next 10 = " & totalQty & "; spare = " & spareValue & "."
                 ElseIf qty <= NWB_THRESHOLD_2 Then
                     baseSpare = RoundUpToInteger(qty * NWB_PERCENT_MID)
                     totalQty = RoundUpToNext10(qty + baseSpare)
                     spareValue = totalQty - qty
-                    ruleNum = "#2"
-                    noteText = "Rule #2: Nut/Washer/Bolt qty between " & (NWB_THRESHOLD_1 + 1) & _
+                    ruleNum = "#2B"
+                    noteText = "Rule #2B: Bolt qty between " & (NWB_THRESHOLD_1 + 1) & _
                                " and " & NWB_THRESHOLD_2 & " -> base spare = " & PercentText(NWB_PERCENT_MID) & _
                                " of qty = " & baseSpare & "; total rounded to next 10 = " & totalQty & "; spare = " & spareValue & "."
-                Else
+                ElseIf qty <= NWB_THRESHOLD_3 Then
                     baseSpare = RoundUpToInteger(qty * NWB_PERCENT_HIGH)
                     totalQty = RoundUpToNext10(qty + baseSpare)
                     spareValue = totalQty - qty
-                    ruleNum = "#3"
-                    noteText = "Rule #3: Nut/Washer/Bolt qty > " & NWB_THRESHOLD_2 & _
-                               " -> base spare = " & PercentText(NWB_PERCENT_HIGH) & _
+                    ruleNum = "#3B"
+                    noteText = "Rule #3B: Bolt qty between " & (NWB_THRESHOLD_2 + 1) & _
+                               " and " & NWB_THRESHOLD_3 & " -> base spare = " & PercentText(NWB_PERCENT_HIGH) & _
+                               " of qty = " & baseSpare & "; total rounded to next 10 = " & totalQty & "; spare = " & spareValue & "."
+                Else
+                    baseSpare = RoundUpToInteger(qty * NWB_PERCENT_VERY_HIGH)
+                    totalQty = RoundUpToNext10(qty + baseSpare)
+                    spareValue = totalQty - qty
+                    ruleNum = "#4B"
+                    noteText = "Rule #4B: Bolt qty > " & NWB_THRESHOLD_3 & _
+                               " -> base spare = " & PercentText(NWB_PERCENT_VERY_HIGH) & _
                                " of qty = " & baseSpare & "; total rounded to next 10 = " & totalQty & "; spare = " & spareValue & "."
                 End If
             
@@ -147,24 +200,24 @@ Sub CalculateFastenerSpares()
             ElseIf isGasket Then
                 If qty <= GASKET_THRESHOLD_1 Then
                     spareValue = RoundUpToInteger(qty * GASKET_PERCENT_LOW)
-                    ruleNum = "#4"
-                    noteText = "Rule #4: Gasket qty <= " & GASKET_THRESHOLD_1 & _
+                    ruleNum = "#5"
+                    noteText = "Rule #5: Gasket qty <= " & GASKET_THRESHOLD_1 & _
                                " -> spare = " & PercentText(GASKET_PERCENT_LOW) & _
                                " of qty rounded up to the next integer."
                 ElseIf qty <= GASKET_THRESHOLD_2 Then
                     baseSpare = RoundUpToInteger(qty * GASKET_PERCENT_MID)
                     totalQty = RoundUpToNext10(qty + baseSpare)
                     spareValue = totalQty - qty
-                    ruleNum = "#5"
-                    noteText = "Rule #5: Gasket qty between " & (GASKET_THRESHOLD_1 + 1) & _
+                    ruleNum = "#6"
+                    noteText = "Rule #6: Gasket qty between " & (GASKET_THRESHOLD_1 + 1) & _
                                " and " & GASKET_THRESHOLD_2 & " -> base spare = " & PercentText(GASKET_PERCENT_MID) & _
                                " of qty = " & baseSpare & "; total rounded to next 10 = " & totalQty & "; spare = " & spareValue & "."
                 Else
                     baseSpare = RoundUpToInteger(qty * GASKET_PERCENT_HIGH)
                     totalQty = RoundUpToNext10(qty + baseSpare)
                     spareValue = totalQty - qty
-                    ruleNum = "#6"
-                    noteText = "Rule #6: Gasket qty > " & GASKET_THRESHOLD_2 & _
+                    ruleNum = "#7"
+                    noteText = "Rule #7: Gasket qty > " & GASKET_THRESHOLD_2 & _
                                " -> base spare = " & PercentText(GASKET_PERCENT_HIGH) & _
                                " of qty = " & baseSpare & "; total rounded to next 10 = " & totalQty & "; spare = " & spareValue & "."
                 End If
@@ -173,14 +226,14 @@ Sub CalculateFastenerSpares()
             Else
                 If qty < STANDARD_THRESHOLD Then
                     spareValue = RoundUpToInteger(qty * STANDARD_PERCENT_LOW)
-                    ruleNum = "#7"
-                    noteText = "Rule #7: Standard components qty < " & STANDARD_THRESHOLD & _
+                    ruleNum = "#8"
+                    noteText = "Rule #8: Standard components qty < " & STANDARD_THRESHOLD & _
                                " -> spare = " & PercentText(STANDARD_PERCENT_LOW) & _
                                " of qty rounded up to the next integer."
                 Else
                     spareValue = RoundUpToInteger(qty * STANDARD_PERCENT_HIGH)
-                    ruleNum = "#8"
-                    noteText = "Rule #8: Standard components qty >= " & STANDARD_THRESHOLD & _
+                    ruleNum = "#9"
+                    noteText = "Rule #9: Standard components qty >= " & STANDARD_THRESHOLD & _
                                " -> spare = " & PercentText(STANDARD_PERCENT_HIGH) & _
                                " of qty rounded up to the next integer."
                 End If
@@ -211,7 +264,8 @@ Sub CalculateFastenerSpares()
     MsgBox "Fastener spare calculation completed in " & _
            Format(Timer - startTime, "0.00") & " seconds." & vbCrLf & vbCrLf & _
            "Processed: " & processedCount & " rows" & vbCrLf & _
-           "Nut/Washer/Bolt: " & nutWasherBoltCount & " rows" & vbCrLf & _
+           "Nut/Washer: " & nutWasherCount & " rows" & vbCrLf & _
+           "Bolt: " & boltCount & " rows" & vbCrLf & _
            "Gasket: " & gasketCount & " rows" & vbCrLf & _
            "Standard: " & standardCount & " rows" & vbCrLf & _
            "Skipped: " & (lastRow - HEADER_ROW - processedCount) & " rows" & vbCrLf & vbCrLf & _
@@ -251,30 +305,65 @@ Sub AddFastenerRulesDocumentation(ws As Worksheet, lastDataRow As Long, ruleColu
     ws.Range(ruleColumn & currentRow).Font.Size = 12
     currentRow = currentRow + 1
     
-    ws.Range(ruleColumn & currentRow).value = "Priority: NUT/WASHER/BOLT > GASKET > STANDARD"
+    ws.Range(ruleColumn & currentRow).value = "Priority: NUT/WASHER > BOLT > GASKET > STANDARD"
     ws.Range(ruleColumn & currentRow).Font.Italic = True
     currentRow = currentRow + 2
     
-    ' NUT/WASHER/BOLT RULES
-    ws.Range(ruleColumn & currentRow).value = "NUT/WASHER/BOLT COMPONENTS (keywords: nut, washer, bolt)"
+    ' NUT/WASHER RULES
+    ws.Range(ruleColumn & currentRow).value = "NUT/WASHER COMPONENTS (keywords: nut, washer)"
     ws.Range(ruleColumn & currentRow).Font.Bold = True
     currentRow = currentRow + 1
     
-    ws.Range(ruleColumn & currentRow).value = "  Rule #1: If QTY <= 30 -> Base spare = 100% of QTY; Total (QTY + base spare) rounded up to next 10"
+    ws.Range(ruleColumn & currentRow).value = "  Rule #1: If QTY <= 30 -> Base spare = 100% of QTY; Total rounded (≤100->next 10, 101-500->next 50, >500->next 100)"
     currentRow = currentRow + 1
-    ws.Range(ruleColumn & currentRow).value = "           Examples: QTY=5->base=5,total=10,spare=5; QTY=15->base=15,total=30,spare=15; QTY=25->base=25,total=50,spare=25"
+    ws.Range(ruleColumn & currentRow).value = "           Examples: QTY=5->total=10,spare=5; QTY=25->total=50,spare=25; QTY=30->total=60,spare=30"
     ws.Range(ruleColumn & currentRow).Font.Italic = True
     currentRow = currentRow + 1
     
-    ws.Range(ruleColumn & currentRow).value = "  Rule #2: If 30 < QTY <= 100 -> Base spare = 50% of QTY; Total (QTY + base spare) rounded up to next 10"
+    ws.Range(ruleColumn & currentRow).value = "  Rule #2: If 30 < QTY <= 100 -> Base spare = 50% of QTY; Total rounded (≤100->next 10, 101-500->next 50, >500->next 100)"
     currentRow = currentRow + 1
-    ws.Range(ruleColumn & currentRow).value = "           Examples: QTY=40->base=20,total=60,spare=20; QTY=50->base=25,total=80,spare=30; QTY=60->base=30,total=90,spare=30"
+    ws.Range(ruleColumn & currentRow).value = "           Examples: QTY=40->total=60,spare=20; QTY=60->total=90,spare=30; QTY=100->total=150,spare=50"
     ws.Range(ruleColumn & currentRow).Font.Italic = True
     currentRow = currentRow + 1
     
-    ws.Range(ruleColumn & currentRow).value = "  Rule #3: If QTY > 100 -> Base spare = 20% of QTY; Total (QTY + base spare) rounded up to next 10"
+    ws.Range(ruleColumn & currentRow).value = "  Rule #3: If 100 < QTY <= 400 -> Base spare = 35% of QTY; Total rounded (≤100->next 10, 101-500->next 50, >500->next 100)"
     currentRow = currentRow + 1
-    ws.Range(ruleColumn & currentRow).value = "           Examples: QTY=150->base=30,total=180,spare=30; QTY=200->base=40,total=240,spare=40; QTY=250->base=50,total=300,spare=50"
+    ws.Range(ruleColumn & currentRow).value = "           Examples: QTY=150->base=53,total=250,spare=100; QTY=200->base=70,total=300,spare=100; QTY=300->base=105,total=450,spare=150"
+    ws.Range(ruleColumn & currentRow).Font.Italic = True
+    currentRow = currentRow + 1
+    
+    ws.Range(ruleColumn & currentRow).value = "  Rule #4: If QTY > 400 -> Base spare = 20% of QTY; Total rounded (≤100->next 10, 101-500->next 50, >500->next 100)"
+    currentRow = currentRow + 1
+    ws.Range(ruleColumn & currentRow).value = "           Examples: QTY=450->base=90,total=550,spare=100; QTY=500->base=100,total=600,spare=100; QTY=1000->base=200,total=1300,spare=300"
+    ws.Range(ruleColumn & currentRow).Font.Italic = True
+    currentRow = currentRow + 2
+    
+    ' BOLT RULES
+    ws.Range(ruleColumn & currentRow).value = "BOLT COMPONENTS (keyword: bolt)"
+    ws.Range(ruleColumn & currentRow).Font.Bold = True
+    currentRow = currentRow + 1
+    
+    ws.Range(ruleColumn & currentRow).value = "  Rule #1B: If QTY <= 30 -> Base spare = 100% of QTY; Total rounded to next 10"
+    currentRow = currentRow + 1
+    ws.Range(ruleColumn & currentRow).value = "            Examples: QTY=5->total=10,spare=5; QTY=15->total=30,spare=15; QTY=25->total=50,spare=25"
+    ws.Range(ruleColumn & currentRow).Font.Italic = True
+    currentRow = currentRow + 1
+    
+    ws.Range(ruleColumn & currentRow).value = "  Rule #2B: If 30 < QTY <= 100 -> Base spare = 50% of QTY; Total rounded to next 10"
+    currentRow = currentRow + 1
+    ws.Range(ruleColumn & currentRow).value = "            Examples: QTY=40->total=60,spare=20; QTY=50->total=80,spare=30; QTY=60->total=90,spare=30"
+    ws.Range(ruleColumn & currentRow).Font.Italic = True
+    currentRow = currentRow + 1
+    
+    ws.Range(ruleColumn & currentRow).value = "  Rule #3B: If 100 < QTY <= 400 -> Base spare = 35% of QTY; Total rounded to next 10"
+    currentRow = currentRow + 1
+    ws.Range(ruleColumn & currentRow).value = "            Examples: QTY=150->total=210,spare=60; QTY=200->total=270,spare=70; QTY=300->total=410,spare=110"
+    ws.Range(ruleColumn & currentRow).Font.Italic = True
+    currentRow = currentRow + 1
+    
+    ws.Range(ruleColumn & currentRow).value = "  Rule #4B: If QTY > 400 -> Base spare = 20% of QTY; Total rounded to next 10"
+    currentRow = currentRow + 1
+    ws.Range(ruleColumn & currentRow).value = "            Examples: QTY=450->total=540,spare=90; QTY=500->total=600,spare=100; QTY=1000->total=1200,spare=200"
     ws.Range(ruleColumn & currentRow).Font.Italic = True
     currentRow = currentRow + 2
     
@@ -283,19 +372,19 @@ Sub AddFastenerRulesDocumentation(ws As Worksheet, lastDataRow As Long, ruleColu
     ws.Range(ruleColumn & currentRow).Font.Bold = True
     currentRow = currentRow + 1
     
-    ws.Range(ruleColumn & currentRow).value = "  Rule #4: If QTY <= 30 -> Spare = 100% of QTY, rounded up to next integer"
+    ws.Range(ruleColumn & currentRow).value = "  Rule #5: If QTY <= 30 -> Spare = 100% of QTY, rounded up to next integer"
     currentRow = currentRow + 1
     ws.Range(ruleColumn & currentRow).value = "           Examples: QTY=5->5, QTY=15->15, QTY=30->30"
     ws.Range(ruleColumn & currentRow).Font.Italic = True
     currentRow = currentRow + 1
     
-    ws.Range(ruleColumn & currentRow).value = "  Rule #5: If 30 < QTY <= 500 -> Base spare = 50% of QTY; Total (QTY + base spare) rounded up to next 10"
+    ws.Range(ruleColumn & currentRow).value = "  Rule #6: If 30 < QTY <= 500 -> Base spare = 50% of QTY; Total (QTY + base spare) rounded up to next 10"
     currentRow = currentRow + 1
     ws.Range(ruleColumn & currentRow).value = "           Examples: QTY=40->base=20,total=60,spare=20; QTY=100->base=50,total=150,spare=50; QTY=200->base=100,total=300,spare=100"
     ws.Range(ruleColumn & currentRow).Font.Italic = True
     currentRow = currentRow + 1
     
-    ws.Range(ruleColumn & currentRow).value = "  Rule #6: If QTY > 500 -> Base spare = 30% of QTY; Total (QTY + base spare) rounded up to next 10"
+    ws.Range(ruleColumn & currentRow).value = "  Rule #7: If QTY > 500 -> Base spare = 30% of QTY; Total (QTY + base spare) rounded up to next 10"
     currentRow = currentRow + 1
     ws.Range(ruleColumn & currentRow).value = "           Examples: QTY=600->base=180,total=780,spare=180; QTY=700->base=210,total=910,spare=210; QTY=1000->base=300,total=1300,spare=300"
     ws.Range(ruleColumn & currentRow).Font.Italic = True
@@ -306,13 +395,13 @@ Sub AddFastenerRulesDocumentation(ws As Worksheet, lastDataRow As Long, ruleColu
     ws.Range(ruleColumn & currentRow).Font.Bold = True
     currentRow = currentRow + 1
     
-    ws.Range(ruleColumn & currentRow).value = "  Rule #7: If QTY < 400 -> Spare = 35% of QTY, rounded up to next integer"
+    ws.Range(ruleColumn & currentRow).value = "  Rule #8: If QTY < 400 -> Spare = 35% of QTY, rounded up to next integer"
     currentRow = currentRow + 1
     ws.Range(ruleColumn & currentRow).value = "           Examples: QTY=100->35, QTY=200->70, QTY=399->140"
     ws.Range(ruleColumn & currentRow).Font.Italic = True
     currentRow = currentRow + 1
     
-    ws.Range(ruleColumn & currentRow).value = "  Rule #8: If QTY >= 400 -> Spare = 20% of QTY, rounded up to next integer"
+    ws.Range(ruleColumn & currentRow).value = "  Rule #9: If QTY >= 400 -> Spare = 20% of QTY, rounded up to next integer"
     currentRow = currentRow + 1
     ws.Range(ruleColumn & currentRow).value = "           Examples: QTY=400->80, QTY=500->100, QTY=1000->200"
     ws.Range(ruleColumn & currentRow).Font.Italic = True
@@ -468,6 +557,22 @@ Function RoundUpToNext10(value As Double) As Long
         Exit Function
     End If
     RoundUpToNext10 = CLng(Application.WorksheetFunction.Ceiling_Math(value, 10))
+End Function
+
+Function RoundUpNutWasher(value As Double) As Long
+    ' Special rounding for nut/washer:
+    ' ≤100: round to next 10
+    ' 101-500: round to next 50
+    ' >500: round to next 100
+    If value <= 0 Then
+        RoundUpNutWasher = 0
+    ElseIf value <= 100 Then
+        RoundUpNutWasher = CLng(Application.WorksheetFunction.Ceiling_Math(value, 10))
+    ElseIf value <= 500 Then
+        RoundUpNutWasher = CLng(Application.WorksheetFunction.Ceiling_Math(value, 50))
+    Else
+        RoundUpNutWasher = CLng(Application.WorksheetFunction.Ceiling_Math(value, 100))
+    End If
 End Function
 
 
