@@ -14,7 +14,7 @@ def setup_paths():
         'output_dir': os.path.join(current_dir, "output")
     }    # Define file paths
     files = {
-        'line_list_file': os.path.join(dirs['input_dir'], "Export 17.06.2025_LS.xlsx"),
+        'line_list_file': os.path.join(dirs['input_dir'], "MED_pipe_list_02.02.2026.xlsx"),
         'pipe_class_file': os.path.join(dirs['pipe_class_dir'], "PIPE CLASS SUMMARY_LS_06.06.2025_updated_column_names.xlsx"),
         'output_file': os.path.join(dirs['output_dir'], "Line_List_with_Matches.xlsx"),
         'summary_file': os.path.join(dirs['output_dir'], "Pipe_Class_Summary.xlsx"),
