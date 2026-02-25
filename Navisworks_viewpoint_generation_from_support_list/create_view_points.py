@@ -7,7 +7,7 @@ from pathlib import Path
 from collections import defaultdict
 
 # File paths
-EXCEL_FILE = r"C:\Users\szil\Repos\excel_wizadry\Navisworks_viewpoint_generation_from_support_list\GP_BQ_11.02.2026_stress_calcs_related.xlsx"
+EXCEL_FILE = r"C:\Users\szil\Repos\excel_wizadry\Navisworks_viewpoint_generation_from_support_list\GP_BQ_24.02.2026_FO.xlsx"
 TEMPLATE_XML = r"C:\Users\szil\Repos\excel_wizadry\Navisworks_viewpoint_generation_from_support_list\TBY_Thameside_ERF_20251117_viewpoints_251125_.xml"
 OUTPUT_XML = r"C:\Users\szil\Repos\excel_wizadry\Navisworks_viewpoint_generation_from_support_list\generated_viewpoints.xml"
 
