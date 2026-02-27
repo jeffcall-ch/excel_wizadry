@@ -1,0 +1,395 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PTS Visualization - 2026-02-27 12:56</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Tahoma, Arial, sans-serif;
+      background: #f4f6fb;
+      color: #122233;
+    }
+    .page {
+      padding: 14px;
+    }
+    .title {
+      font-size: 24px;
+      font-weight: 700;
+      margin: 0 0 8px;
+    }
+    .subtitle {
+      margin: 0 0 12px;
+      font-size: 15px;
+      color: #355067;
+    }
+    .legend {
+      margin: 0 0 14px;
+      font-size: 15px;
+      color: #1f2937;
+    }
+    .legend span {
+      display: inline-block;
+      margin-right: 16px;
+      font-weight: 700;
+    }
+    .legend .ok { color: #1f7a3f; }
+    .legend .bad { color: #b42318; }
+    .legend .req { color: #1d4ed8; }
+    .canvas {
+      border: 2px solid #b9c5d5;
+      border-radius: 12px;
+      background: #fff;
+      padding: 12px;
+      overflow-x: auto;
+      overflow-y: auto;
+      width: 100%;
+      max-height: calc(100vh - 170px);
+    }
+    .nodeRect {
+      fill: #ffffff;
+      stroke: #95a6bb;
+      stroke-width: 2;
+    }
+    .nodeName {
+      font-size: 16px;
+      font-weight: 700;
+      fill: #132a3a;
+    }
+    .nodeMeta {
+      font-size: 13px;
+      fill: #355067;
+    }
+    .edgeText {
+      font-size: 14px;
+      font-weight: 700;
+      paint-order: stroke;
+      stroke: #fff;
+      stroke-width: 4px;
+      stroke-linecap: butt;
+      stroke-linejoin: round;
+    }
+    .edgeLabelBg {
+      fill: #ffffff;
+      stroke: #d6dee9;
+      stroke-width: 1;
+      opacity: 0.94;
+    }
+    .edgeText.ok { fill: #1f7a3f; }
+    .edgeText.warn { fill: #b45309; }
+    .edgeText.bad { fill: #b42318; }
+    .edgeText.na { fill: #334155; }
+    .divider {
+      height: 0;
+      border-top: 4px solid #1f2937;
+      border-bottom: 1px solid #c7d2e0;
+      margin: 22px 0 14px;
+      opacity: 0.85;
+    }
+    .reqNodeRect {
+      fill: #ffffff;
+      stroke: #6b86b5;
+      stroke-width: 2;
+    }
+    .reqNodeMeta {
+      font-size: 13px;
+      fill: #1e3a8a;
+      font-weight: 700;
+    }
+    .reqEdgeLabelBg {
+      fill: #eff6ff;
+      stroke: #93c5fd;
+      stroke-width: 1;
+      opacity: 0.96;
+    }
+    .reqEdgeText {
+      font-size: 14px;
+      font-weight: 700;
+      fill: #1d4ed8;
+      paint-order: stroke;
+      stroke: #fff;
+      stroke-width: 4px;
+      stroke-linecap: butt;
+      stroke-linejoin: round;
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <h1 class="title">PTS Visualization - 2026-02-27 12:56</h1>
+    <p class="subtitle">Dependency flow from left (early) to right (late). Scroll horizontally to see full chain and branches.</p>
+    <p class="legend">
+      <span class="ok">Green: PTS duration &gt; STD duration</span>
+      <span class="bad">Red: PTS duration &lt;= STD duration</span>
+    </p>
+    <div class="canvas">
+      
+    <svg viewBox="0 0 6900 482" width="6900" height="482" role="img" aria-label="Dependency network">
+      <defs>
+        <marker id="arrow-ok" markerWidth="11" markerHeight="8" refX="9" refY="4" orient="auto">
+          <path d="M0,0 L10,4 L0,8 z" fill="#1f7a3f"></path>
+        </marker>
+        <marker id="arrow-warn" markerWidth="11" markerHeight="8" refX="9" refY="4" orient="auto">
+          <path d="M0,0 L10,4 L0,8 z" fill="#b45309"></path>
+        </marker>
+        <marker id="arrow-bad" markerWidth="11" markerHeight="8" refX="9" refY="4" orient="auto">
+          <path d="M0,0 L10,4 L0,8 z" fill="#b42318"></path>
+        </marker>
+        <marker id="arrow-na" markerWidth="11" markerHeight="8" refX="9" refY="4" orient="auto">
+          <path d="M0,0 L10,4 L0,8 z" fill="#6b7f95"></path>
+        </marker>
+      </defs>
+      <path d='M 418.0,81.0 C 816.9,81.0 905.5,92.0 1304.4,92.0' stroke='#b42318' stroke-width='2.4' fill='none' marker-end='url(#arrow-bad)' opacity='0.95'/><rect x='635.5' y='59.5' width='451.4' height='24' rx='8' ry='8' class='edgeLabelBg'/><text x='861.2' y='76.5' class='edgeText bad' text-anchor='middle'><title>STD 19.0W (base 16.0W, holiday +3W) | PTS 26.3W | DELTA +7.3W</title>STD 19.0W (base 16.0W, holiday +3W) | PTS 26.3W | DELTA +7.3W</text><path d='M 1694.4,92.0 C 1851.5,92.0 1886.5,381.0 2043.6,381.0' stroke='#b42318' stroke-width='2.4' fill='none' marker-end='url(#arrow-bad)' opacity='0.95'/><rect x='1746.9' y='209.5' width='244.2' height='24' rx='8' ry='8' class='edgeLabelBg'/><text x='1869.0' y='226.5' class='edgeText bad' text-anchor='middle'><title>STD 4.0W | PTS 5.1W | DELTA +1.1W</title>STD 4.0W | PTS 5.1W | DELTA +1.1W</text><path d='M 1694.4,92.0 C 1841.6,92.0 1874.4,92.0 2021.6,92.0' stroke='#b42318' stroke-width='2.4' fill='none' marker-end='url(#arrow-bad)' opacity='0.95'/><rect x='1735.9' y='65.0' width='244.2' height='24' rx='8' ry='8' class='edgeLabelBg'/><text x='1858.0' y='82.0' class='edgeText bad' text-anchor='middle'><title>STD 3.0W | PTS 0.0W | DELTA -3.0W</title>STD 3.0W | PTS 0.0W | DELTA -3.0W</text><path d='M 1694.4,92.0 C 1937.4,92.0 1991.4,242.0 2234.4,242.0' stroke='#1f7a3f' stroke-width='2.4' fill='none' marker-end='url(#arrow-ok)' opacity='0.95'/><rect x='1834.9' y='140.0' width='259.0' height='24' rx='8' ry='8' class='edgeLabelBg'/><text x='1964.4' y='157.0' class='edgeText ok' text-anchor='middle'><title>STD 12.0W | PTS 11.7W | DELTA -0.3W</title>STD 12.0W | PTS 11.7W | DELTA -0.3W</text><path d='M 2624.4,242.0 C 2761.7,242.0 2792.3,359.0 2929.6,359.0' stroke='#1f7a3f' stroke-width='2.4' fill='none' marker-end='url(#arrow-ok)' opacity='0.95'/><rect x='2654.9' y='273.5' width='244.2' height='24' rx='8' ry='8' class='edgeLabelBg'/><text x='2777.0' y='290.5' class='edgeText ok' text-anchor='middle'><title>STD 2.0W | PTS 1.4W | DELTA -0.6W</title>STD 2.0W | PTS 1.4W | DELTA -0.6W</text><path d='M 2624.4,242.0 C 2781.5,242.0 2816.5,231.0 2973.6,231.0' stroke='#1f7a3f' stroke-width='2.4' fill='none' marker-end='url(#arrow-ok)' opacity='0.95'/><rect x='2676.9' y='209.5' width='244.2' height='24' rx='8' ry='8' class='edgeLabelBg'/><text x='2799.0' y='226.5' class='edgeText ok' text-anchor='middle'><title>STD 4.0W | PTS 3.4W | DELTA -0.6W</title>STD 4.0W | PTS 3.4W | DELTA -0.6W</text><path d='M 2624.4,242.0 C 2791.4,242.0 2828.6,92.0 2995.6,92.0' stroke='#1f7a3f' stroke-width='2.4' fill='none' marker-end='url(#arrow-ok)' opacity='0.95'/><rect x='2687.9' y='140.0' width='244.2' height='24' rx='8' ry='8' class='edgeLabelBg'/><text x='2810.0' y='157.0' class='edgeText ok' text-anchor='middle'><title>STD 5.0W | PTS 4.3W | DELTA -0.7W</title>STD 5.0W | PTS 4.3W | DELTA -0.7W</text><path d='M 3319.6,359.0 C 3486.6,359.0 3523.8,209.0 3690.8,209.0' stroke='#1f7a3f' stroke-width='2.4' fill='none' marker-end='url(#arrow-ok)' opacity='0.95'/><rect x='3383.1' y='257.0' width='244.2' height='24' rx='8' ry='8' class='edgeLabelBg'/><text x='3505.2' y='274.0' class='edgeText ok' text-anchor='middle'><title>STD 5.0W | PTS 4.6W | DELTA -0.4W</title>STD 5.0W | PTS 4.6W | DELTA -0.4W</text><path d='M 4080.8,209.0 C 4489.6,209.0 4580.4,209.0 4989.2,209.0' stroke='#b42318' stroke-width='2.4' fill='none' marker-end='url(#arrow-bad)' opacity='0.95'/><rect x='4309.3' y='182.0' width='451.4' height='24' rx='8' ry='8' class='edgeLabelBg'/><text x='4535.0' y='199.0' class='edgeText bad' text-anchor='middle'><title>STD 20.0W (base 16.0W, holiday +4W) | PTS 18.6W | DELTA -1.4W</title>STD 20.0W (base 16.0W, holiday +4W) | PTS 18.6W | DELTA -1.4W</text><path d='M 5379.2,209.0 C 5549.6,209.0 5587.4,81.0 5757.8,81.0' stroke='#b42318' stroke-width='2.4' fill='none' marker-end='url(#arrow-bad)' opacity='0.95'/><rect x='5442.7' y='118.0' width='251.6' height='24' rx='8' ry='8' class='edgeLabelBg'/><text x='5568.5' y='135.0' class='edgeText bad' text-anchor='middle'><title>STD 5.0W | PTS 12.9W | DELTA +7.9W</title>STD 5.0W | PTS 12.9W | DELTA +7.9W</text><path d='M 3363.6,231.0 C 3550.4,231.0 3592.0,81.0 3778.8,81.0' stroke='#b42318' stroke-width='2.4' fill='none' marker-end='url(#arrow-bad)' opacity='0.95'/><rect x='3449.1' y='129.0' width='244.2' height='24' rx='8' ry='8' class='edgeLabelBg'/><text x='3571.2' y='146.0' class='edgeText bad' text-anchor='middle'><title>STD 7.0W | PTS 4.7W | DELTA -2.3W</title>STD 7.0W | PTS 4.7W | DELTA -2.3W</text><path d='M 4168.8,81.0 C 4547.9,81.0 4632.1,81.0 5011.2,81.0' stroke='#b42318' stroke-width='2.4' fill='none' marker-end='url(#arrow-bad)' opacity='0.95'/><rect x='4364.3' y='54.0' width='451.4' height='24' rx='8' ry='8' class='edgeLabelBg'/><text x='4590.0' y='71.0' class='edgeText bad' text-anchor='middle'><title>STD 17.0W (base 13.0W, holiday +4W) | PTS 18.0W | DELTA +1.0W</title>STD 17.0W (base 13.0W, holiday +4W) | PTS 18.0W | DELTA +1.0W</text><path d='M 6147.8,81.0 C 6273.6,81.0 6301.6,75.0 6427.4,75.0' stroke='#b42318' stroke-width='2.4' fill='none' marker-end='url(#arrow-bad)' opacity='0.95'/><rect x='6161.8' y='51.0' width='251.6' height='24' rx='8' ry='8' class='edgeLabelBg'/><text x='6287.6' y='68.0' class='edgeText bad' text-anchor='middle'><title>STD 0.0W | PTS -4.3W | DELTA -4.3W</title>STD 0.0W | PTS -4.3W | DELTA -4.3W</text><path d='M 6147.8,81.0 C 6280.3,81.0 6309.7,197.0 6442.2,197.0' stroke='#b42318' stroke-width='2.4' fill='none' marker-end='url(#arrow-bad)' opacity='0.95'/><rect x='6161.8' y='112.0' width='266.4' height='24' rx='8' ry='8' class='edgeLabelBg'/><text x='6295.0' y='129.0' class='edgeText bad' text-anchor='middle'><title>STD 0.0W | PTS -11.7W | DELTA -11.7W</title>STD 0.0W | PTS -11.7W | DELTA -11.7W</text><path d='M 5401.2,81.0 C 5561.7,81.0 5597.3,81.0 5757.8,81.0' stroke='#b42318' stroke-width='2.4' fill='none' marker-end='url(#arrow-bad)' opacity='0.95'/><rect x='5453.7' y='54.0' width='251.6' height='24' rx='8' ry='8' class='edgeLabelBg'/><text x='5579.5' y='71.0' class='edgeText bad' text-anchor='middle'><title>STD 4.0W | PTS 11.3W | DELTA +7.3W</title>STD 4.0W | PTS 11.3W | DELTA +7.3W</text>
+      
+            <g class="nodeGroup">
+              <title>Lot General Piping Engineering - Purchase Order</title>
+              <rect x="28" y="28" width="390" height="106" rx="10" ry="10" class="nodeRect"></rect>
+              <text class="nodeName"><tspan x='40' y='62'><title>Lot General Piping Engineering - Purchase Order</title>Lot General Piping Engineering -</tspan><tspan x='40' y='84'><title>Lot General Piping Engineering - Purchase Order</title>Purchase Order</tspan></text>
+              <text x="40" y="104" class="nodeMeta"><title>PTS date: 16/06/2025</title>PTS: 16/06/2025</text>
+              <text x="40" y="122" class="nodeMeta"><title>REQ date: 11/09/2025</title>REQ: 11/09/2025</text>
+            </g>
+            
+            <g class="nodeGroup">
+              <title>Lot General Piping Engineering - BOM / BOQ-1 (for RfQ GP Piping Material, Valves, Hangers...)</title>
+              <rect x="1304.4" y="28" width="390" height="128" rx="10" ry="10" class="nodeRect"></rect>
+              <text class="nodeName"><tspan x='1316.4' y='62'><title>Lot General Piping Engineering - BOM / BOQ-1 (for RfQ GP Piping Material, Valves, Hangers...)</title>Lot General Piping Engineering - BOM</tspan><tspan x='1316.4' y='84'><title>Lot General Piping Engineering - BOM / BOQ-1 (for RfQ GP Piping Material, Valves, Hangers...)</title>/ BOQ-1 (for RfQ GP Piping Material,</tspan><tspan x='1316.4' y='106'><title>Lot General Piping Engineering - BOM / BOQ-1 (for RfQ GP Piping Material, Valves, Hangers...)</title>Valves, Hangers...)</tspan></text>
+              <text x="1316.4" y="126" class="nodeMeta"><title>PTS date: 17/12/2025</title>PTS: 17/12/2025</text>
+              <text x="1316.4" y="144" class="nodeMeta"><title>REQ date: 22/01/2026</title>REQ: 22/01/2026</text>
+            </g>
+            
+            <g class="nodeGroup">
+              <title>Lot 5 - Erection General Piping - BOQ 1 (Doc&#x27;s for RfQ) - Available from Engineering</title>
+              <rect x="2021.6000000000001" y="28" width="390" height="128" rx="10" ry="10" class="nodeRect"></rect>
+              <text class="nodeName"><tspan x='2033.6000000000001' y='62'><title>Lot 5 - Erection General Piping - BOQ 1 (Doc&#x27;s for RfQ) - Available from Engineering</title>Lot 5 - Erection General Piping - BOQ</tspan><tspan x='2033.6000000000001' y='84'><title>Lot 5 - Erection General Piping - BOQ 1 (Doc&#x27;s for RfQ) - Available from Engineering</title>1 (Doc&#x27;s for RfQ) - Available from</tspan><tspan x='2033.6000000000001' y='106'><title>Lot 5 - Erection General Piping - BOQ 1 (Doc&#x27;s for RfQ) - Available from Engineering</title>Engineering</tspan></text>
+              <text x="2033.6000000000001" y="126" class="nodeMeta"><title>PTS date: 17/12/2025</title>PTS: 17/12/2025</text>
+              <text x="2033.6000000000001" y="144" class="nodeMeta"><title>REQ date: 12/02/2026</title>REQ: 12/02/2026</text>
+            </g>
+            
+            <g class="nodeGroup">
+              <title>Lot General Piping Engineering - BOM / BOQ-2 (for PO General Piping Material)</title>
+              <rect x="2234.4" y="178" width="390" height="128" rx="10" ry="10" class="nodeRect"></rect>
+              <text class="nodeName"><tspan x='2246.4' y='212'><title>Lot General Piping Engineering - BOM / BOQ-2 (for PO General Piping Material)</title>Lot General Piping Engineering - BOM</tspan><tspan x='2246.4' y='234'><title>Lot General Piping Engineering - BOM / BOQ-2 (for PO General Piping Material)</title>/ BOQ-2 (for PO General Piping</tspan><tspan x='2246.4' y='256'><title>Lot General Piping Engineering - BOM / BOQ-2 (for PO General Piping Material)</title>Material)</tspan></text>
+              <text x="2246.4" y="276" class="nodeMeta"><title>PTS date: 09/03/2026</title>PTS: 09/03/2026</text>
+              <text x="2246.4" y="294" class="nodeMeta"><title>REQ date: 16/04/2026</title>REQ: 16/04/2026</text>
+            </g>
+            
+            <g class="nodeGroup">
+              <title>Lot 5 - Erection General Piping - BOQ 2 (Doc&#x27;s for PO) - Available from Engineering</title>
+              <rect x="2995.6000000000004" y="28" width="390" height="128" rx="10" ry="10" class="nodeRect"></rect>
+              <text class="nodeName"><tspan x='3007.6000000000004' y='62'><title>Lot 5 - Erection General Piping - BOQ 2 (Doc&#x27;s for PO) - Available from Engineering</title>Lot 5 - Erection General Piping - BOQ</tspan><tspan x='3007.6000000000004' y='84'><title>Lot 5 - Erection General Piping - BOQ 2 (Doc&#x27;s for PO) - Available from Engineering</title>2 (Doc&#x27;s for PO) - Available from</tspan><tspan x='3007.6000000000004' y='106'><title>Lot 5 - Erection General Piping - BOQ 2 (Doc&#x27;s for PO) - Available from Engineering</title>Engineering</tspan></text>
+              <text x="3007.6000000000004" y="126" class="nodeMeta"><title>PTS date: 08/04/2026</title>PTS: 08/04/2026</text>
+              <text x="3007.6000000000004" y="144" class="nodeMeta"><title>REQ date: 21/05/2026</title>REQ: 21/05/2026</text>
+            </g>
+            
+            <g class="nodeGroup">
+              <title>Lot General Piping Hangers - TSD / BANF RFQ</title>
+              <rect x="2973.6000000000004" y="178" width="390" height="106" rx="10" ry="10" class="nodeRect"></rect>
+              <text class="nodeName"><tspan x='2985.6000000000004' y='212'><title>Lot General Piping Hangers - TSD / BANF RFQ</title>Lot General Piping Hangers - TSD /</tspan><tspan x='2985.6000000000004' y='234'><title>Lot General Piping Hangers - TSD / BANF RFQ</title>BANF RFQ</tspan></text>
+              <text x="2985.6000000000004" y="254" class="nodeMeta"><title>PTS date: 02/04/2026</title>PTS: 02/04/2026</text>
+              <text x="2985.6000000000004" y="272" class="nodeMeta"><title>REQ date: 14/05/2026</title>REQ: 14/05/2026</text>
+            </g>
+            
+            <g class="nodeGroup">
+              <title>Lot General Piping Hangers - Purchase Order</title>
+              <rect x="3778.8" y="28" width="390" height="106" rx="10" ry="10" class="nodeRect"></rect>
+              <text class="nodeName"><tspan x='3790.8' y='62'><title>Lot General Piping Hangers - Purchase Order</title>Lot General Piping Hangers - Purchase</tspan><tspan x='3790.8' y='84'><title>Lot General Piping Hangers - Purchase Order</title>Order</tspan></text>
+              <text x="3790.8" y="104" class="nodeMeta"><title>PTS date: 05/05/2026</title>PTS: 05/05/2026</text>
+              <text x="3790.8" y="122" class="nodeMeta"><title>REQ date: 02/07/2026</title>REQ: 02/07/2026</text>
+            </g>
+            
+            <g class="nodeGroup">
+              <title>Lot General Piping Hangers - Ready for Shipment</title>
+              <rect x="5011.200000000001" y="28" width="390" height="106" rx="10" ry="10" class="nodeRect"></rect>
+              <text class="nodeName"><tspan x='5023.200000000001' y='62'><title>Lot General Piping Hangers - Ready for Shipment</title>Lot General Piping Hangers - Ready</tspan><tspan x='5023.200000000001' y='84'><title>Lot General Piping Hangers - Ready for Shipment</title>for Shipment</tspan></text>
+              <text x="5023.200000000001" y="104" class="nodeMeta"><title>PTS date: 08/09/2026</title>PTS: 08/09/2026</text>
+              <text x="5023.200000000001" y="122" class="nodeMeta"><title>REQ date: 29/10/2026</title>REQ: 29/10/2026</text>
+            </g>
+            
+            <g class="nodeGroup">
+              <title>Lot General Piping Pipe Material - TSD / BANF RFQ</title>
+              <rect x="2043.6000000000001" y="328" width="390" height="106" rx="10" ry="10" class="nodeRect"></rect>
+              <text class="nodeName"><tspan x='2055.6000000000004' y='362'><title>Lot General Piping Pipe Material - TSD / BANF RFQ</title>Lot General Piping Pipe Material -</tspan><tspan x='2055.6000000000004' y='384'><title>Lot General Piping Pipe Material - TSD / BANF RFQ</title>TSD / BANF RFQ</tspan></text>
+              <text x="2055.6000000000004" y="404" class="nodeMeta"><title>PTS date: 22/01/2026</title>PTS: 22/01/2026</text>
+              <text x="2055.6000000000004" y="422" class="nodeMeta"><title>REQ date: 19/02/2026</title>REQ: 19/02/2026</text>
+            </g>
+            
+            <g class="nodeGroup">
+              <title>Lot General Piping Pipe Material - TSD PO</title>
+              <rect x="2929.6000000000004" y="306" width="390" height="106" rx="10" ry="10" class="nodeRect"></rect>
+              <text class="nodeName"><tspan x='2941.6000000000004' y='340'><title>Lot General Piping Pipe Material - TSD PO</title>Lot General Piping Pipe Material -</tspan><tspan x='2941.6000000000004' y='362'><title>Lot General Piping Pipe Material - TSD PO</title>TSD PO</tspan></text>
+              <text x="2941.6000000000004" y="382" class="nodeMeta"><title>PTS date: 19/03/2026</title>PTS: 19/03/2026</text>
+              <text x="2941.6000000000004" y="400" class="nodeMeta"><title>REQ date: 30/04/2026</title>REQ: 30/04/2026</text>
+            </g>
+            
+            <g class="nodeGroup">
+              <title>Lot General Piping Pipe Material - Purchase Order</title>
+              <rect x="3690.8" y="156" width="390" height="106" rx="10" ry="10" class="nodeRect"></rect>
+              <text class="nodeName"><tspan x='3702.8' y='190'><title>Lot General Piping Pipe Material - Purchase Order</title>Lot General Piping Pipe Material -</tspan><tspan x='3702.8' y='212'><title>Lot General Piping Pipe Material - Purchase Order</title>Purchase Order</tspan></text>
+              <text x="3702.8" y="232" class="nodeMeta"><title>PTS date: 20/04/2026</title>PTS: 20/04/2026</text>
+              <text x="3702.8" y="250" class="nodeMeta"><title>REQ date: 04/06/2026</title>REQ: 04/06/2026</text>
+            </g>
+            
+            <g class="nodeGroup">
+              <title>Lot General Piping Pipe Material - Ready for Shipment</title>
+              <rect x="4989.200000000001" y="156" width="390" height="106" rx="10" ry="10" class="nodeRect"></rect>
+              <text class="nodeName"><tspan x='5001.200000000001' y='190'><title>Lot General Piping Pipe Material - Ready for Shipment</title>Lot General Piping Pipe Material -</tspan><tspan x='5001.200000000001' y='212'><title>Lot General Piping Pipe Material - Ready for Shipment</title>Ready for Shipment</tspan></text>
+              <text x="5001.200000000001" y="232" class="nodeMeta"><title>PTS date: 28/08/2026</title>PTS: 28/08/2026</text>
+              <text x="5001.200000000001" y="250" class="nodeMeta"><title>REQ date: 22/10/2026</title>REQ: 22/10/2026</text>
+            </g>
+            
+            <g class="nodeGroup">
+              <title>Lot 5 - Erection General Piping - Contractor On Site Mobilisation</title>
+              <rect x="5757.800000000001" y="28" width="390" height="106" rx="10" ry="10" class="nodeRect"></rect>
+              <text class="nodeName"><tspan x='5769.800000000001' y='62'><title>Lot 5 - Erection General Piping - Contractor On Site Mobilisation</title>Lot 5 - Erection General Piping -</tspan><tspan x='5769.800000000001' y='84'><title>Lot 5 - Erection General Piping - Contractor On Site Mobilisation</title>Contractor On Site Mobilisation</tspan></text>
+              <text x="5769.800000000001" y="104" class="nodeMeta"><title>PTS date: 02/12/2026</title>PTS: 02/12/2026</text>
+              <text x="5769.800000000001" y="122" class="nodeMeta"><title>REQ date: 26/11/2026</title>REQ: 26/11/2026</text>
+            </g>
+            
+            <g class="nodeGroup">
+              <title>Lot General Piping Hangers - DTS (S)</title>
+              <rect x="6427.4000000000015" y="28" width="390" height="94" rx="10" ry="10" class="nodeRect"></rect>
+              <text class="nodeName"><tspan x='6439.4000000000015' y='62'><title>Lot General Piping Hangers - DTS (S)</title>Lot General Piping Hangers - DTS (S)</tspan></text>
+              <text x="6439.4000000000015" y="82" class="nodeMeta"><title>PTS date: 02/11/2026</title>PTS: 02/11/2026</text>
+              <text x="6439.4000000000015" y="100" class="nodeMeta"><title>REQ date: 26/11/2026</title>REQ: 26/11/2026</text>
+            </g>
+            
+            <g class="nodeGroup">
+              <title>Lot General Piping Pipe Material  - DTS (S)</title>
+              <rect x="6442.200000000001" y="144" width="390" height="106" rx="10" ry="10" class="nodeRect"></rect>
+              <text class="nodeName"><tspan x='6454.200000000001' y='178'><title>Lot General Piping Pipe Material  - DTS (S)</title>Lot General Piping Pipe Material -</tspan><tspan x='6454.200000000001' y='200'><title>Lot General Piping Pipe Material  - DTS (S)</title>DTS (S)</tspan></text>
+              <text x="6454.200000000001" y="220" class="nodeMeta"><title>PTS date: 11/09/2026</title>PTS: 11/09/2026</text>
+              <text x="6454.200000000001" y="238" class="nodeMeta"><title>REQ date: 26/11/2026</title>REQ: 26/11/2026</text>
+            </g>
+            
+    </svg>
+    
+    </div>
+
+    <div class="divider"></div>
+    <p class="subtitle"><b>REQ Flow Only</b> - this second diagram shows only requested-date flow and REQ durations on arrows.</p>
+    <p class="legend">
+      <span class="req">Blue arrows: REQ duration between dependency points</span>
+    </p>
+    <div class="canvas">
+      
+    <svg viewBox="0 0 6900 482" width="6900" height="482" role="img" aria-label="REQ dependency network">
+      <defs>
+        <marker id="arrow-req" markerWidth="11" markerHeight="8" refX="9" refY="4" orient="auto">
+          <path d="M0,0 L10,4 L0,8 z" fill="#1d4ed8"></path>
+        </marker>
+      </defs>
+      <path d='M 418.0,81.0 C 816.9,81.0 905.5,92.0 1304.4,92.0' stroke='#1d4ed8' stroke-width='2.4' fill='none' marker-end='url(#arrow-req)' opacity='0.95'/><rect x='696.7' y='59.5' width='329.0' height='24' rx='8' ry='8' class='reqEdgeLabelBg'/><text x='861.2' y='76.5' class='reqEdgeText' text-anchor='middle'><title>REQ 19.0W | STD 19.0W (base 16.0W, holiday +3W)</title>REQ 19.0W | STD 19.0W (base 16.0W, holiday +3W)</text><path d='M 1694.4,92.0 C 1851.5,92.0 1886.5,381.0 2043.6,381.0' stroke='#1d4ed8' stroke-width='2.4' fill='none' marker-end='url(#arrow-req)' opacity='0.95'/><rect x='1802.5' y='209.5' width='133.0' height='24' rx='8' ry='8' class='reqEdgeLabelBg'/><text x='1869.0' y='226.5' class='reqEdgeText' text-anchor='middle'><title>REQ 4.0W | STD 4.0W</title>REQ 4.0W | STD 4.0W</text><path d='M 1694.4,92.0 C 1841.6,92.0 1874.4,92.0 2021.6,92.0' stroke='#1d4ed8' stroke-width='2.4' fill='none' marker-end='url(#arrow-req)' opacity='0.95'/><rect x='1791.5' y='65.0' width='133.0' height='24' rx='8' ry='8' class='reqEdgeLabelBg'/><text x='1858.0' y='82.0' class='reqEdgeText' text-anchor='middle'><title>REQ 3.0W | STD 3.0W</title>REQ 3.0W | STD 3.0W</text><path d='M 1694.4,92.0 C 1937.4,92.0 1991.4,242.0 2234.4,242.0' stroke='#1d4ed8' stroke-width='2.4' fill='none' marker-end='url(#arrow-req)' opacity='0.95'/><rect x='1890.9' y='140.0' width='147.0' height='24' rx='8' ry='8' class='reqEdgeLabelBg'/><text x='1964.4' y='157.0' class='reqEdgeText' text-anchor='middle'><title>REQ 12.0W | STD 12.0W</title>REQ 12.0W | STD 12.0W</text><path d='M 2624.4,242.0 C 2761.7,242.0 2792.3,359.0 2929.6,359.0' stroke='#1d4ed8' stroke-width='2.4' fill='none' marker-end='url(#arrow-req)' opacity='0.95'/><rect x='2710.5' y='273.5' width='133.0' height='24' rx='8' ry='8' class='reqEdgeLabelBg'/><text x='2777.0' y='290.5' class='reqEdgeText' text-anchor='middle'><title>REQ 2.0W | STD 2.0W</title>REQ 2.0W | STD 2.0W</text><path d='M 2624.4,242.0 C 2781.5,242.0 2816.5,231.0 2973.6,231.0' stroke='#1d4ed8' stroke-width='2.4' fill='none' marker-end='url(#arrow-req)' opacity='0.95'/><rect x='2732.5' y='209.5' width='133.0' height='24' rx='8' ry='8' class='reqEdgeLabelBg'/><text x='2799.0' y='226.5' class='reqEdgeText' text-anchor='middle'><title>REQ 4.0W | STD 4.0W</title>REQ 4.0W | STD 4.0W</text><path d='M 2624.4,242.0 C 2791.4,242.0 2828.6,92.0 2995.6,92.0' stroke='#1d4ed8' stroke-width='2.4' fill='none' marker-end='url(#arrow-req)' opacity='0.95'/><rect x='2743.5' y='140.0' width='133.0' height='24' rx='8' ry='8' class='reqEdgeLabelBg'/><text x='2810.0' y='157.0' class='reqEdgeText' text-anchor='middle'><title>REQ 5.0W | STD 5.0W</title>REQ 5.0W | STD 5.0W</text><path d='M 3319.6,359.0 C 3486.6,359.0 3523.8,209.0 3690.8,209.0' stroke='#1d4ed8' stroke-width='2.4' fill='none' marker-end='url(#arrow-req)' opacity='0.95'/><rect x='3438.7' y='257.0' width='133.0' height='24' rx='8' ry='8' class='reqEdgeLabelBg'/><text x='3505.2' y='274.0' class='reqEdgeText' text-anchor='middle'><title>REQ 5.0W | STD 5.0W</title>REQ 5.0W | STD 5.0W</text><path d='M 4080.8,209.0 C 4489.6,209.0 4580.4,209.0 4989.2,209.0' stroke='#1d4ed8' stroke-width='2.4' fill='none' marker-end='url(#arrow-req)' opacity='0.95'/><rect x='4370.5' y='182.0' width='329.0' height='24' rx='8' ry='8' class='reqEdgeLabelBg'/><text x='4535.0' y='199.0' class='reqEdgeText' text-anchor='middle'><title>REQ 20.0W | STD 20.0W (base 16.0W, holiday +4W)</title>REQ 20.0W | STD 20.0W (base 16.0W, holiday +4W)</text><path d='M 5379.2,209.0 C 5549.6,209.0 5587.4,81.0 5757.8,81.0' stroke='#1d4ed8' stroke-width='2.4' fill='none' marker-end='url(#arrow-req)' opacity='0.95'/><rect x='5502.0' y='118.0' width='133.0' height='24' rx='8' ry='8' class='reqEdgeLabelBg'/><text x='5568.5' y='135.0' class='reqEdgeText' text-anchor='middle'><title>REQ 5.0W | STD 5.0W</title>REQ 5.0W | STD 5.0W</text><path d='M 3363.6,231.0 C 3550.4,231.0 3592.0,81.0 3778.8,81.0' stroke='#1d4ed8' stroke-width='2.4' fill='none' marker-end='url(#arrow-req)' opacity='0.95'/><rect x='3504.7' y='129.0' width='133.0' height='24' rx='8' ry='8' class='reqEdgeLabelBg'/><text x='3571.2' y='146.0' class='reqEdgeText' text-anchor='middle'><title>REQ 7.0W | STD 7.0W</title>REQ 7.0W | STD 7.0W</text><path d='M 4168.8,81.0 C 4547.9,81.0 4632.1,81.0 5011.2,81.0' stroke='#1d4ed8' stroke-width='2.4' fill='none' marker-end='url(#arrow-req)' opacity='0.95'/><rect x='4425.5' y='54.0' width='329.0' height='24' rx='8' ry='8' class='reqEdgeLabelBg'/><text x='4590.0' y='71.0' class='reqEdgeText' text-anchor='middle'><title>REQ 17.0W | STD 17.0W (base 13.0W, holiday +4W)</title>REQ 17.0W | STD 17.0W (base 13.0W, holiday +4W)</text><path d='M 6147.8,81.0 C 6273.6,81.0 6301.6,75.0 6427.4,75.0' stroke='#1d4ed8' stroke-width='2.4' fill='none' marker-end='url(#arrow-req)' opacity='0.95'/><rect x='6221.1' y='51.0' width='133.0' height='24' rx='8' ry='8' class='reqEdgeLabelBg'/><text x='6287.6' y='68.0' class='reqEdgeText' text-anchor='middle'><title>REQ 0.0W | STD 0.0W</title>REQ 0.0W | STD 0.0W</text><path d='M 6147.8,81.0 C 6280.3,81.0 6309.7,197.0 6442.2,197.0' stroke='#1d4ed8' stroke-width='2.4' fill='none' marker-end='url(#arrow-req)' opacity='0.95'/><rect x='6228.5' y='112.0' width='133.0' height='24' rx='8' ry='8' class='reqEdgeLabelBg'/><text x='6295.0' y='129.0' class='reqEdgeText' text-anchor='middle'><title>REQ 0.0W | STD 0.0W</title>REQ 0.0W | STD 0.0W</text><path d='M 5401.2,81.0 C 5561.7,81.0 5597.3,81.0 5757.8,81.0' stroke='#1d4ed8' stroke-width='2.4' fill='none' marker-end='url(#arrow-req)' opacity='0.95'/><rect x='5513.0' y='54.0' width='133.0' height='24' rx='8' ry='8' class='reqEdgeLabelBg'/><text x='5579.5' y='71.0' class='reqEdgeText' text-anchor='middle'><title>REQ 4.0W | STD 4.0W</title>REQ 4.0W | STD 4.0W</text>
+      
+            <g class="nodeGroup">
+              <title>Lot General Piping Engineering - Purchase Order</title>
+              <rect x="28" y="28" width="390" height="106" rx="10" ry="10" class="reqNodeRect"></rect>
+              <text class="nodeName"><tspan x='40' y='62'><title>Lot General Piping Engineering - Purchase Order</title>Lot General Piping Engineering -</tspan><tspan x='40' y='84'><title>Lot General Piping Engineering - Purchase Order</title>Purchase Order</tspan></text>
+              <text x="40" y="120" class="reqNodeMeta"><title>REQ date: 11/09/2025</title>REQ: 11/09/2025</text>
+            </g>
+            
+            <g class="nodeGroup">
+              <title>Lot General Piping Engineering - BOM / BOQ-1 (for RfQ GP Piping Material, Valves, Hangers...)</title>
+              <rect x="1304.4" y="28" width="390" height="128" rx="10" ry="10" class="reqNodeRect"></rect>
+              <text class="nodeName"><tspan x='1316.4' y='62'><title>Lot General Piping Engineering - BOM / BOQ-1 (for RfQ GP Piping Material, Valves, Hangers...)</title>Lot General Piping Engineering - BOM</tspan><tspan x='1316.4' y='84'><title>Lot General Piping Engineering - BOM / BOQ-1 (for RfQ GP Piping Material, Valves, Hangers...)</title>/ BOQ-1 (for RfQ GP Piping Material,</tspan><tspan x='1316.4' y='106'><title>Lot General Piping Engineering - BOM / BOQ-1 (for RfQ GP Piping Material, Valves, Hangers...)</title>Valves, Hangers...)</tspan></text>
+              <text x="1316.4" y="142" class="reqNodeMeta"><title>REQ date: 22/01/2026</title>REQ: 22/01/2026</text>
+            </g>
+            
+            <g class="nodeGroup">
+              <title>Lot 5 - Erection General Piping - BOQ 1 (Doc&#x27;s for RfQ) - Available from Engineering</title>
+              <rect x="2021.6000000000001" y="28" width="390" height="128" rx="10" ry="10" class="reqNodeRect"></rect>
+              <text class="nodeName"><tspan x='2033.6000000000001' y='62'><title>Lot 5 - Erection General Piping - BOQ 1 (Doc&#x27;s for RfQ) - Available from Engineering</title>Lot 5 - Erection General Piping - BOQ</tspan><tspan x='2033.6000000000001' y='84'><title>Lot 5 - Erection General Piping - BOQ 1 (Doc&#x27;s for RfQ) - Available from Engineering</title>1 (Doc&#x27;s for RfQ) - Available from</tspan><tspan x='2033.6000000000001' y='106'><title>Lot 5 - Erection General Piping - BOQ 1 (Doc&#x27;s for RfQ) - Available from Engineering</title>Engineering</tspan></text>
+              <text x="2033.6000000000001" y="142" class="reqNodeMeta"><title>REQ date: 12/02/2026</title>REQ: 12/02/2026</text>
+            </g>
+            
+            <g class="nodeGroup">
+              <title>Lot General Piping Engineering - BOM / BOQ-2 (for PO General Piping Material)</title>
+              <rect x="2234.4" y="178" width="390" height="128" rx="10" ry="10" class="reqNodeRect"></rect>
+              <text class="nodeName"><tspan x='2246.4' y='212'><title>Lot General Piping Engineering - BOM / BOQ-2 (for PO General Piping Material)</title>Lot General Piping Engineering - BOM</tspan><tspan x='2246.4' y='234'><title>Lot General Piping Engineering - BOM / BOQ-2 (for PO General Piping Material)</title>/ BOQ-2 (for PO General Piping</tspan><tspan x='2246.4' y='256'><title>Lot General Piping Engineering - BOM / BOQ-2 (for PO General Piping Material)</title>Material)</tspan></text>
+              <text x="2246.4" y="292" class="reqNodeMeta"><title>REQ date: 16/04/2026</title>REQ: 16/04/2026</text>
+            </g>
+            
+            <g class="nodeGroup">
+              <title>Lot 5 - Erection General Piping - BOQ 2 (Doc&#x27;s for PO) - Available from Engineering</title>
+              <rect x="2995.6000000000004" y="28" width="390" height="128" rx="10" ry="10" class="reqNodeRect"></rect>
+              <text class="nodeName"><tspan x='3007.6000000000004' y='62'><title>Lot 5 - Erection General Piping - BOQ 2 (Doc&#x27;s for PO) - Available from Engineering</title>Lot 5 - Erection General Piping - BOQ</tspan><tspan x='3007.6000000000004' y='84'><title>Lot 5 - Erection General Piping - BOQ 2 (Doc&#x27;s for PO) - Available from Engineering</title>2 (Doc&#x27;s for PO) - Available from</tspan><tspan x='3007.6000000000004' y='106'><title>Lot 5 - Erection General Piping - BOQ 2 (Doc&#x27;s for PO) - Available from Engineering</title>Engineering</tspan></text>
+              <text x="3007.6000000000004" y="142" class="reqNodeMeta"><title>REQ date: 21/05/2026</title>REQ: 21/05/2026</text>
+            </g>
+            
+            <g class="nodeGroup">
+              <title>Lot General Piping Hangers - TSD / BANF RFQ</title>
+              <rect x="2973.6000000000004" y="178" width="390" height="106" rx="10" ry="10" class="reqNodeRect"></rect>
+              <text class="nodeName"><tspan x='2985.6000000000004' y='212'><title>Lot General Piping Hangers - TSD / BANF RFQ</title>Lot General Piping Hangers - TSD /</tspan><tspan x='2985.6000000000004' y='234'><title>Lot General Piping Hangers - TSD / BANF RFQ</title>BANF RFQ</tspan></text>
+              <text x="2985.6000000000004" y="270" class="reqNodeMeta"><title>REQ date: 14/05/2026</title>REQ: 14/05/2026</text>
+            </g>
+            
+            <g class="nodeGroup">
+              <title>Lot General Piping Hangers - Purchase Order</title>
+              <rect x="3778.8" y="28" width="390" height="106" rx="10" ry="10" class="reqNodeRect"></rect>
+              <text class="nodeName"><tspan x='3790.8' y='62'><title>Lot General Piping Hangers - Purchase Order</title>Lot General Piping Hangers - Purchase</tspan><tspan x='3790.8' y='84'><title>Lot General Piping Hangers - Purchase Order</title>Order</tspan></text>
+              <text x="3790.8" y="120" class="reqNodeMeta"><title>REQ date: 02/07/2026</title>REQ: 02/07/2026</text>
+            </g>
+            
+            <g class="nodeGroup">
+              <title>Lot General Piping Hangers - Ready for Shipment</title>
+              <rect x="5011.200000000001" y="28" width="390" height="106" rx="10" ry="10" class="reqNodeRect"></rect>
+              <text class="nodeName"><tspan x='5023.200000000001' y='62'><title>Lot General Piping Hangers - Ready for Shipment</title>Lot General Piping Hangers - Ready</tspan><tspan x='5023.200000000001' y='84'><title>Lot General Piping Hangers - Ready for Shipment</title>for Shipment</tspan></text>
+              <text x="5023.200000000001" y="120" class="reqNodeMeta"><title>REQ date: 29/10/2026</title>REQ: 29/10/2026</text>
+            </g>
+            
+            <g class="nodeGroup">
+              <title>Lot General Piping Pipe Material - TSD / BANF RFQ</title>
+              <rect x="2043.6000000000001" y="328" width="390" height="106" rx="10" ry="10" class="reqNodeRect"></rect>
+              <text class="nodeName"><tspan x='2055.6000000000004' y='362'><title>Lot General Piping Pipe Material - TSD / BANF RFQ</title>Lot General Piping Pipe Material -</tspan><tspan x='2055.6000000000004' y='384'><title>Lot General Piping Pipe Material - TSD / BANF RFQ</title>TSD / BANF RFQ</tspan></text>
+              <text x="2055.6000000000004" y="420" class="reqNodeMeta"><title>REQ date: 19/02/2026</title>REQ: 19/02/2026</text>
+            </g>
+            
+            <g class="nodeGroup">
+              <title>Lot General Piping Pipe Material - TSD PO</title>
+              <rect x="2929.6000000000004" y="306" width="390" height="106" rx="10" ry="10" class="reqNodeRect"></rect>
+              <text class="nodeName"><tspan x='2941.6000000000004' y='340'><title>Lot General Piping Pipe Material - TSD PO</title>Lot General Piping Pipe Material -</tspan><tspan x='2941.6000000000004' y='362'><title>Lot General Piping Pipe Material - TSD PO</title>TSD PO</tspan></text>
+              <text x="2941.6000000000004" y="398" class="reqNodeMeta"><title>REQ date: 30/04/2026</title>REQ: 30/04/2026</text>
+            </g>
+            
+            <g class="nodeGroup">
+              <title>Lot General Piping Pipe Material - Purchase Order</title>
+              <rect x="3690.8" y="156" width="390" height="106" rx="10" ry="10" class="reqNodeRect"></rect>
+              <text class="nodeName"><tspan x='3702.8' y='190'><title>Lot General Piping Pipe Material - Purchase Order</title>Lot General Piping Pipe Material -</tspan><tspan x='3702.8' y='212'><title>Lot General Piping Pipe Material - Purchase Order</title>Purchase Order</tspan></text>
+              <text x="3702.8" y="248" class="reqNodeMeta"><title>REQ date: 04/06/2026</title>REQ: 04/06/2026</text>
+            </g>
+            
+            <g class="nodeGroup">
+              <title>Lot General Piping Pipe Material - Ready for Shipment</title>
+              <rect x="4989.200000000001" y="156" width="390" height="106" rx="10" ry="10" class="reqNodeRect"></rect>
+              <text class="nodeName"><tspan x='5001.200000000001' y='190'><title>Lot General Piping Pipe Material - Ready for Shipment</title>Lot General Piping Pipe Material -</tspan><tspan x='5001.200000000001' y='212'><title>Lot General Piping Pipe Material - Ready for Shipment</title>Ready for Shipment</tspan></text>
+              <text x="5001.200000000001" y="248" class="reqNodeMeta"><title>REQ date: 22/10/2026</title>REQ: 22/10/2026</text>
+            </g>
+            
+            <g class="nodeGroup">
+              <title>Lot 5 - Erection General Piping - Contractor On Site Mobilisation</title>
+              <rect x="5757.800000000001" y="28" width="390" height="106" rx="10" ry="10" class="reqNodeRect"></rect>
+              <text class="nodeName"><tspan x='5769.800000000001' y='62'><title>Lot 5 - Erection General Piping - Contractor On Site Mobilisation</title>Lot 5 - Erection General Piping -</tspan><tspan x='5769.800000000001' y='84'><title>Lot 5 - Erection General Piping - Contractor On Site Mobilisation</title>Contractor On Site Mobilisation</tspan></text>
+              <text x="5769.800000000001" y="120" class="reqNodeMeta"><title>REQ date: 26/11/2026</title>REQ: 26/11/2026</text>
+            </g>
+            
+            <g class="nodeGroup">
+              <title>Lot General Piping Hangers - DTS (S)</title>
+              <rect x="6427.4000000000015" y="28" width="390" height="94" rx="10" ry="10" class="reqNodeRect"></rect>
+              <text class="nodeName"><tspan x='6439.4000000000015' y='62'><title>Lot General Piping Hangers - DTS (S)</title>Lot General Piping Hangers - DTS (S)</tspan></text>
+              <text x="6439.4000000000015" y="108" class="reqNodeMeta"><title>REQ date: 26/11/2026</title>REQ: 26/11/2026</text>
+            </g>
+            
+            <g class="nodeGroup">
+              <title>Lot General Piping Pipe Material  - DTS (S)</title>
+              <rect x="6442.200000000001" y="144" width="390" height="106" rx="10" ry="10" class="reqNodeRect"></rect>
+              <text class="nodeName"><tspan x='6454.200000000001' y='178'><title>Lot General Piping Pipe Material  - DTS (S)</title>Lot General Piping Pipe Material -</tspan><tspan x='6454.200000000001' y='200'><title>Lot General Piping Pipe Material  - DTS (S)</title>DTS (S)</tspan></text>
+              <text x="6454.200000000001" y="236" class="reqNodeMeta"><title>REQ date: 26/11/2026</title>REQ: 26/11/2026</text>
+            </g>
+            
+    </svg>
+    
+    </div>
+  </div>
+</body>
+</html>
