@@ -11,6 +11,7 @@ from thefuzz import fuzz
 import sys
 import html
 import re
+import math
 
 
 def find_rightmost_used_column(df):
@@ -843,15 +844,11 @@ def generate_visualization_html(
     if profile == 'safe':
         box_w = 430
         wrap_chars = 32
-        px_per_week = 24
-        min_arrow_span = 300
         name_line_h = 22
         meta_line_h = 19
     else:
         box_w = 390
         wrap_chars = 37
-        px_per_week = 22
-        min_arrow_span = 250
         name_line_h = 22
         meta_line_h = 18
 
@@ -878,38 +875,60 @@ def generate_visualization_html(
     for n, lvl in levels.items():
         level_nodes.setdefault(lvl, []).append(n)
 
+    # Build labels first, then compute logarithmic arrow scaling from smallest non-zero duration.
     edge_requirements = {}
-    step_values = []
-    for d in dependency_rows:
-        # Use effective STD duration (already holiday-adjusted when applicable) as spacing driver.
-        step = as_float(d.get('duration_weeks', ''))
-        if step is None:
-            step = as_float(d.get('actual_weeks', ''))
-        step = max(step if step is not None else 1.0, 0.5)
-        step_values.append(step)
-    min_step = min(step_values) if step_values else 1.0
-
+    step_by_edge = {}
     for (u, v), d in edge_info.items():
         step = as_float(d.get('duration_weeks', ''))
         if step is None:
             step = as_float(d.get('actual_weeks', ''))
-        step = max(step if step is not None else 1.0, 0.5)
+        step = max(step if step is not None else 0.0, 0.0)
+        step_by_edge[(u, v)] = step
+
         holiday_adder = int(d.get('holiday_adder', 0) or 0)
         if holiday_info_available and holiday_adder > 0:
             std_label = f"{d['duration_weeks']}W (base {d['duration_weeks_base']}W, holiday +{holiday_adder}W)"
         else:
             std_label = f"{d['duration_weeks']}W"
         lbl = f"STD {std_label} | PTS {d['actual_weeks']}W | DELTA {d['delta_weeks']}W"
-        label_w = max(190, len(lbl) * 7.4)
-        # Smallest duration gets minimum readable arrow span; larger durations always add extra length.
-        min_readable_span = max(min_arrow_span, label_w + 28)
-        proportional_extra = max(0.0, (step - min_step)) * px_per_week
-        req_span = min_readable_span + proportional_extra
+        primary_line = f"STD {d['duration_weeks']}W | DELTA {d['delta_weeks']}W"
+        holiday_line = f"base {d['duration_weeks_base']}W, holiday +{holiday_adder}W" if (holiday_info_available and holiday_adder > 0) else ''
+        max_line_len = max(len(primary_line), len(holiday_line))
+        label_w = max(110.0, max_line_len * 7.0 + 16.0)
+        label_h = 40.0 if holiday_line else 24.0
         edge_requirements[(u, v)] = {
             'label': lbl,
             'label_w': label_w,
-            'span': req_span,
+            'label_h': label_h,
+            'primary_line': primary_line,
+            'holiday_line': holiday_line,
         }
+
+    nonzero_steps = [s for s in step_by_edge.values() if s > 0]
+    min_nonzero_step = min(nonzero_steps) if nonzero_steps else 1.0
+    max_nonzero_step = max(nonzero_steps) if nonzero_steps else min_nonzero_step
+
+    # Bounded logarithmic scaling: preserves longer-duration > shorter-duration,
+    # while preventing excessive horizontal growth.
+    min_arrow_px = 180.0
+    max_arrow_px = 420.0
+    min_text_margin = 12.0
+
+    def bounded_log_span(step):
+        step = step if step > 0 else min_nonzero_step
+        if max_nonzero_step <= min_nonzero_step:
+            t = 0.0
+        else:
+            num = math.log1p(step) - math.log1p(min_nonzero_step)
+            den = math.log1p(max_nonzero_step) - math.log1p(min_nonzero_step)
+            t = num / den if den != 0 else 0.0
+        return min_arrow_px + max(0.0, min(1.0, t)) * (max_arrow_px - min_arrow_px)
+
+    for e, info in edge_requirements.items():
+        step = step_by_edge[e]
+        req_span = bounded_log_span(step)
+        req_span = max(req_span, info['label_w'] + min_text_margin)
+        info['span'] = req_span
 
     # Solve x positions using edge span constraints, preserving left->right order and proportional duration.
     node_x = {n: margin_x for n in graph_nodes}
@@ -944,9 +963,9 @@ def generate_visualization_html(
     svg_w = int(max_x + margin_x + 40)
     svg_h = int(max_y + margin_y + 20)
 
-    def resolve_label_y(lx, base_ly, label_w, placed):
+    def resolve_label_y(lx, base_ly, label_w, label_h, placed):
         """Nudge label up/down to avoid overlap with existing labels."""
-        h = 24.0
+        h = label_h
         offsets = [0, -30, 30, -60, 60, -90, 90, -120, 120]
         for off in offsets:
             ly = base_ly + off
@@ -962,7 +981,8 @@ def generate_visualization_html(
         placed.append((lx, ly, label_w, h))
         return ly
 
-    edge_svg_parts = []
+    edge_path_svg_parts = []
+    edge_label_svg_parts = []
     placed_edge_labels = []
     for (u, v), d in edge_info.items():
         ux, uy = node_pos[u]
@@ -985,14 +1005,30 @@ def generate_visualization_html(
             color = '#b42318'
 
         lx = (x1 + x2) / 2
-        base_ly = (y1 + y2) / 2 - 10
-        lbl = edge_requirements[(u, v)]['label']
-        label_w = edge_requirements[(u, v)]['label_w']
-        ly = resolve_label_y(lx, base_ly, label_w, placed_edge_labels)
-        edge_svg_parts.append(
+        base_ly = (y1 + y2) / 2 - 16
+
+        req_info = edge_requirements[(u, v)]
+        lbl = req_info['label']
+        primary_line = req_info['primary_line']
+        holiday_line = req_info['holiday_line']
+        label_w = req_info['label_w']
+        label_h = req_info['label_h']
+
+        # Shift 2-row labels slightly up on near-horizontal arrows so line stays visible.
+        horizontalish = abs(y2 - y1) < 18
+        if horizontalish and holiday_line:
+            base_ly -= 8
+
+        ly = resolve_label_y(lx, base_ly, label_w, label_h, placed_edge_labels)
+        top_y = ly - label_h / 2
+        text_y1 = ly if not holiday_line else (ly - 6)
+        edge_path_svg_parts.append(
             f"<path d='{path}' stroke='{color}' stroke-width='2.4' fill='none' marker-end='url(#arrow-{status})' opacity='0.95'/>"
-            f"<rect x='{(lx - label_w / 2):.1f}' y='{(ly - 17):.1f}' width='{label_w:.1f}' height='24' rx='8' ry='8' class='edgeLabelBg'/>"
-            f"<text x='{lx:.1f}' y='{ly:.1f}' class='edgeText {status}' text-anchor='middle'><title>{html.escape(lbl)}</title>{html.escape(lbl)}</text>"
+        )
+        edge_label_svg_parts.append(
+            f"<rect x='{(lx - label_w / 2):.1f}' y='{top_y:.1f}' width='{label_w:.1f}' height='{label_h:.1f}' rx='8' ry='8' class='edgeLabelBg'/>"
+            f"<text x='{lx:.1f}' y='{text_y1:.1f}' class='edgeText {status}' text-anchor='middle'><title>{html.escape(lbl)}</title>{html.escape(primary_line)}</text>"
+            + (f"<text x='{lx:.1f}' y='{(ly + 10):.1f}' class='edgeText {status}' text-anchor='middle'>{html.escape(holiday_line)}</text>" if holiday_line else "")
         )
 
     node_svg_parts = []
@@ -1015,11 +1051,26 @@ def generate_visualization_html(
         pts_y = name_block_end_y + dims['meta_line_h']
         req_y = name_block_end_y + 2 * dims['meta_line_h']
 
+        name_lower = n.lower()
+        is_hangers = re.search(r'\bhangers\s*-\s*', name_lower) is not None
+        is_pipe_material = re.search(r'\bpipe\s+material\s*-\s*', name_lower) is not None
+        is_boq = re.search(r'\bboq\s*-\s*(?:1|2)\b', name_lower) is not None
+        is_lot5 = re.search(r'\blot\s*5\b', name_lower) is not None
+        rect_classes = ['nodeRect']
+        if is_hangers:
+            rect_classes.append('hangersFill')
+        if is_pipe_material:
+            rect_classes.append('pipeMaterialFill')
+        if is_boq:
+            rect_classes.append('boqFill')
+        if is_lot5 and not is_boq:
+            rect_classes.append('lot5Fill')
+        rect_class = ' '.join(rect_classes)
         node_svg_parts.append(
             f"""
             <g class="nodeGroup">
               <title>{html.escape(n)}</title>
-              <rect x="{x}" y="{y}" width="{dims['w']}" height="{dims['h']}" rx="10" ry="10" class="nodeRect"></rect>
+              <rect x="{x}" y="{y}" width="{dims['w']}" height="{dims['h']}" rx="10" ry="10" class="{rect_class}"></rect>
               <text class="nodeName">{''.join(tspans)}</text>
               <text x="{x + 12}" y="{pts_y}" class="nodeMeta"><title>PTS date: {html.escape(pts_date or 'n/a')}</title>PTS: {html.escape(pts_date or 'n/a')}</text>
               <text x="{x + 12}" y="{req_y}" class="nodeMeta"><title>REQ date: {html.escape(req_date or 'n/a')}</title>REQ: {html.escape(req_date or 'n/a')}</text>
@@ -1043,13 +1094,15 @@ def generate_visualization_html(
           <path d="M0,0 L10,4 L0,8 z" fill="#6b7f95"></path>
         </marker>
       </defs>
-      {''.join(edge_svg_parts)}
+      {''.join(edge_path_svg_parts)}
       {''.join(node_svg_parts)}
+      {''.join(edge_label_svg_parts)}
     </svg>
     """
 
     # REQ-only diagram (same topology, only requested-date flow information)
-    req_edge_svg_parts = []
+    req_edge_path_svg_parts = []
+    req_edge_label_svg_parts = []
     placed_req_labels = []
     for (u, v), d in edge_info.items():
         ux, uy = node_pos[u]
@@ -1073,20 +1126,27 @@ def generate_visualization_html(
             req_weeks = f"{((req_v - req_u).days / 7):.1f}"
 
         holiday_adder = int(d.get('holiday_adder', 0) or 0)
-        if holiday_info_available and holiday_adder > 0:
-            std_holiday_text = f"STD {d['duration_weeks']}W (base {d['duration_weeks_base']}W, holiday +{holiday_adder}W)"
-        else:
-            std_holiday_text = f"STD {d['duration_weeks']}W"
+        holiday_line = f"base {d['duration_weeks_base']}W, holiday +{holiday_adder}W" if (holiday_info_available and holiday_adder > 0) else ''
+        req_primary = f"REQ {req_weeks}W | DELTA {d['delta_weeks']}W" if req_weeks != '' else f"REQ n/a | DELTA {d['delta_weeks']}W"
+        std_holiday_text = f"STD {d['duration_weeks']}W" + (f" (base {d['duration_weeks_base']}W, holiday +{holiday_adder}W)" if holiday_line else "")
+        req_lbl = f"{req_primary} | {std_holiday_text}"
 
-        req_lbl = f"REQ {req_weeks}W | {std_holiday_text}" if req_weeks != '' else f"REQ n/a | {std_holiday_text}"
-        req_label_w = max(130, len(req_lbl) * 7.0)
+        req_label_w = max(110.0, max(len(req_primary), len(holiday_line)) * 7.0 + 16.0)
+        req_label_h = 40.0 if holiday_line else 24.0
         lx = (x1 + x2) / 2
-        base_ly = (y1 + y2) / 2 - 10
-        ly = resolve_label_y(lx, base_ly, req_label_w, placed_req_labels)
-        req_edge_svg_parts.append(
+        base_ly = (y1 + y2) / 2 - 16
+        if abs(y2 - y1) < 18 and holiday_line:
+            base_ly -= 8
+        ly = resolve_label_y(lx, base_ly, req_label_w, req_label_h, placed_req_labels)
+        req_top = ly - req_label_h / 2
+        req_text_y1 = ly if not holiday_line else (ly - 6)
+        req_edge_path_svg_parts.append(
             f"<path d='{path}' stroke='#1d4ed8' stroke-width='2.4' fill='none' marker-end='url(#arrow-req)' opacity='0.95'/>"
-            f"<rect x='{(lx - req_label_w / 2):.1f}' y='{(ly - 17):.1f}' width='{req_label_w:.1f}' height='24' rx='8' ry='8' class='reqEdgeLabelBg'/>"
-            f"<text x='{lx:.1f}' y='{ly:.1f}' class='reqEdgeText' text-anchor='middle'><title>{html.escape(req_lbl)}</title>{html.escape(req_lbl)}</text>"
+        )
+        req_edge_label_svg_parts.append(
+            f"<rect x='{(lx - req_label_w / 2):.1f}' y='{req_top:.1f}' width='{req_label_w:.1f}' height='{req_label_h:.1f}' rx='8' ry='8' class='reqEdgeLabelBg'/>"
+            f"<text x='{lx:.1f}' y='{req_text_y1:.1f}' class='reqEdgeText' text-anchor='middle'><title>{html.escape(req_lbl)}</title>{html.escape(req_primary)}</text>"
+            + (f"<text x='{lx:.1f}' y='{(ly + 10):.1f}' class='reqEdgeText' text-anchor='middle'>{html.escape(holiday_line)}</text>" if holiday_line else "")
         )
 
     req_node_svg_parts = []
@@ -1105,11 +1165,26 @@ def generate_visualization_html(
             line_y += dims['name_line_h']
         req_y = y + dims['h'] - 14
 
+        req_name_lower = n.lower()
+        is_hangers_req = re.search(r'\bhangers\s*-\s*', req_name_lower) is not None
+        is_pipe_material_req = re.search(r'\bpipe\s+material\s*-\s*', req_name_lower) is not None
+        is_boq_req = re.search(r'\bboq\s*-\s*(?:1|2)\b', req_name_lower) is not None
+        is_lot5_req = re.search(r'\blot\s*5\b', req_name_lower) is not None
+        req_rect_classes = ['reqNodeRect']
+        if is_hangers_req:
+            req_rect_classes.append('hangersFill')
+        if is_pipe_material_req:
+            req_rect_classes.append('pipeMaterialFill')
+        if is_boq_req:
+            req_rect_classes.append('boqFill')
+        if is_lot5_req and not is_boq_req:
+            req_rect_classes.append('lot5Fill')
+        req_rect_class = ' '.join(req_rect_classes)
         req_node_svg_parts.append(
             f"""
             <g class="nodeGroup">
               <title>{html.escape(n)}</title>
-              <rect x="{x}" y="{y}" width="{dims['w']}" height="{dims['h']}" rx="10" ry="10" class="reqNodeRect"></rect>
+              <rect x="{x}" y="{y}" width="{dims['w']}" height="{dims['h']}" rx="10" ry="10" class="{req_rect_class}"></rect>
               <text class="nodeName">{''.join(tspans)}</text>
               <text x="{x + 12}" y="{req_y}" class="reqNodeMeta"><title>REQ date: {html.escape(req_date or 'n/a')}</title>REQ: {html.escape(req_date or 'n/a')}</text>
             </g>
@@ -1123,8 +1198,9 @@ def generate_visualization_html(
           <path d="M0,0 L10,4 L0,8 z" fill="#1d4ed8"></path>
         </marker>
       </defs>
-      {''.join(req_edge_svg_parts)}
+      {''.join(req_edge_path_svg_parts)}
       {''.join(req_node_svg_parts)}
+      {''.join(req_edge_label_svg_parts)}
     </svg>
     """
 
@@ -1184,6 +1260,18 @@ def generate_visualization_html(
       fill: #ffffff;
       stroke: #95a6bb;
       stroke-width: 2;
+    }}
+    .hangersFill {{
+      fill: #ececec !important;
+    }}
+    .pipeMaterialFill {{
+      fill: #fff3b0 !important;
+    }}
+    .boqFill {{
+      fill: #ffb3b3 !important;
+    }}
+    .lot5Fill {{
+      fill: #cfe8ff !important;
     }}
     .nodeName {{
       font-size: 16px;
@@ -1682,4 +1770,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
