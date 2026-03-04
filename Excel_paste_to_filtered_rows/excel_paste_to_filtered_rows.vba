@@ -265,17 +265,53 @@ Private Sub RestoreFilterState(ByVal ws As Worksheet, _
                                ByRef filterOp() As Variant)
     Dim afRange As Range
     Dim i As Long
+    Dim hasOperator As Boolean
+    Dim hasCriteria2 As Boolean
 
     If Not ws.AutoFilterMode Then Exit Sub
 
     Set afRange = ws.AutoFilter.Range
     For i = LBound(filterOn) To UBound(filterOn)
         If filterOn(i) Then
-            If IsEmpty(criteria2(i)) Then
+            hasOperator = HasValidFilterOperator(filterOp(i))
+            hasCriteria2 = HasFilterCriteriaValue(criteria2(i))
+
+            On Error Resume Next
+            If hasCriteria2 And hasOperator Then
+                afRange.AutoFilter Field:=i, Criteria1:=criteria1(i), Operator:=filterOp(i), Criteria2:=criteria2(i)
+            ElseIf hasOperator Then
                 afRange.AutoFilter Field:=i, Criteria1:=criteria1(i), Operator:=filterOp(i)
             Else
-                afRange.AutoFilter Field:=i, Criteria1:=criteria1(i), Operator:=filterOp(i), Criteria2:=criteria2(i)
+                afRange.AutoFilter Field:=i, Criteria1:=criteria1(i)
             End If
+
+            If Err.Number <> 0 Then
+                Err.Clear
+                afRange.AutoFilter Field:=i, Criteria1:=criteria1(i)
+            End If
+            On Error GoTo 0
         End If
     Next i
 End Sub
+
+Private Function HasValidFilterOperator(ByVal opValue As Variant) As Boolean
+    If IsEmpty(opValue) Or IsNull(opValue) Then Exit Function
+    If VarType(opValue) = vbError Then Exit Function
+
+    If IsNumeric(opValue) Then
+        HasValidFilterOperator = (CLng(opValue) <> 0)
+    Else
+        HasValidFilterOperator = True
+    End If
+End Function
+
+Private Function HasFilterCriteriaValue(ByVal criteriaValue As Variant) As Boolean
+    If IsEmpty(criteriaValue) Or IsNull(criteriaValue) Then Exit Function
+    If VarType(criteriaValue) = vbError Then Exit Function
+
+    If VarType(criteriaValue) = vbString Then
+        HasFilterCriteriaValue = (Len(criteriaValue) > 0)
+    Else
+        HasFilterCriteriaValue = True
+    End If
+End Function
