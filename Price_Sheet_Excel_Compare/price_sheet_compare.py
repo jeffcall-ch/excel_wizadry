@@ -445,8 +445,8 @@ class PriceSheetComparator:
 # Entry point
 # ---------------------------------------------------------------------------
 def main() -> None:
-    _DEFAULT_OLD = r"C:\Users\szil\Repos\excel_wizadry\Price_Sheet_Excel_Compare\Price_sheet_old.xlsm"
-    _DEFAULT_NEW = r"C:\Users\szil\Repos\excel_wizadry\Price_Sheet_Excel_Compare\Price_sheet_new.xlsm"
+    _DEFAULT_OLD = r"C:\Users\szil\Repos\excel_wizadry\Price_Sheet_Excel_Compare\CA110-KVI-50288635-3_0.0_Price list - Lot General Piping Pipe Material.xlsm"
+    _DEFAULT_NEW = r"C:\Users\szil\Repos\excel_wizadry\Price_Sheet_Excel_Compare\CA110-KVI-50288635-3_1.0_Price list - Lot General Piping Pipe Material.xlsm"
 
     parser = argparse.ArgumentParser(
         description="Compare two piping price sheet Excel files (.xlsm)",
