@@ -237,14 +237,17 @@ class PriceSheetComparator:
         fill_lblue  = PatternFill(start_color=Colors.LIGHT_BLUE, end_color=Colors.LIGHT_BLUE, fill_type="solid")
         fill_red    = PatternFill(start_color=Colors.RED,        end_color=Colors.RED,        fill_type="solid")
 
-        # ── Pass 1: exact 4-key matching (A|B|C|D) ───────────────────────────
+        # ── Exact 4-key matching (A|B|C|D) ────────────────────────────────────
+        # Rows whose compound key exists in BOTH files → cell-by-cell comparison.
+        # Rows whose compound key is absent in OLD  → entire row yellow (new).
+        # Rows whose compound key is absent in NEW  → appended as deleted rows.
         old_lookup_4: Dict[str, List[tuple]] = defaultdict(list)
         for row_values in data_old:
             old_lookup_4[self._build_key(row_values)].append(row_values)
         old_cursor_4: Dict[str, int] = defaultdict(int)
 
         matched_pairs: List[tuple] = []     # (excel_row, new_vals, old_vals)
-        unmatched_new: List[tuple] = []     # (excel_row, new_vals)
+        unmatched_new: List[tuple] = []     # (excel_row, new_vals) — key absent in OLD
 
         for excel_row, new_vals in data_new:
             key4 = self._build_key(new_vals)
@@ -255,33 +258,10 @@ class PriceSheetComparator:
             else:
                 unmatched_new.append((excel_row, new_vals))
 
-        # OLD rows not consumed by pass 1
-        unmatched_old: List[tuple] = []
-        for key4, old_rows_list in old_lookup_4.items():
-            unmatched_old.extend(old_rows_list[old_cursor_4.get(key4, 0):])
-
-        # ── Pass 2: partial 3-key fallback (A|B|C) for unmatched rows ────────
-        # Rows where only the description (D) changed should not become add+delete.
-        old_lookup_3: Dict[str, List[tuple]] = defaultdict(list)
-        for old_vals in unmatched_old:
-            old_lookup_3[self._build_partial_key(old_vals)].append(old_vals)
-        old_cursor_3: Dict[str, int] = defaultdict(int)
-
-        truly_unmatched_new: List[tuple] = []   # no OLD counterpart at all
-
-        for excel_row, new_vals in unmatched_new:
-            key3 = self._build_partial_key(new_vals)
-            if key3 in old_lookup_3 and old_cursor_3[key3] < len(old_lookup_3[key3]):
-                old_vals = old_lookup_3[key3][old_cursor_3[key3]]
-                old_cursor_3[key3] += 1
-                matched_pairs.append((excel_row, new_vals, old_vals))
-            else:
-                truly_unmatched_new.append((excel_row, new_vals))
-
-        # OLD rows not consumed by pass 2 → truly deleted
+        # OLD rows not consumed → compound key absent in NEW → deleted
         deleted_rows: List[tuple] = []
-        for key3, old_rows_list in old_lookup_3.items():
-            deleted_rows.extend(old_rows_list[old_cursor_3.get(key3, 0):])
+        for key4, old_rows_list in old_lookup_4.items():
+            deleted_rows.extend(old_rows_list[old_cursor_4.get(key4, 0):])
 
         # ── Apply colour fills ────────────────────────────────────────────────
         row_markers: Dict[int, str] = {}
@@ -320,6 +300,12 @@ class PriceSheetComparator:
             if change_types:
                 parts = [t for t in ("Deleted", "Smaller", "Changed", "Added") if t in change_types]
                 row_markers[excel_row] = ", ".join(parts)
+
+        # ── New rows (compound key absent in OLD) — entire row yellow ─────────
+        for excel_row, new_vals in unmatched_new:
+            for col in range(n_cols):
+                ws_output.cell(row=excel_row, column=col + 1).fill = fill_yellow
+            row_markers[excel_row] = "New Row"
 
         # ── Write 'Deleted Rows' section below all existing data ─────────────
         if deleted_rows:
@@ -360,12 +346,12 @@ class PriceSheetComparator:
             ws_output.cell(row=row_num, column=marker_col).value = marker_text
 
         # ── Summary log ──────────────────────────────────────────────────────
-        n_added   = sum(1 for m in row_markers.values() if m == "Added")
+        n_new     = len(unmatched_new)
         n_deleted = len(deleted_rows)
         n_changed = sum(1 for m in row_markers.values() if "Changed" in m or "Smaller" in m)
         self.logger.info(
             f"  '{sheet_name}' done — "
-            f"{n_added} added, {n_changed} changed, {n_deleted} deleted rows"
+            f"{n_new} new rows, {n_changed} changed, {n_deleted} deleted rows"
         )
 
     # ── Main workflow ─────────────────────────────────────────────────────────
