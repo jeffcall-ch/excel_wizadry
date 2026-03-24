@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import re
 import sqlite3
 from pathlib import Path
 from typing import Dict, List
 
+from logging_utils import DEFAULT_LOG_DIR, setup_csv_logging
 from openpyxl import Workbook
 from openpyxl.utils import get_column_letter
 
@@ -25,6 +27,9 @@ NUMERIC_HEADERS = {
     "Total price",
     "Delta qty to previous revision",
 }
+
+
+logger = logging.getLogger(__name__)
 
 
 def parse_args() -> argparse.Namespace:
@@ -47,6 +52,12 @@ def parse_args() -> argparse.Namespace:
         "--overwrite",
         action="store_true",
         help="Overwrite output workbook if it already exists.",
+    )
+    parser.add_argument(
+        "--log-dir",
+        type=Path,
+        default=DEFAULT_LOG_DIR,
+        help="Directory where timestamped CSV run logs are written.",
     )
     return parser.parse_args()
 
@@ -151,16 +162,16 @@ def coerce_cell_for_excel(header: str, value):
 
 def export_sqlite_to_xlsm(db_path: Path, output_path: Path, overwrite: bool) -> int:
     if not db_path.exists():
-        print(f"ERROR: Database file not found: {db_path}")
+        logger.error("Database file not found: %s", db_path)
         return 1
 
     if output_path.suffix.lower() != ".xlsx":
-        print("ERROR: Output file must use .xlsx extension.")
+        logger.error("Output file must use .xlsx extension.")
         return 1
 
     if output_path.exists() and not overwrite:
-        print(f"ERROR: Output already exists: {output_path}")
-        print("Use --overwrite to replace it.")
+        logger.error("Output already exists: %s", output_path)
+        logger.error("Use --overwrite to replace it.")
         return 1
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -168,7 +179,7 @@ def export_sqlite_to_xlsm(db_path: Path, output_path: Path, overwrite: bool) -> 
     with sqlite3.connect(db_path) as conn:
         table_names = get_user_table_names(conn)
         if not table_names:
-            print("ERROR: No user tables found in the database.")
+            logger.error("No user tables found in the database.")
             return 1
 
         wb = Workbook()
@@ -203,16 +214,18 @@ def export_sqlite_to_xlsm(db_path: Path, output_path: Path, overwrite: bool) -> 
 
             apply_sheet_formatting(ws, max_widths)
 
-            print(f"INFO: Exported table '{table_name}' to sheet '{sheet_name}' ({row_count} rows).")
+            logger.info("Exported table '%s' to sheet '%s' (%s rows).", table_name, sheet_name, row_count)
 
         wb.save(output_path)
 
-    print(f"SUCCESS: Export completed to {output_path}")
+    logger.info("Export completed to %s", output_path)
     return 0
 
 
 def main() -> int:
     args = parse_args()
+    log_file = setup_csv_logging(run_name="sqlite_export", log_dir=args.log_dir)
+    logger.info("CSV logging initialized. log_file=%s", log_file)
     return export_sqlite_to_xlsm(
         db_path=args.db_path,
         output_path=args.output_path,

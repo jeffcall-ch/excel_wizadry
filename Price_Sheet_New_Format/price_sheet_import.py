@@ -4,13 +4,25 @@ import argparse
 import collections
 import decimal
 import difflib
+import logging
 import re
 import sqlite3
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from openpyxl import load_workbook
+from logging_utils import DEFAULT_LOG_DIR, setup_csv_logging
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+try:
+    from Spare_calcs_for_price_sheet.run_spare_calcs_on_aggregated import run_spare_calcs as integrated_run_spare_calcs
+except Exception:
+    integrated_run_spare_calcs = None
 
 NA_VALUE = "N/A"
 
@@ -75,6 +87,87 @@ SQLITE_NUMERIC_COLUMNS = {
 }
 
 AGGREGATE_SUM_COLUMNS = ("Qty pcs", "Qty m", "Weight kg", "Surface m2")
+AGGREGATE_MATERIAL_TYPE_SORT_PREFIXES = ("mapress", "ss", "cs", "paint")
+
+SHOP_SUFFIX = "shop"
+ERECTION_SUFFIX = "erection"
+PAINT_MATERIAL_TYPE_LABEL = "Paint shop"
+AGGREGATE_TABLE_SUFFIX = "aggreated"
+
+PAINT_FILE_KEYWORDS = ("paint", "painting")
+
+MATERIAL_TYPE_BASE_LABELS = {"ss": "SS", "cs": "CS", "mapress": "Mapress"}
+
+NORMAL_SOURCE_TO_SQLITE = {
+    "system": "System",
+    "pipe": "KKS",
+    "type": "Type",
+    "pipe_component": "Description",
+    "dn": "Size",
+    "material": "Material",
+    "total_weight": "Weight kg",
+    "qty_pcs": "Qty pcs",
+    "qty_m": "Qty m",
+}
+
+ERECTION_SOURCE_TO_SQLITE = {
+    "pipe_kks": "KKS",
+    "type": "Type",
+    "pipe_component": "Description",
+    "dn": "Size",
+    "material": "Material",
+    "qty_pcs_per_m": "Qty pcs",
+}
+
+PAINT_SOURCE_TO_SQLITE = {
+    "name_of_system": "System",
+    "name_of_pipe": "KKS",
+    "type": "Type",
+    "description": "Description",
+    "dn_1": "Size",
+    "material": "Material",
+    "quantity_pcs": "Qty pcs",
+    "quantity_m": "Qty m",
+    "external_surface_m2": "Surface m2",
+    "corrosion_class": "Corrosion category",
+    "painting_colour": "Paint colour",
+    "insulated": "Insulated",
+}
+
+ALIAS_MAP = {
+    "system": ["system"],
+    "pipe": ["pipe"],
+    "pipe_kks": ["pipe kks", "pipe"],
+    "type": ["type"],
+    "pipe_component": ["pipe component", "pipecomponent"],
+    "material": ["material"],
+    "total_weight": ["total weight", "total weight kg", "total weight kg"],
+    "qty_pcs": ["qty pcs", "qty pcs ", "qty pcs"],
+    "qty_m": ["qty m"],
+    "qty_pcs_per_m": ["qty pcs m", "qty pcs m", "qty pcs m"],
+    "name_of_system": ["name of system"],
+    "name_of_pipe": ["name of pipe"],
+    "description": ["description"],
+    "dn_1": ["dn 1", "dn1"],
+    "quantity_pcs": ["quantity pcs", "quantity pcs"],
+    "quantity_m": ["quantity m"],
+    "external_surface_m2": ["external surface m2", "external surface"],
+    "corrosion_class": ["corrosion class"],
+    "insulated": ["insulated"],
+}
+
+AGGREGATION_MATERIAL_TYPE_RULES = [
+    ("endswith", "erection", "Erection"),
+    ("startswith", "paint", "Paint shop"),
+]
+
+
+logger = logging.getLogger(__name__)
+
+
+def settings_sheet_hint(*sheet_names: str) -> str:
+    joined = ", ".join([f"'{name}'" for name in sheet_names])
+    return f"Check import settings workbook sheets: {joined}."
 
 
 @dataclass
@@ -114,7 +207,7 @@ def classify_file(path: Path) -> Optional[ClassifiedFile]:
 
 def is_paint_file(path: Path) -> bool:
     tokens = tokenize_filename(path.name)
-    return any(token.startswith("paint") for token in tokens)
+    return any(any(token.startswith(keyword) for keyword in PAINT_FILE_KEYWORDS) for token in tokens)
 
 
 def locate_required_files(
@@ -140,14 +233,18 @@ def locate_required_files(
         key = (classified.material_type, classified.is_erection)
         if key in found:
             warnings.append(
-                f"Duplicate file category for {format_category(key)}: '{found[key].path.name}' and '{path.name}'."
+                f"Duplicate file category for {format_category(key)}: '{found[key].path.name}' and '{path.name}'. "
+                f"{settings_sheet_hint('RequiredFileCategories', 'MaterialTypes')}"
             )
             continue
         found[key] = classified
 
     missing = sorted(REQUIRED_FILE_CATEGORIES - set(found.keys()))
     for category in missing:
-        warnings.append(f"Missing required file for {format_category(category)}.")
+        warnings.append(
+            f"Missing required file for {format_category(category)}. "
+            f"{settings_sheet_hint('RequiredFileCategories', 'MaterialTypes')}"
+        )
 
     return found, warnings, paint_files, ignored_files
 
@@ -159,8 +256,8 @@ def format_category(category: Tuple[str, bool]) -> str:
 
 
 def material_type_value(material_type: str, is_erection: bool) -> str:
-    base = {"ss": "SS", "cs": "CS", "mapress": "Mapress"}[material_type]
-    return f"{base} erection" if is_erection else f"{base} shop"
+    base = MATERIAL_TYPE_BASE_LABELS[material_type]
+    return f"{base} {ERECTION_SUFFIX}" if is_erection else f"{base} {SHOP_SUFFIX}"
 
 
 def choose_sheet_with_max_rows(workbook) -> str:
@@ -179,28 +276,196 @@ def is_dn_header(normalized: str) -> bool:
 
 
 def aliases_for_key(key: str) -> List[str]:
-    alias_map = {
-        "system": ["system"],
-        "pipe": ["pipe"],
-        "pipe_kks": ["pipe kks", "pipe"],
-        "type": ["type"],
-        "pipe_component": ["pipe component", "pipecomponent"],
-        "material": ["material"],
-        "total_weight": ["total weight", "total weight kg", "total weight kg"],
-        "qty_pcs": ["qty pcs", "qty pcs ", "qty pcs"],
-        "qty_m": ["qty m"],
-        "qty_pcs_per_m": ["qty pcs m", "qty pcs m", "qty pcs m"],
-        "name_of_system": ["name of system"],
-        "name_of_pipe": ["name of pipe"],
-        "description": ["description"],
-        "dn_1": ["dn 1", "dn1"],
-        "quantity_pcs": ["quantity pcs", "quantity pcs"],
-        "quantity_m": ["quantity m"],
-        "external_surface_m2": ["external surface m2", "external surface"],
-        "corrosion_class": ["corrosion class"],
-        "insulated": ["insulated"],
-    }
-    return alias_map.get(key, [key])
+    return ALIAS_MAP.get(key, [key])
+
+
+def parse_bool_like(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    return str(value).strip().lower() in {"1", "true", "yes", "y"}
+
+
+def read_sheet_records(workbook, sheet_name: str) -> List[Dict[str, object]]:
+    if sheet_name not in workbook.sheetnames:
+        return []
+
+    ws = workbook[sheet_name]
+    rows = ws.iter_rows(min_row=1, max_row=ws.max_row, min_col=1, max_col=ws.max_column, values_only=True)
+    try:
+        header_row = next(rows)
+    except StopIteration:
+        return []
+
+    headers = [str(h).strip() if h is not None else "" for h in header_row]
+    records: List[Dict[str, object]] = []
+    for row in rows:
+        rec: Dict[str, object] = {}
+        has_any = False
+        for idx, value in enumerate(row):
+            if idx >= len(headers):
+                continue
+            key = headers[idx]
+            if not key:
+                continue
+            rec[key] = value
+            if value is not None and str(value).strip() != "":
+                has_any = True
+        if has_any:
+            records.append(rec)
+    return records
+
+
+def _load_mapping_sheet(workbook, sheet_name: str) -> Tuple[Dict[str, str], Tuple[str, ...]]:
+    records = read_sheet_records(workbook, sheet_name)
+    if not records:
+        return {}, tuple()
+
+    mapping: Dict[str, str] = {}
+    required: List[str] = []
+    for record in records:
+        source_key_raw = record.get("SourceKey")
+        sqlite_col_raw = record.get("SQLiteColumn")
+        if source_key_raw is None or sqlite_col_raw is None:
+            continue
+        source_key = str(source_key_raw).strip()
+        sqlite_col = str(sqlite_col_raw).strip()
+        if not source_key or not sqlite_col:
+            continue
+        mapping[source_key] = sqlite_col
+        if parse_bool_like(record.get("Required")):
+            required.append(source_key)
+
+    return mapping, tuple(required)
+
+
+def load_import_settings(settings_workbook: Path) -> None:
+    global TARGET_MATERIAL_TYPES
+    global REQUIRED_FILE_CATEGORIES
+    global NORMAL_REQUIRED_KEYS
+    global ERECTION_REQUIRED_KEYS
+    global PAINT_REQUIRED_KEYS
+    global SQLITE_NUMERIC_COLUMNS
+    global AGGREGATE_SUM_COLUMNS
+    global SHOP_SUFFIX
+    global ERECTION_SUFFIX
+    global PAINT_MATERIAL_TYPE_LABEL
+    global AGGREGATE_TABLE_SUFFIX
+    global PAINT_FILE_KEYWORDS
+    global MATERIAL_TYPE_BASE_LABELS
+    global NORMAL_SOURCE_TO_SQLITE
+    global ERECTION_SOURCE_TO_SQLITE
+    global PAINT_SOURCE_TO_SQLITE
+    global ALIAS_MAP
+    global AGGREGATION_MATERIAL_TYPE_RULES
+
+    if not settings_workbook.exists():
+        raise ValueError(f"Settings workbook not found: {settings_workbook}")
+
+    wb = load_workbook(settings_workbook, data_only=True, read_only=True)
+
+    general_records = read_sheet_records(wb, "General")
+    general = {}
+    for rec in general_records:
+        key = str(rec.get("Key", "")).strip()
+        val = rec.get("Value")
+        if key:
+            general[key] = "" if val is None else str(val).strip()
+
+    SHOP_SUFFIX = general.get("shop_suffix", SHOP_SUFFIX)
+    ERECTION_SUFFIX = general.get("erection_suffix", ERECTION_SUFFIX)
+    PAINT_MATERIAL_TYPE_LABEL = general.get("paint_material_type_label", PAINT_MATERIAL_TYPE_LABEL)
+    AGGREGATE_TABLE_SUFFIX = general.get("aggregate_table_suffix", AGGREGATE_TABLE_SUFFIX)
+
+    material_type_records = read_sheet_records(wb, "MaterialTypes")
+    loaded_types = [str(r.get("MaterialType", "")).strip().lower() for r in material_type_records]
+    loaded_types = [x for x in loaded_types if x]
+    if loaded_types:
+        TARGET_MATERIAL_TYPES = tuple(loaded_types)
+
+    required_file_records = read_sheet_records(wb, "RequiredFileCategories")
+    loaded_required_categories = set()
+    for rec in required_file_records:
+        material_type = str(rec.get("MaterialType", "")).strip().lower()
+        if not material_type:
+            continue
+        is_erection = parse_bool_like(rec.get("IsErection"))
+        loaded_required_categories.add((material_type, is_erection))
+    if loaded_required_categories:
+        REQUIRED_FILE_CATEGORIES = loaded_required_categories
+
+    material_type_label_records = read_sheet_records(wb, "MaterialTypeLabels")
+    loaded_labels = {}
+    for rec in material_type_label_records:
+        material_type = str(rec.get("MaterialType", "")).strip().lower()
+        label = str(rec.get("Label", "")).strip()
+        if material_type and label:
+            loaded_labels[material_type] = label
+    if loaded_labels:
+        MATERIAL_TYPE_BASE_LABELS = loaded_labels
+
+    mapping, required = _load_mapping_sheet(wb, "ColumnMappings_Normal")
+    if mapping:
+        NORMAL_SOURCE_TO_SQLITE = mapping
+    if required:
+        NORMAL_REQUIRED_KEYS = required
+
+    mapping, required = _load_mapping_sheet(wb, "ColumnMappings_Erection")
+    if mapping:
+        ERECTION_SOURCE_TO_SQLITE = mapping
+    if required:
+        ERECTION_REQUIRED_KEYS = required
+
+    mapping, required = _load_mapping_sheet(wb, "ColumnMappings_Paint")
+    if mapping:
+        PAINT_SOURCE_TO_SQLITE = mapping
+    if required:
+        PAINT_REQUIRED_KEYS = required
+
+    alias_records = read_sheet_records(wb, "Aliases")
+    if alias_records:
+        grouped_aliases: Dict[str, List[str]] = collections.defaultdict(list)
+        for rec in alias_records:
+            key = str(rec.get("Key", "")).strip()
+            alias = str(rec.get("Alias", "")).strip()
+            if key and alias:
+                grouped_aliases[key].append(alias)
+        if grouped_aliases:
+            ALIAS_MAP = dict(grouped_aliases)
+
+    keyword_records = read_sheet_records(wb, "FileKeywords")
+    paint_keywords = [
+        str(rec.get("Keyword", "")).strip().lower()
+        for rec in keyword_records
+        if str(rec.get("Kind", "")).strip().lower() == "paint"
+    ]
+    paint_keywords = [k for k in paint_keywords if k]
+    if paint_keywords:
+        PAINT_FILE_KEYWORDS = tuple(paint_keywords)
+
+    numeric_col_records = read_sheet_records(wb, "SqliteNumericColumns")
+    loaded_numeric_cols = [str(rec.get("Column", "")).strip() for rec in numeric_col_records]
+    loaded_numeric_cols = [col for col in loaded_numeric_cols if col]
+    if loaded_numeric_cols:
+        SQLITE_NUMERIC_COLUMNS = set(loaded_numeric_cols)
+
+    agg_sum_records = read_sheet_records(wb, "AggregateSumColumns")
+    loaded_agg_sum_cols = [str(rec.get("Column", "")).strip() for rec in agg_sum_records]
+    loaded_agg_sum_cols = [col for col in loaded_agg_sum_cols if col]
+    if loaded_agg_sum_cols:
+        AGGREGATE_SUM_COLUMNS = tuple(loaded_agg_sum_cols)
+
+    agg_rule_records = read_sheet_records(wb, "AggregationMaterialTypeRules")
+    loaded_rules = []
+    for rec in agg_rule_records:
+        match_type = str(rec.get("MatchType", "")).strip().lower()
+        pattern = str(rec.get("Pattern", "")).strip().lower()
+        output = str(rec.get("Output", "")).strip()
+        if match_type and pattern and output:
+            loaded_rules.append((match_type, pattern, output))
+    if loaded_rules:
+        AGGREGATION_MATERIAL_TYPE_RULES = loaded_rules
 
 
 def smart_find_paint_colour_column(
@@ -293,7 +558,10 @@ def resolve_required_column_indices(
                     dn_idx = idx
                     break
             if dn_idx is None:
-                raise ValueError("Required column 'DN' not found with exact header 'DN'.")
+                raise ValueError(
+                    "Required column 'DN' not found with exact header 'DN'. "
+                    f"{settings_sheet_hint('ColumnMappings_Normal', 'ColumnMappings_Erection', 'Aliases')}"
+                )
             matched[key] = dn_idx
             used_indices.add(dn_idx)
             continue
@@ -322,7 +590,11 @@ def resolve_required_column_indices(
                 break
 
         if fuzzy_idx is None:
-            raise ValueError(f"Required column '{key}' was not found.")
+            target_sheet = "ColumnMappings_Erection" if is_erection else "ColumnMappings_Normal"
+            raise ValueError(
+                f"Required column '{key}' was not found. "
+                f"{settings_sheet_hint(target_sheet, 'Aliases')}"
+            )
 
         matched[key] = fuzzy_idx
         used_indices.add(fuzzy_idx)
@@ -354,7 +626,10 @@ def resolve_paint_required_column_indices(
                     dn_idx = idx
                     break
             if dn_idx is None:
-                raise ValueError("Required paint column 'DN 1' not found.")
+                raise ValueError(
+                    "Required paint column 'DN 1' not found. "
+                    f"{settings_sheet_hint('ColumnMappings_Paint', 'Aliases')}"
+                )
             matched[key] = dn_idx
             used_indices.add(dn_idx)
             continue
@@ -362,7 +637,10 @@ def resolve_paint_required_column_indices(
         if key == "painting_colour":
             color_idx = smart_find_paint_colour_column(normalized_map, used_indices)
             if color_idx is None:
-                raise ValueError("Required paint column for 'Painting colour' not found (color/colour).")
+                raise ValueError(
+                    "Required paint column for 'Painting colour' not found (color/colour). "
+                    f"{settings_sheet_hint('ColumnMappings_Paint', 'Aliases')}"
+                )
             matched[key] = color_idx
             used_indices.add(color_idx)
             if normalize_text(headers[color_idx - 1]) not in {"painting colour", "painting color"}:
@@ -395,7 +673,10 @@ def resolve_paint_required_column_indices(
                 break
 
         if fuzzy_idx is None:
-            raise ValueError(f"Required paint column '{key}' was not found.")
+            raise ValueError(
+                f"Required paint column '{key}' was not found. "
+                f"{settings_sheet_hint('ColumnMappings_Paint', 'Aliases')}"
+            )
 
         matched[key] = fuzzy_idx
         used_indices.add(fuzzy_idx)
@@ -510,30 +791,7 @@ def build_rows_for_file(
     header_row_idx = detect_header_row(ws)
     source_columns, warnings = resolve_required_column_indices(ws, header_row_idx, classified.is_erection)
 
-    source_to_sqlite = {
-        "type": "Type",
-        "pipe_component": "Description",
-        "dn": "Size",
-        "material": "Material",
-    }
-
-    if classified.is_erection:
-        source_to_sqlite.update(
-            {
-                "pipe_kks": "KKS",
-                "qty_pcs_per_m": "Qty pcs",
-            }
-        )
-    else:
-        source_to_sqlite.update(
-            {
-                "system": "System",
-                "pipe": "KKS",
-                "total_weight": "Weight kg",
-                "qty_pcs": "Qty pcs",
-                "qty_m": "Qty m",
-            }
-        )
+    source_to_sqlite = ERECTION_SOURCE_TO_SQLITE if classified.is_erection else NORMAL_SOURCE_TO_SQLITE
 
     rows: List[Dict[str, Any]] = []
     uid = uid_start
@@ -587,20 +845,7 @@ def build_rows_for_paint_file(
     header_row_idx = detect_header_row(ws)
     source_columns, warnings = resolve_paint_required_column_indices(ws, header_row_idx)
 
-    source_to_sqlite = {
-        "name_of_system": "System",
-        "name_of_pipe": "KKS",
-        "type": "Type",
-        "description": "Description",
-        "dn_1": "Size",
-        "material": "Material",
-        "quantity_pcs": "Qty pcs",
-        "quantity_m": "Qty m",
-        "external_surface_m2": "Surface m2",
-        "corrosion_class": "Corrosion category",
-        "painting_colour": "Paint colour",
-        "insulated": "Insulated",
-    }
+    source_to_sqlite = PAINT_SOURCE_TO_SQLITE
 
     rows: List[Dict[str, Any]] = []
     uid = uid_start
@@ -623,7 +868,7 @@ def build_rows_for_paint_file(
         record["UID"] = uid
         uid += 1
 
-        record["Material type"] = "Paint shop"
+        record["Material type"] = PAINT_MATERIAL_TYPE_LABEL
         record["File name - complete"] = paint_file.name
         record["BoM rev from file name"] = parse_bom_revision(paint_file.name)
 
@@ -652,10 +897,15 @@ def insert_rows(conn: sqlite3.Connection, table_name: str, sqlite_headers: List[
 
 def normalize_material_type_for_aggregation(material_type: str) -> str:
     text = material_type.strip().lower()
-    if text.endswith("erection"):
-        return "Erection"
-    if text.startswith("paint"):
-        return "Paint shop"
+    for match_type, pattern, output in AGGREGATION_MATERIAL_TYPE_RULES:
+        if match_type == "equals" and text == pattern:
+            return output
+        if match_type == "startswith" and text.startswith(pattern):
+            return output
+        if match_type == "endswith" and text.endswith(pattern):
+            return output
+        if match_type == "contains" and pattern in text:
+            return output
     return material_type
 
 
@@ -684,16 +934,40 @@ def int_if_whole(value: float) -> Any:
     return value
 
 
+def material_type_sort_rank(material_type: str) -> int:
+    mt = material_type.strip().lower()
+    for idx, prefix in enumerate(AGGREGATE_MATERIAL_TYPE_SORT_PREFIXES):
+        if mt.startswith(prefix):
+            return idx
+    return len(AGGREGATE_MATERIAL_TYPE_SORT_PREFIXES)
+
+
+def size_sort_key(size_value: Any) -> Tuple[int, float, str]:
+    text = "" if size_value is None else str(size_value).strip()
+    if not text or text.upper() == NA_VALUE:
+        return (1, float("inf"), text)
+
+    normalized = text.replace(" ", "")
+    if "," in normalized and "." not in normalized:
+        normalized = normalized.replace(",", ".")
+
+    try:
+        return (0, float(normalized), text)
+    except ValueError:
+        return (1, float("inf"), text)
+
+
 def create_aggregated_table(
     conn: sqlite3.Connection,
     source_table_name: str,
     sqlite_headers: List[str],
 ) -> str:
-    aggregate_table_name = f"{source_table_name}aggreated"
+    aggregate_table_name = f"{source_table_name}{AGGREGATE_TABLE_SUFFIX}"
 
     if table_exists(conn, aggregate_table_name):
         raise ValueError(
-            f"Table '{aggregate_table_name}' already exists. Import stopped to protect existing aggregation data."
+            f"Table '{aggregate_table_name}' already exists. Import stopped to protect existing aggregation data. "
+            f"{settings_sheet_hint('General')}"
         )
 
     cols_sql = ", ".join([f'"{h}"' for h in sqlite_headers])
@@ -730,9 +1004,11 @@ def create_aggregated_table(
     sorted_groups = sorted(
         grouped.values(),
         key=lambda r: (
+            material_type_sort_rank(str(r.get("Material type", ""))),
             str(r.get("Material", "")),
             str(r.get("Type", "")),
-            str(r.get("Size", "")),
+            size_sort_key(r.get("Size", "")),
+            str(r.get("Material type", "")),
         ),
     )
 
@@ -750,10 +1026,42 @@ def create_aggregated_table(
     return aggregate_table_name
 
 
-def run_import(revision_folder: Path, db_path: Path, headers_workbook: Path, input_subdir: str) -> int:
+def run_spare_calculation_after_import(
+    db_path: Path,
+    revision_table: str,
+    settings_workbook: Path,
+) -> Tuple[bool, str]:
+    if integrated_run_spare_calcs is None:
+        return (
+            False,
+            "Integrated spare function is unavailable. "
+            + settings_sheet_hint("SpareGeneral", "SpareMainRules", "SpareErectionRules", "SpareKeywords"),
+        )
+
+    result_code = integrated_run_spare_calcs(
+        db_path=db_path,
+        revision_table=revision_table,
+        settings_workbook=settings_workbook,
+    )
+    if int(result_code) != 0:
+        return (
+            False,
+            "Spare calculation returned non-zero result. "
+            + settings_sheet_hint("SpareGeneral", "SpareMainRules", "SpareErectionRules", "SpareKeywords"),
+        )
+    return True, "Spare calculation completed."
+
+
+def run_import(
+    revision_folder: Path,
+    db_path: Path,
+    headers_workbook: Path,
+    input_subdir: str,
+    settings_workbook: Path,
+) -> int:
     input_dir = revision_folder / input_subdir
     if not input_dir.exists():
-        print(f"ERROR: Input directory not found: {input_dir}")
+        logger.error("Input directory not found: %s", input_dir)
         return 1
 
     sqlite_headers = load_sqlite_headers(headers_workbook)
@@ -763,12 +1071,15 @@ def run_import(revision_folder: Path, db_path: Path, headers_workbook: Path, inp
 
     if ignored_files:
         for path in ignored_files:
-            print(f"INFO: Ignoring non-target file: {path.name}")
+            logger.info("Ignoring non-target file: %s", path.name)
 
     if file_warnings:
         for warning in file_warnings:
-            print(f"WARNING: {warning}")
-        print("ERROR: Required input file validation failed. Import stopped.")
+            logger.warning("%s", warning)
+        logger.error(
+            "ERROR: Required input file validation failed. Import stopped. "
+            f"{settings_sheet_hint('RequiredFileCategories', 'MaterialTypes', 'FileKeywords')}"
+        )
         return 1
 
     db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -779,13 +1090,13 @@ def run_import(revision_folder: Path, db_path: Path, headers_workbook: Path, inp
 
         if db_exists_before:
             has_data = db_has_any_rows(conn)
-            print(f"INFO: Shared database exists: {db_path}")
-            print(f"INFO: Existing database has data: {'yes' if has_data else 'no'}")
+            logger.info("Shared database exists: %s", db_path)
+            logger.info("Existing database has data: %s", "yes" if has_data else "no")
         else:
-            print(f"INFO: Shared database does not exist. It will be created: {db_path}")
+            logger.info("Shared database does not exist. It will be created: %s", db_path)
 
         if table_exists(conn, table_name):
-            print(f"WARNING: Table '{table_name}' already exists. Import stopped to protect existing revision data.")
+            logger.warning("Table '%s' already exists. Import stopped to protect existing revision data.", table_name)
             return 1
 
         all_rows: List[Dict[str, Any]] = []
@@ -793,32 +1104,43 @@ def run_import(revision_folder: Path, db_path: Path, headers_workbook: Path, inp
 
         for category in sorted(REQUIRED_FILE_CATEGORIES):
             classified = found_files[category]
-            print(f"INFO: Processing {classified.path.name}")
+            logger.info(
+                "Processing source file category=%s erection=%s path=%s",
+                classified.material_type,
+                classified.is_erection,
+                classified.path,
+            )
             try:
                 rows, mapping_warnings = build_rows_for_file(classified, sqlite_headers, uid_counter)
             except ValueError as exc:
-                print(f"ERROR: {exc}")
-                print("ERROR: Import stopped due to missing required column/data.")
+                logger.error("%s", exc)
+                logger.error("Import stopped due to missing required column/data. file=%s", classified.path)
+                return 1
+            except Exception:
+                logger.exception("Unexpected failure while processing file=%s", classified.path)
                 return 1
 
             uid_counter += len(rows)
             all_rows.extend(rows)
             for warning in mapping_warnings:
-                print(f"WARNING: {classified.path.name}: {warning}")
+                logger.warning("%s: %s", classified.path.name, warning)
 
         for paint_file in sorted(paint_files):
-            print(f"INFO: Processing {paint_file.name}")
+            logger.info("Processing paint file path=%s", paint_file)
             try:
                 rows, mapping_warnings = build_rows_for_paint_file(paint_file, sqlite_headers, uid_counter)
             except ValueError as exc:
-                print(f"ERROR: {exc}")
-                print("ERROR: Import stopped due to missing required column/data.")
+                logger.error("%s", exc)
+                logger.error("Import stopped due to missing required column/data. file=%s", paint_file)
+                return 1
+            except Exception:
+                logger.exception("Unexpected failure while processing paint file=%s", paint_file)
                 return 1
 
             uid_counter += len(rows)
             all_rows.extend(rows)
             for warning in mapping_warnings:
-                print(f"WARNING: {paint_file.name}: {warning}")
+                logger.warning("%s: %s", paint_file.name, warning)
 
         create_table(conn, table_name, sqlite_headers)
         insert_rows(conn, table_name, sqlite_headers, all_rows)
@@ -826,14 +1148,25 @@ def run_import(revision_folder: Path, db_path: Path, headers_workbook: Path, inp
         try:
             aggregate_table_name = create_aggregated_table(conn, table_name, sqlite_headers)
         except ValueError as exc:
-            print(f"WARNING: {exc}")
+            logger.warning("%s", exc)
             return 1
 
         conn.commit()
 
-        print(f"SUCCESS: Imported {len(all_rows)} rows into table '{table_name}' in {db_path}.")
+        logger.info("Imported rows=%s into table='%s' db=%s", len(all_rows), table_name, db_path)
         agg_count = conn.execute(f'SELECT COUNT(*) FROM "{aggregate_table_name}";').fetchone()[0]
-        print(f"SUCCESS: Created aggregated table '{aggregate_table_name}' with {agg_count} rows.")
+        logger.info("Created aggregated table='%s' rows=%s", aggregate_table_name, agg_count)
+
+    spare_ok, spare_msg = run_spare_calculation_after_import(
+        db_path=db_path,
+        revision_table=table_name,
+        settings_workbook=settings_workbook,
+    )
+    if not spare_ok:
+        logger.error("Spare calculation failed after import. %s", spare_msg)
+        return 1
+
+    logger.info("%s", spare_msg)
 
     return 0
 
@@ -866,16 +1199,40 @@ def parse_args() -> argparse.Namespace:
         default=Path("Price_Sheet_New_Format/sqlite_table_headers.xlsx"),
         help="Workbook containing the mandatory SQLite table column headers in row 1.",
     )
+    parser.add_argument(
+        "--settings-workbook",
+        type=Path,
+        default=Path("Price_Sheet_New_Format/import_settings.xlsx"),
+        help="Workbook containing configurable import mappings and rules.",
+    )
+    parser.add_argument(
+        "--log-dir",
+        type=Path,
+        default=DEFAULT_LOG_DIR,
+        help="Directory where timestamped CSV run logs are written.",
+    )
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
+    log_file = setup_csv_logging(run_name="price_sheet_import", log_dir=args.log_dir)
+    logger.info("CSV logging initialized. log_file=%s", log_file)
+    try:
+        load_import_settings(args.settings_workbook)
+    except Exception as exc:
+        logger.exception(
+            f"ERROR: Failed to load settings workbook: {exc} "
+            f"{settings_sheet_hint('General', 'MaterialTypes', 'RequiredFileCategories', 'ColumnMappings_Normal', 'ColumnMappings_Erection', 'ColumnMappings_Paint', 'Aliases')}"
+        )
+        return 1
+
     return run_import(
         revision_folder=args.revision_folder,
         db_path=args.db_path,
         headers_workbook=args.headers_workbook,
         input_subdir=args.input_subdir,
+        settings_workbook=args.settings_workbook,
     )
 
 
