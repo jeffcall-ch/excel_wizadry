@@ -5,7 +5,7 @@ import logging
 import re
 import sqlite3
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Set
 
 from logging_utils import DEFAULT_LOG_DIR, setup_csv_logging
 from openpyxl import Workbook
@@ -14,19 +14,7 @@ from openpyxl.utils import get_column_letter
 
 INVALID_SHEET_CHARS = r'[\[\]\*\?/\\:]'
 MAX_EXCEL_COLUMN_WIDTH = 255
-NUMERIC_HEADERS = {
-    "UID",
-    "Size",
-    "Qty pcs",
-    "Qty m",
-    "Weight kg",
-    "Surface m2",
-    "Order qty",
-    "Weight w spare",
-    "Unit price",
-    "Total price",
-    "Delta qty to previous revision",
-}
+NUMERIC_TYPE_TOKENS = ("INT", "REAL", "NUM", "FLOA", "DOUB", "DEC")
 
 
 logger = logging.getLogger(__name__)
@@ -138,7 +126,7 @@ def parse_numeric_text(value: str):
         except ValueError:
             return value
 
-    if re.fullmatch(r"[+-]?\d*\.\d+", normalized):
+    if re.fullmatch(r"[+-]?(?:\d+\.\d*|\d*\.\d+|\d+)(?:[eE][+-]?\d+)?", normalized):
         try:
             return float(normalized)
         except ValueError:
@@ -147,11 +135,23 @@ def parse_numeric_text(value: str):
     return value
 
 
-def coerce_cell_for_excel(header: str, value):
+def get_numeric_headers_for_table(conn: sqlite3.Connection, table_name: str) -> Set[str]:
+    rows = conn.execute(f'PRAGMA table_info("{table_name}");').fetchall()
+    numeric_headers: Set[str] = set()
+    for row in rows:
+        # PRAGMA table_info columns: cid, name, type, notnull, dflt_value, pk
+        column_name = str(row[1]) if len(row) > 1 else ""
+        declared_type = str(row[2]).upper() if len(row) > 2 and row[2] is not None else ""
+        if column_name and any(token in declared_type for token in NUMERIC_TYPE_TOKENS):
+            numeric_headers.add(column_name)
+    return numeric_headers
+
+
+def coerce_cell_for_excel(header: str, value, numeric_headers: Set[str]):
     if value is None:
         return None
 
-    if header in NUMERIC_HEADERS:
+    if header in numeric_headers:
         if isinstance(value, (int, float)):
             return value
         if isinstance(value, str):
@@ -192,9 +192,14 @@ def export_sqlite_to_xlsm(db_path: Path, output_path: Path, overwrite: bool) -> 
             sheet_name = make_valid_sheet_name(table_name, used_sheet_names)
             ws = wb.create_sheet(title=sheet_name)
             max_widths: Dict[int, int] = {}
+            numeric_headers = get_numeric_headers_for_table(conn, table_name)
 
-            cur = conn.execute(f'SELECT * FROM "{table_name}";')
-            headers = [col[0] for col in cur.description] if cur.description else []
+            header_cur = conn.execute(f'SELECT * FROM "{table_name}" LIMIT 0;')
+            headers = [col[0] for col in header_cur.description] if header_cur.description else []
+            if "UID" in headers:
+                cur = conn.execute(f'SELECT * FROM "{table_name}" ORDER BY CAST("UID" AS NUMERIC), rowid;')
+            else:
+                cur = conn.execute(f'SELECT * FROM "{table_name}";')
 
             if headers:
                 ws.append(headers)
@@ -204,7 +209,7 @@ def export_sqlite_to_xlsm(db_path: Path, output_path: Path, overwrite: bool) -> 
             row_count = 0
             for row in cur:
                 converted_row = [
-                    coerce_cell_for_excel(headers[col_idx], value)
+                    coerce_cell_for_excel(headers[col_idx], value, numeric_headers)
                     for col_idx, value in enumerate(row)
                 ]
                 ws.append(converted_row)

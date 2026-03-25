@@ -902,6 +902,10 @@ def int_if_whole(value: float) -> Any:
 
 def material_type_sort_rank(material_type: str) -> int:
     mt = material_type.strip().lower()
+    if mt.startswith("paint shop"):
+        return 3
+    if mt.startswith("paint erection"):
+        return 4
     for idx, prefix in enumerate(AGGREGATE_MATERIAL_TYPE_SORT_PREFIXES):
         if mt.startswith(prefix):
             return idx

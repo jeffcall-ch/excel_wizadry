@@ -14,6 +14,15 @@ from Price_Sheet_New_Format.settings_markdown import load_markdown_settings, sec
 NA_VALUE = "N/A"
 logger = logging.getLogger(__name__)
 
+TUBI_CS_SHOP_PRE_PAINT_COL = "Shop order calculated len"
+TUBI_CS_SHOP_POST_PAINT_COL = "With paint update order length"
+SURFACE_W_SPARE_COL = "Surface m2 w spare"
+PAINT_ERECTION_MATERIAL_TYPE = "Paint erection"
+PAINT_ERECTION_TYPE = "TOUCH UP PAINT"
+PAINT_ERECTION_DESCRIPTION_PREFIX = "Touch up paint 20L can"
+PAINT_BASIC_BUCKET = "basic only"
+PAINT_BASIC_OR_PRIMER_NAMES = {"basic only"}
+
 
 def parse_float(value: Any, default: float = 0.0) -> float:
     if value is None:
@@ -206,6 +215,16 @@ def append_note(existing_note: Any, addition: str) -> str:
 
 def fmt_num(value: float) -> str:
     return str(to_numeric_cell(float(value)))
+
+
+def calculate_touch_up_cans(surface_m2: float) -> int:
+    if surface_m2 <= 0:
+        return 0
+    liters = surface_m2 / 5.0
+    cans = ceil_int(liters / 20.0)
+    if liters > 15.0:
+        cans += 1
+    return cans
 
 
 def calculate_main_spare(row: sqlite3.Row, settings: Dict[str, Any]) -> Tuple[float, str]:
@@ -420,11 +439,17 @@ def run_spare_calcs(db_path: Path, revision_table: str, settings_workbook: Path)
         size_col = settings["size_column"]
         type_col = settings["type_column"]
         desc_col = settings["description_column"]
+        tubi_cs_pre_col = TUBI_CS_SHOP_PRE_PAINT_COL
+        tubi_cs_post_col = TUBI_CS_SHOP_POST_PAINT_COL
+        surface_w_spare_col = SURFACE_W_SPARE_COL
 
         ensure_table_column(conn, agg_table, spare_col, "NUMERIC")
         ensure_table_column(conn, agg_table, note_col, "TEXT")
         ensure_table_column(conn, agg_table, total_qty_col, "NUMERIC")
         ensure_table_column(conn, agg_table, weight_w_spare_col, "NUMERIC")
+        ensure_table_column(conn, agg_table, tubi_cs_pre_col, "NUMERIC")
+        ensure_table_column(conn, agg_table, tubi_cs_post_col, "NUMERIC")
+        ensure_table_column(conn, agg_table, surface_w_spare_col, "NUMERIC")
 
         row_states: List[Dict[str, Any]] = []
         shop_count = 0
@@ -467,13 +492,31 @@ def run_spare_calcs(db_path: Path, revision_table: str, settings_workbook: Path)
                     "size": str(row[size_col] or "").strip(),
                     "type_text": str(row[type_col] or ""),
                     "description": str(row[desc_col] or ""),
+                    "paint_colour": str(row["Paint colour"] or "") if "Paint colour" in row.keys() else "",
+                    "surface_m2": max(0.0, parse_float(row["Surface m2"], 0.0)) if "Surface m2" in row.keys() else 0.0,
+                    "qty_base": qty_base,
                     "spare_num": spare_num,
                     "note": note,
                     "total_qty": total_qty,
                     "unit_weight": unit_weight,
                     "weight_w_spare": weight_w_spare,
+                    "tubi_cs_shop_pre_paint": None,
+                    "tubi_cs_shop_post_paint": None,
+                    "surface_w_spare": None,
                 }
             )
+
+        for state in row_states:
+            if state["cls"] != "paint":
+                continue
+            qty_base = float(state.get("qty_base", 0.0) or 0.0)
+            total_qty = float(state.get("total_qty", 0.0) or 0.0)
+            surface_raw = float(state.get("surface_m2", 0.0) or 0.0)
+            if surface_raw <= 0 or total_qty <= 0:
+                state["surface_w_spare"] = 0.0
+                continue
+            scale = (total_qty / qty_base) if qty_base > 0 else 1.0
+            state["surface_w_spare"] = surface_raw * scale
 
         tubi_keywords = settings.get("keywords", {}).get("tubi", ["tubi"])
 
@@ -482,6 +525,16 @@ def run_spare_calcs(db_path: Path, revision_table: str, settings_workbook: Path)
 
         def size_key(value: str) -> str:
             return value.strip().lower()
+
+        for state in row_states:
+            is_cs_shop_tubi = (
+                state["cls"] == "shop"
+                and "cs" in state["material_type"].lower()
+                and is_tubi_state(state)
+            )
+            if is_cs_shop_tubi:
+                state["tubi_cs_shop_pre_paint"] = float(state["total_qty"])
+                state["tubi_cs_shop_post_paint"] = float(state["total_qty"])
 
         paint_totals_by_size: Dict[str, float] = {}
         paint_rows_by_size: Dict[str, List[Dict[str, Any]]] = {}
@@ -549,6 +602,7 @@ def run_spare_calcs(db_path: Path, revision_table: str, settings_workbook: Path)
                     ),
                 )
                 for cs_row in cs_rows:
+                    cs_row["tubi_cs_shop_post_paint"] = float(cs_row["total_qty"])
                     if cs_row is target:
                         continue
                     cs_row["note"] = append_note(
@@ -570,6 +624,8 @@ def run_spare_calcs(db_path: Path, revision_table: str, settings_workbook: Path)
                     )
                 adjusted_size_count += 1
             elif diff < -1e-12:
+                for cs_row in cs_rows:
+                    cs_row["tubi_cs_shop_post_paint"] = float(cs_row["total_qty"])
                 warnings.append(
                     f"TUBI size '{shown_size}': paint Order qty sum ({fmt_num(paint_total)}) is lower than CS shop ({fmt_num(cs_total)})."
                 )
@@ -593,6 +649,8 @@ def run_spare_calcs(db_path: Path, revision_table: str, settings_workbook: Path)
                     )
             else:
                 for cs_row in cs_rows:
+                    cs_row["tubi_cs_shop_post_paint"] = float(cs_row["total_qty"])
+                for cs_row in cs_rows:
                     cs_row["note"] = append_note(
                         cs_row["note"],
                         (
@@ -609,7 +667,82 @@ def run_spare_calcs(db_path: Path, revision_table: str, settings_workbook: Path)
                         ),
                     )
 
-        updates: List[Tuple[Any, Any, Any, Any, int]] = []
+        paint_erection_by_colour: Dict[str, float] = {}
+        for state in row_states:
+            if state["cls"] != "paint":
+                continue
+
+            paint_colour_raw = str(state.get("paint_colour", "") or "").strip()
+            if not paint_colour_raw or paint_colour_raw.upper() == NA_VALUE:
+                continue
+
+            surface_with_spare = float(state.get("surface_w_spare", 0.0) or 0.0)
+            if surface_with_spare <= 0:
+                continue
+
+            factor = 0.05 if is_tubi_state(state) else 1.0
+            surface = surface_with_spare * factor
+            if surface <= 0:
+                continue
+
+            paint_colour_l = paint_colour_raw.lower()
+            if paint_colour_l in PAINT_BASIC_OR_PRIMER_NAMES:
+                paint_erection_by_colour[PAINT_BASIC_BUCKET] = paint_erection_by_colour.get(PAINT_BASIC_BUCKET, 0.0) + (2.0 * surface)
+            else:
+                paint_erection_by_colour[paint_colour_raw] = paint_erection_by_colour.get(paint_colour_raw, 0.0) + surface
+                paint_erection_by_colour[PAINT_BASIC_BUCKET] = paint_erection_by_colour.get(PAINT_BASIC_BUCKET, 0.0) + (2.0 * surface)
+
+        existing_columns = [str(c[1]) for c in conn.execute(f'PRAGMA table_info("{agg_table}");').fetchall()]
+        col_set = set(existing_columns)
+
+        uid_values = conn.execute(f'SELECT "UID" FROM "{agg_table}";').fetchall() if "UID" in col_set else []
+        max_uid = 0
+        for (uid_val,) in uid_values:
+            uid_num = parse_float(uid_val, 0.0)
+            if uid_num > max_uid:
+                max_uid = int(uid_num)
+        next_uid = max_uid + 1
+
+        paint_erection_rows: List[Dict[str, Any]] = []
+        for colour, total_surface in sorted(paint_erection_by_colour.items(), key=lambda kv: kv[0].lower()):
+            cans = calculate_touch_up_cans(total_surface)
+            if cans <= 0:
+                continue
+
+            new_row: Dict[str, Any] = {}
+            if "UID" in col_set:
+                new_row["UID"] = next_uid
+                next_uid += 1
+            if mt_col in col_set:
+                new_row[mt_col] = PAINT_ERECTION_MATERIAL_TYPE
+            if desc_col in col_set:
+                new_row[desc_col] = (
+                    f"{PAINT_ERECTION_DESCRIPTION_PREFIX} - {colour} "
+                    "(fittings 100% + TUBI 5%; colored includes 2x basic layer)."
+                )
+            if type_col in col_set:
+                new_row[type_col] = PAINT_ERECTION_TYPE
+            if "Paint colour" in col_set:
+                new_row["Paint colour"] = colour
+            if "Surface m2" in col_set:
+                new_row["Surface m2"] = to_numeric_cell(total_surface)
+            if qty_pcs_col in col_set:
+                new_row[qty_pcs_col] = cans
+            if total_qty_col in col_set:
+                new_row[total_qty_col] = cans
+            if spare_col in col_set:
+                new_row[spare_col] = 0
+            if note_col in col_set:
+                liters = total_surface / 5.0
+                new_row[note_col] = (
+                    f"Paint erection touch-up order. Surface={fmt_num(total_surface)} m2; "
+                    f"liters=surface/5={fmt_num(liters)}; 20L cans={cans}; "
+                    "rule: +1 extra can when liters > 15."
+                )
+
+            paint_erection_rows.append(new_row)
+
+        updates: List[Tuple[Any, Any, Any, Any, Any, Any, Any, int]] = []
         for state in row_states:
             updates.append(
                 (
@@ -617,16 +750,28 @@ def run_spare_calcs(db_path: Path, revision_table: str, settings_workbook: Path)
                     state["note"],
                     to_numeric_cell(float(state["total_qty"])),
                     to_numeric_cell(float(state["weight_w_spare"])),
+                    to_numeric_cell(float(state["tubi_cs_shop_pre_paint"])) if state["tubi_cs_shop_pre_paint"] is not None else None,
+                    to_numeric_cell(float(state["tubi_cs_shop_post_paint"])) if state["tubi_cs_shop_post_paint"] is not None else None,
+                    to_numeric_cell(float(state["surface_w_spare"])) if state["surface_w_spare"] is not None else None,
                     int(state["rowid"]),
                 )
             )
 
         if updates:
             conn.executemany(
-                f'UPDATE "{agg_table}" SET "{spare_col}"=?, "{note_col}"=?, "{total_qty_col}"=?, "{weight_w_spare_col}"=? WHERE rowid=?',
+                f'UPDATE "{agg_table}" SET "{spare_col}"=?, "{note_col}"=?, "{total_qty_col}"=?, "{weight_w_spare_col}"=?, "{tubi_cs_pre_col}"=?, "{tubi_cs_post_col}"=?, "{surface_w_spare_col}"=? WHERE rowid=?',
                 updates,
             )
-            conn.commit()
+
+        if paint_erection_rows:
+            insert_cols = [col for col in existing_columns if any(col in row for row in paint_erection_rows)]
+            placeholders = ", ".join(["?" for _ in insert_cols])
+            cols_sql = ", ".join([f'"{c}"' for c in insert_cols])
+            insert_sql = f'INSERT INTO "{agg_table}" ({cols_sql}) VALUES ({placeholders})'
+            insert_values = [[row.get(col, None) for col in insert_cols] for row in paint_erection_rows]
+            conn.executemany(insert_sql, insert_values)
+
+        conn.commit()
 
         logger.info("Updated spare values in table '%s'.", agg_table)
         logger.info("Shop rows processed: %s", shop_count)
@@ -634,6 +779,7 @@ def run_spare_calcs(db_path: Path, revision_table: str, settings_workbook: Path)
         logger.info("Erection rows processed: %s", erection_count)
         logger.info("Skipped rows (other): %s", skipped_count)
         logger.info("TUBI post-process adjusted CS sizes: %s", adjusted_size_count)
+        logger.info("Paint erection rows inserted: %s", len(paint_erection_rows))
         for warning_text in warnings:
             logger.warning("%s", warning_text)
 

@@ -26,6 +26,11 @@ env file
 *.xml
 *.txt
 
+# db
+*.db
+*.sqlite
+
+
 # C# build artifacts
 bin/
 obj/
