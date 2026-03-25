@@ -67,8 +67,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--settings-workbook",
         type=Path,
-        default=Path("Price_Sheet_New_Format/import_settings.xlsx"),
-        help="Workbook with import and spare settings.",
+        default=Path("Price_Sheet_New_Format/import_settings.md"),
+        help="Markdown file with import and spare settings.",
     )
     parser.add_argument(
         "--export-path",
@@ -102,7 +102,7 @@ def main() -> int:
     try:
         load_import_settings(args.settings_workbook)
     except Exception as exc:
-        logger.exception("Failed to load settings workbook path=%s", args.settings_workbook)
+        logger.exception("Failed to load settings file path=%s", args.settings_workbook)
         return 1
 
     import_result = run_import(

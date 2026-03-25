@@ -8,41 +8,11 @@ import sqlite3
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
-from openpyxl import load_workbook
 from Price_Sheet_New_Format.logging_utils import DEFAULT_LOG_DIR, setup_csv_logging
+from Price_Sheet_New_Format.settings_markdown import load_markdown_settings, sections_hint
 
 NA_VALUE = "N/A"
 logger = logging.getLogger(__name__)
-
-
-def read_sheet_records(workbook, sheet_name: str) -> List[Dict[str, object]]:
-    if sheet_name not in workbook.sheetnames:
-        return []
-
-    ws = workbook[sheet_name]
-    rows = ws.iter_rows(min_row=1, max_row=ws.max_row, min_col=1, max_col=ws.max_column, values_only=True)
-    try:
-        header_row = next(rows)
-    except StopIteration:
-        return []
-
-    headers = [str(h).strip() if h is not None else "" for h in header_row]
-    records: List[Dict[str, object]] = []
-    for row in rows:
-        rec: Dict[str, object] = {}
-        has_any = False
-        for idx, value in enumerate(row):
-            if idx >= len(headers):
-                continue
-            key = headers[idx]
-            if not key:
-                continue
-            rec[key] = value
-            if value is not None and str(value).strip() != "":
-                has_any = True
-        if has_any:
-            records.append(rec)
-    return records
 
 
 def parse_float(value: Any, default: float = 0.0) -> float:
@@ -120,29 +90,26 @@ def round_up_nut_washer(value: float) -> int:
 
 
 def load_spare_settings(settings_workbook: Path) -> Dict[str, Any]:
-    if not settings_workbook.exists():
-        raise ValueError(f"Settings workbook not found: {settings_workbook}")
+    settings_doc = load_markdown_settings(settings_workbook)
 
-    wb = load_workbook(settings_workbook, data_only=True, read_only=True)
-
-    general_records = read_sheet_records(wb, "SpareGeneral")
+    general_records = settings_doc.get_records("SpareGeneral")
     if not general_records:
-        raise ValueError("Missing settings sheet 'SpareGeneral'.")
+        raise ValueError(f"Missing settings table. {sections_hint('SpareGeneral')}")
     general = {str(r.get("Key", "")).strip(): r.get("Value") for r in general_records}
 
-    main_records = read_sheet_records(wb, "SpareMainRules")
+    main_records = settings_doc.get_records("SpareMainRules")
     if not main_records:
-        raise ValueError("Missing settings sheet 'SpareMainRules'.")
+        raise ValueError(f"Missing settings table. {sections_hint('SpareMainRules')}")
     main_map = {str(r.get("Key", "")).strip(): r.get("Value") for r in main_records}
 
-    erection_records = read_sheet_records(wb, "SpareErectionRules")
+    erection_records = settings_doc.get_records("SpareErectionRules")
     if not erection_records:
-        raise ValueError("Missing settings sheet 'SpareErectionRules'.")
+        raise ValueError(f"Missing settings table. {sections_hint('SpareErectionRules')}")
     erection_map = {str(r.get("Key", "")).strip(): r.get("Value") for r in erection_records}
 
-    keyword_records = read_sheet_records(wb, "SpareKeywords")
+    keyword_records = settings_doc.get_records("SpareKeywords")
     if not keyword_records:
-        raise ValueError("Missing settings sheet 'SpareKeywords'.")
+        raise ValueError(f"Missing settings table. {sections_hint('SpareKeywords')}")
 
     kw: Dict[str, List[str]] = {}
     for rec in keyword_records:
@@ -692,8 +659,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--settings-workbook",
         type=Path,
-        default=Path("Price_Sheet_New_Format/import_settings.xlsx"),
-        help="Path to settings workbook containing spare rule sheets.",
+        default=Path("Price_Sheet_New_Format/import_settings.md"),
+        help="Path to Markdown settings file containing spare rule sections.",
     )
     parser.add_argument(
         "--log-dir",
@@ -716,7 +683,8 @@ def main() -> int:
         )
     except Exception:
         logger.exception(
-            "Spare calculation failed. Check settings sheets: 'SpareGeneral', 'SpareMainRules', 'SpareErectionRules', 'SpareKeywords'."
+            "Spare calculation failed. "
+            + sections_hint("SpareGeneral", "SpareMainRules", "SpareErectionRules", "SpareKeywords")
         )
         return 1
 

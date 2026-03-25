@@ -14,6 +14,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from openpyxl import load_workbook
 from logging_utils import DEFAULT_LOG_DIR, setup_csv_logging
+from settings_markdown import load_markdown_settings, sections_hint
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
@@ -166,8 +167,7 @@ logger = logging.getLogger(__name__)
 
 
 def settings_sheet_hint(*sheet_names: str) -> str:
-    joined = ", ".join([f"'{name}'" for name in sheet_names])
-    return f"Check import settings workbook sheets: {joined}."
+    return sections_hint(*sheet_names)
 
 
 @dataclass
@@ -287,38 +287,7 @@ def parse_bool_like(value: object) -> bool:
     return str(value).strip().lower() in {"1", "true", "yes", "y"}
 
 
-def read_sheet_records(workbook, sheet_name: str) -> List[Dict[str, object]]:
-    if sheet_name not in workbook.sheetnames:
-        return []
-
-    ws = workbook[sheet_name]
-    rows = ws.iter_rows(min_row=1, max_row=ws.max_row, min_col=1, max_col=ws.max_column, values_only=True)
-    try:
-        header_row = next(rows)
-    except StopIteration:
-        return []
-
-    headers = [str(h).strip() if h is not None else "" for h in header_row]
-    records: List[Dict[str, object]] = []
-    for row in rows:
-        rec: Dict[str, object] = {}
-        has_any = False
-        for idx, value in enumerate(row):
-            if idx >= len(headers):
-                continue
-            key = headers[idx]
-            if not key:
-                continue
-            rec[key] = value
-            if value is not None and str(value).strip() != "":
-                has_any = True
-        if has_any:
-            records.append(rec)
-    return records
-
-
-def _load_mapping_sheet(workbook, sheet_name: str) -> Tuple[Dict[str, str], Tuple[str, ...]]:
-    records = read_sheet_records(workbook, sheet_name)
+def _load_mapping_sheet(records: List[Dict[str, object]]) -> Tuple[Dict[str, str], Tuple[str, ...]]:
     if not records:
         return {}, tuple()
 
@@ -360,12 +329,9 @@ def load_import_settings(settings_workbook: Path) -> None:
     global ALIAS_MAP
     global AGGREGATION_MATERIAL_TYPE_RULES
 
-    if not settings_workbook.exists():
-        raise ValueError(f"Settings workbook not found: {settings_workbook}")
+    settings_doc = load_markdown_settings(settings_workbook)
 
-    wb = load_workbook(settings_workbook, data_only=True, read_only=True)
-
-    general_records = read_sheet_records(wb, "General")
+    general_records = settings_doc.get_records("General")
     general = {}
     for rec in general_records:
         key = str(rec.get("Key", "")).strip()
@@ -378,13 +344,13 @@ def load_import_settings(settings_workbook: Path) -> None:
     PAINT_MATERIAL_TYPE_LABEL = general.get("paint_material_type_label", PAINT_MATERIAL_TYPE_LABEL)
     AGGREGATE_TABLE_SUFFIX = general.get("aggregate_table_suffix", AGGREGATE_TABLE_SUFFIX)
 
-    material_type_records = read_sheet_records(wb, "MaterialTypes")
+    material_type_records = settings_doc.get_records("MaterialTypes")
     loaded_types = [str(r.get("MaterialType", "")).strip().lower() for r in material_type_records]
     loaded_types = [x for x in loaded_types if x]
     if loaded_types:
         TARGET_MATERIAL_TYPES = tuple(loaded_types)
 
-    required_file_records = read_sheet_records(wb, "RequiredFileCategories")
+    required_file_records = settings_doc.get_records("RequiredFileCategories")
     loaded_required_categories = set()
     for rec in required_file_records:
         material_type = str(rec.get("MaterialType", "")).strip().lower()
@@ -395,7 +361,7 @@ def load_import_settings(settings_workbook: Path) -> None:
     if loaded_required_categories:
         REQUIRED_FILE_CATEGORIES = loaded_required_categories
 
-    material_type_label_records = read_sheet_records(wb, "MaterialTypeLabels")
+    material_type_label_records = settings_doc.get_records("MaterialTypeLabels")
     loaded_labels = {}
     for rec in material_type_label_records:
         material_type = str(rec.get("MaterialType", "")).strip().lower()
@@ -405,25 +371,25 @@ def load_import_settings(settings_workbook: Path) -> None:
     if loaded_labels:
         MATERIAL_TYPE_BASE_LABELS = loaded_labels
 
-    mapping, required = _load_mapping_sheet(wb, "ColumnMappings_Normal")
+    mapping, required = _load_mapping_sheet(settings_doc.get_records("ColumnMappings_Normal"))
     if mapping:
         NORMAL_SOURCE_TO_SQLITE = mapping
     if required:
         NORMAL_REQUIRED_KEYS = required
 
-    mapping, required = _load_mapping_sheet(wb, "ColumnMappings_Erection")
+    mapping, required = _load_mapping_sheet(settings_doc.get_records("ColumnMappings_Erection"))
     if mapping:
         ERECTION_SOURCE_TO_SQLITE = mapping
     if required:
         ERECTION_REQUIRED_KEYS = required
 
-    mapping, required = _load_mapping_sheet(wb, "ColumnMappings_Paint")
+    mapping, required = _load_mapping_sheet(settings_doc.get_records("ColumnMappings_Paint"))
     if mapping:
         PAINT_SOURCE_TO_SQLITE = mapping
     if required:
         PAINT_REQUIRED_KEYS = required
 
-    alias_records = read_sheet_records(wb, "Aliases")
+    alias_records = settings_doc.get_records("Aliases")
     if alias_records:
         grouped_aliases: Dict[str, List[str]] = collections.defaultdict(list)
         for rec in alias_records:
@@ -434,7 +400,7 @@ def load_import_settings(settings_workbook: Path) -> None:
         if grouped_aliases:
             ALIAS_MAP = dict(grouped_aliases)
 
-    keyword_records = read_sheet_records(wb, "FileKeywords")
+    keyword_records = settings_doc.get_records("FileKeywords")
     paint_keywords = [
         str(rec.get("Keyword", "")).strip().lower()
         for rec in keyword_records
@@ -444,19 +410,19 @@ def load_import_settings(settings_workbook: Path) -> None:
     if paint_keywords:
         PAINT_FILE_KEYWORDS = tuple(paint_keywords)
 
-    numeric_col_records = read_sheet_records(wb, "SqliteNumericColumns")
+    numeric_col_records = settings_doc.get_records("SqliteNumericColumns")
     loaded_numeric_cols = [str(rec.get("Column", "")).strip() for rec in numeric_col_records]
     loaded_numeric_cols = [col for col in loaded_numeric_cols if col]
     if loaded_numeric_cols:
         SQLITE_NUMERIC_COLUMNS = set(loaded_numeric_cols)
 
-    agg_sum_records = read_sheet_records(wb, "AggregateSumColumns")
+    agg_sum_records = settings_doc.get_records("AggregateSumColumns")
     loaded_agg_sum_cols = [str(rec.get("Column", "")).strip() for rec in agg_sum_records]
     loaded_agg_sum_cols = [col for col in loaded_agg_sum_cols if col]
     if loaded_agg_sum_cols:
         AGGREGATE_SUM_COLUMNS = tuple(loaded_agg_sum_cols)
 
-    agg_rule_records = read_sheet_records(wb, "AggregationMaterialTypeRules")
+    agg_rule_records = settings_doc.get_records("AggregationMaterialTypeRules")
     loaded_rules = []
     for rec in agg_rule_records:
         match_type = str(rec.get("MatchType", "")).strip().lower()
@@ -973,10 +939,13 @@ def create_aggregated_table(
     cols_sql = ", ".join([f'"{h}"' for h in sqlite_headers])
     rows = conn.execute(f'SELECT {cols_sql} FROM "{source_table_name}";').fetchall()
 
-    grouped: Dict[Tuple[str, str, str, str, str], Dict[str, Any]] = {}
+    grouped: Dict[Tuple[str, str, str, str, str, str, str], Dict[str, Any]] = {}
     for db_row in rows:
         record = dict(zip(sqlite_headers, db_row))
         material_type_norm = normalize_material_type_for_aggregation(str(record.get("Material type", NA_VALUE)))
+        is_paint_shop = material_type_norm.strip().lower().startswith("paint")
+        corrosion_category = str(record.get("Corrosion category", NA_VALUE)) if is_paint_shop else NA_VALUE
+        paint_colour = str(record.get("Paint colour", NA_VALUE)) if is_paint_shop else NA_VALUE
 
         key = (
             str(record.get("Description", NA_VALUE)),
@@ -984,6 +953,8 @@ def create_aggregated_table(
             str(record.get("Type", NA_VALUE)),
             str(record.get("Size", NA_VALUE)),
             material_type_norm,
+            corrosion_category,
+            paint_colour,
         )
 
         if key not in grouped:
@@ -993,6 +964,10 @@ def create_aggregated_table(
             base["Type"] = key[2]
             base["Size"] = key[3]
             base["Material type"] = key[4]
+            if "Corrosion category" in base:
+                base["Corrosion category"] = key[5]
+            if "Paint colour" in base:
+                base["Paint colour"] = key[6]
             for col in AGGREGATE_SUM_COLUMNS:
                 base[col] = 0.0
             grouped[key] = base
@@ -1202,8 +1177,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--settings-workbook",
         type=Path,
-        default=Path("Price_Sheet_New_Format/import_settings.xlsx"),
-        help="Workbook containing configurable import mappings and rules.",
+        default=Path("Price_Sheet_New_Format/import_settings.md"),
+        help="Markdown settings file containing configurable import mappings and rules.",
     )
     parser.add_argument(
         "--log-dir",
@@ -1222,7 +1197,7 @@ def main() -> int:
         load_import_settings(args.settings_workbook)
     except Exception as exc:
         logger.exception(
-            f"ERROR: Failed to load settings workbook: {exc} "
+            f"ERROR: Failed to load settings file: {exc} "
             f"{settings_sheet_hint('General', 'MaterialTypes', 'RequiredFileCategories', 'ColumnMappings_Normal', 'ColumnMappings_Erection', 'ColumnMappings_Paint', 'Aliases')}"
         )
         return 1
