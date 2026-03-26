@@ -17,9 +17,6 @@ logger = logging.getLogger(__name__)
 TUBI_CS_SHOP_PRE_PAINT_COL = "Shop order calculated len"
 TUBI_CS_SHOP_POST_PAINT_COL = "With paint update order length"
 SURFACE_W_SPARE_COL = "Surface m2 w spare"
-PAINT_ERECTION_MATERIAL_TYPE = "Paint erection"
-PAINT_ERECTION_TYPE = "TOUCH UP PAINT"
-PAINT_ERECTION_DESCRIPTION_PREFIX = "Touch up paint 20L can"
 PAINT_BASIC_BUCKET = "basic only"
 PAINT_BASIC_OR_PRIMER_NAMES = {"basic only"}
 
@@ -98,6 +95,70 @@ def round_up_nut_washer(value: float) -> int:
     return round_up_to_multiple(value, 100)
 
 
+def uid_category(material_type: str) -> Tuple[int, str]:
+    mt = str(material_type or "").strip().lower()
+    if "mapress shop" in mt:
+        return (1, "MA")
+    if "ss shop" in mt:
+        return (2, "SS")
+    if "cs shop" in mt:
+        return (3, "CS")
+    if "04 erection" in mt or ("erection" in mt and "paint" not in mt):
+        return (4, "ER")
+    if "paint shop" in mt:
+        return (5, "PAS")
+    if "paint erection" in mt:
+        return (6, "PAE")
+    if "blind disks" in mt:
+        return (7, "BD")
+    if "orifice plates" in mt:
+        return (8, "OP")
+    if "flange guards" in mt:
+        return (9, "FG")
+    return (99, "OT")
+
+
+def rewrite_aggregated_uids(conn: sqlite3.Connection, agg_table: str, mt_col: str) -> None:
+    cols = conn.execute(f'PRAGMA table_info("{agg_table}");').fetchall()
+    existing = {str(c[1]) for c in cols}
+    if "UID" not in existing:
+        return
+
+    rows = conn.execute(
+        f'SELECT rowid, "{mt_col}", "Material", "Type", "Size" FROM "{agg_table}"'
+    ).fetchall()
+
+    sortable: List[Tuple[int, str, str, int, str, float, str, int]] = []
+    for rowid, mt, material, type_value, size in rows:
+        cat_num, code = uid_category(str(mt or ""))
+        sortable.append(
+            (
+                cat_num,
+                code,
+                str(type_value or "").strip().lower(),
+                0 if str(material or "").strip().upper() != NA_VALUE else 1,
+                str(material or "").strip().lower(),
+                extract_numeric(size),
+                str(size or "").strip().lower(),
+                int(rowid),
+            )
+        )
+
+    sortable.sort(key=lambda t: (t[0], t[2], t[3], t[4], t[5], t[6], t[7]))
+
+    counters: Dict[Tuple[int, str], int] = {}
+    updates: List[Tuple[str, int]] = []
+    for cat_num, code, _, _, _, _, _, rowid in sortable:
+        key = (cat_num, code)
+        next_index = counters.get(key, 0) + 1
+        counters[key] = next_index
+        uid_text = f"{cat_num:02d}-{code}-{next_index:03d}"
+        updates.append((uid_text, rowid))
+
+    if updates:
+        conn.executemany(f'UPDATE "{agg_table}" SET "UID"=? WHERE rowid=?', updates)
+
+
 def load_spare_settings(settings_workbook: Path) -> Dict[str, Any]:
     settings_doc = load_markdown_settings(settings_workbook)
 
@@ -125,6 +186,43 @@ def load_spare_settings(settings_workbook: Path) -> Dict[str, Any]:
         name = str(rec.get("Name", "")).strip()
         if name:
             kw[name] = parse_keywords(rec.get("Keywords"))
+
+    blind_disk_records: List[Dict[str, object]] = []
+    try:
+        blind_disk_records = settings_doc.get_records("BlindDiskThickness")
+    except ValueError:
+        blind_disk_records = []
+
+    blind_disk_thickness: Dict[str, str] = {}
+    for rec in blind_disk_records:
+        dn_raw = str(rec.get("DN", "")).strip()
+        s1_raw = str(rec.get("S1 mm", "")).strip()
+        if dn_raw and s1_raw:
+            blind_disk_thickness[dn_raw] = s1_raw
+
+    paint_erection_defaults_records = settings_doc.get_records("PaintErectionDefaults")
+    if not paint_erection_defaults_records:
+        raise ValueError(f"Missing settings table. {sections_hint('PaintErectionDefaults')}")
+    paint_erection_defaults = records_to_column_map(paint_erection_defaults_records)
+
+    blind_disk_defaults_records = settings_doc.get_records("BlindDiskDefaults")
+    if not blind_disk_defaults_records:
+        raise ValueError(f"Missing settings table. {sections_hint('BlindDiskDefaults')}")
+    blind_disk_defaults = records_to_column_map(blind_disk_defaults_records)
+
+    flange_guard_system_records = settings_doc.get_records("FlangeGuardSystems")
+    if not flange_guard_system_records:
+        raise ValueError(f"Missing settings table. {sections_hint('FlangeGuardSystems')}")
+    flange_guard_system_keywords = [
+        str(rec.get("SystemKeyword", "")).strip().lower()
+        for rec in flange_guard_system_records
+        if str(rec.get("SystemKeyword", "")).strip()
+    ]
+
+    flange_guard_defaults_records = settings_doc.get_records("FlangeGuardDefaults")
+    if not flange_guard_defaults_records:
+        raise ValueError(f"Missing settings table. {sections_hint('FlangeGuardDefaults')}")
+    flange_guard_defaults = records_to_column_map(flange_guard_defaults_records)
 
     return {
         "aggregate_table_suffix": str(general.get("aggregate_table_suffix", "aggreated") or "aggreated"),
@@ -190,6 +288,17 @@ def load_spare_settings(settings_workbook: Path) -> Dict[str, Any]:
             "bolt": kw.get("bolt", ["bolt"]),
             "gasket": kw.get("gasket", ["gasket"]),
         },
+        "blind_disk": {
+            "thickness_by_dn": blind_disk_thickness,
+            "columns": blind_disk_defaults,
+        },
+        "paint_erection": {
+            "columns": paint_erection_defaults,
+        },
+        "flange_guard": {
+            "system_keywords": flange_guard_system_keywords,
+            "columns": flange_guard_defaults,
+        },
     }
 
 
@@ -217,14 +326,44 @@ def fmt_num(value: float) -> str:
     return str(to_numeric_cell(float(value)))
 
 
+def records_to_column_map(records: List[Dict[str, object]]) -> Dict[str, str]:
+    out: Dict[str, str] = {}
+    for rec in records:
+        col = str(rec.get("Column", "")).strip()
+        val = str(rec.get("Value", "")).strip()
+        if col:
+            out[col] = val
+    return out
+
+
+def render_template(template: str, variables: Dict[str, Any]) -> str:
+    rendered = str(template)
+    for key, value in variables.items():
+        rendered = rendered.replace("{" + str(key) + "}", str(value))
+    return rendered
+
+
 def calculate_touch_up_cans(surface_m2: float) -> int:
     if surface_m2 <= 0:
         return 0
     liters = surface_m2 / 5.0
     cans = ceil_int(liters / 20.0)
-    if liters > 15.0:
+    if cans <= 0:
+        return 0
+    liters_in_not_full_can = liters - (20.0 * (cans - 1))
+    if 15.0 <= liters_in_not_full_can < 20.0:
         cans += 1
     return cans
+
+
+def normalize_dn_key(size_value: str) -> str:
+    text = str(size_value or "").strip()
+    if not text:
+        return ""
+    num = extract_numeric(text)
+    if num > 0:
+        return str(int(round(num))) if abs(num - round(num)) < 1e-12 else str(num)
+    return text
 
 
 def calculate_main_spare(row: sqlite3.Row, settings: Dict[str, Any]) -> Tuple[float, str]:
@@ -395,9 +534,11 @@ def resolve_aggregate_table_name(revision_table: str, settings: Dict[str, Any]) 
 def classify_material_type(material_type: str, settings: Dict[str, Any]) -> str:
     mt = material_type.strip()
     mt_l = mt.lower()
-    if mt_l == settings["erection_exact"].lower():
+    if "paint shop" in mt_l:
+        return "paint"
+    if mt_l == settings["erection_exact"].lower() or ("erection" in mt_l and "paint" not in mt_l):
         return "erection"
-    if mt_l.startswith(settings["paint_prefix"]):
+    if settings["paint_prefix"] in mt_l and "shop" in mt_l:
         return "paint"
     if mt_l.endswith(settings["shop_suffix"]):
         return "shop"
@@ -704,55 +845,126 @@ def run_spare_calcs(db_path: Path, revision_table: str, settings_workbook: Path)
         next_uid = max_uid + 1
 
         paint_erection_rows: List[Dict[str, Any]] = []
+        paint_erection_defaults = settings.get("paint_erection", {}).get("columns", {})
         for colour, total_surface in sorted(paint_erection_by_colour.items(), key=lambda kv: kv[0].lower()):
             cans = calculate_touch_up_cans(total_surface)
             if cans <= 0:
                 continue
 
-            new_row: Dict[str, Any] = {}
+            new_row: Dict[str, Any] = {col: NA_VALUE for col in existing_columns if col != "UID"}
             if "UID" in col_set:
                 new_row["UID"] = next_uid
                 next_uid += 1
-            if mt_col in col_set:
-                new_row[mt_col] = PAINT_ERECTION_MATERIAL_TYPE
-            if desc_col in col_set:
-                new_row[desc_col] = (
-                    f"{PAINT_ERECTION_DESCRIPTION_PREFIX} - {colour} "
-                    "(fittings 100% + TUBI 5%; colored includes 2x basic layer)."
-                )
-            if type_col in col_set:
-                new_row[type_col] = PAINT_ERECTION_TYPE
-            if "Paint colour" in col_set:
-                new_row["Paint colour"] = colour
+            liters = total_surface / 5.0
+            liters_in_not_full_can = liters - (20.0 * (ceil_int(liters / 20.0) - 1)) if liters > 0 else 0.0
+            paint_ctx = {
+                "paint_colour": colour,
+                "surface_m2": fmt_num(total_surface),
+                "liters": fmt_num(liters),
+                "cans": cans,
+                "liters_in_not_full_can": fmt_num(liters_in_not_full_can),
+            }
+            for column_name, template_value in paint_erection_defaults.items():
+                target_col = mt_col if column_name == "Material type" else column_name
+                if target_col in col_set:
+                    new_row[target_col] = render_template(template_value, paint_ctx)
             if "Surface m2" in col_set:
                 new_row["Surface m2"] = to_numeric_cell(total_surface)
             if qty_pcs_col in col_set:
                 new_row[qty_pcs_col] = cans
             if total_qty_col in col_set:
                 new_row[total_qty_col] = cans
-            if spare_col in col_set:
-                new_row[spare_col] = 0
-            if note_col in col_set:
-                liters = total_surface / 5.0
-                new_row[note_col] = (
-                    f"Paint erection touch-up order. Surface={fmt_num(total_surface)} m2; "
-                    f"liters=surface/5={fmt_num(liters)}; 20L cans={cans}; "
-                    "rule: +1 extra can when liters > 15."
-                )
 
             paint_erection_rows.append(new_row)
 
+        flan_qty_by_size: Dict[str, float] = {}
+        size_display_by_key: Dict[str, str] = {}
+        for state in row_states:
+            if not (contains_any(state["type_text"], ["flan"]) or contains_any(state["description"], ["flan"])):
+                continue
+            size_text = str(state.get("size", "") or "").strip()
+            size_key = normalize_dn_key(size_text)
+            if not size_key:
+                continue
+            flan_qty_by_size[size_key] = flan_qty_by_size.get(size_key, 0.0) + float(state.get("qty_base", 0.0) or 0.0)
+            if size_key not in size_display_by_key:
+                size_display_by_key[size_key] = size_text if size_text else size_key
+
+        thickness_map = settings.get("blind_disk", {}).get("thickness_by_dn", {})
+        blind_disk_defaults = settings.get("blind_disk", {}).get("columns", {})
+        blind_disk_rows: List[Dict[str, Any]] = []
+        for size_key, qty_sum in sorted(flan_qty_by_size.items(), key=lambda kv: (extract_numeric(kv[0]), kv[0])):
+            if qty_sum > 50:
+                order_pcs = 10
+            elif qty_sum > 30:
+                order_pcs = 4
+            else:
+                order_pcs = 2
+
+            thickness = str(thickness_map.get(size_key, NA_VALUE)).strip() or NA_VALUE
+            add_info_key = "Add. Info" if thickness != NA_VALUE else "Add. Info Missing Thickness"
+
+            row: Dict[str, Any] = {col: NA_VALUE for col in existing_columns if col != "UID"}
+            if "UID" in col_set:
+                row["UID"] = next_uid
+                next_uid += 1
+            blind_ctx = {
+                "dn": size_key,
+                "size": size_display_by_key.get(size_key, size_key),
+                "thickness": thickness,
+                "flange_qty": fmt_num(qty_sum),
+                "order_qty": order_pcs,
+            }
+            for column_name, template_value in blind_disk_defaults.items():
+                if column_name in {"Add. Info", "Add. Info Missing Thickness"}:
+                    continue
+                target_col = mt_col if column_name == "Material type" else column_name
+                target_col = note_col if column_name == "Spare info" else target_col
+                target_col = size_col if column_name == "Size" else target_col
+                if target_col in col_set:
+                    row[target_col] = render_template(template_value, blind_ctx)
+            if qty_pcs_col in col_set:
+                row[qty_pcs_col] = order_pcs
+            if total_qty_col in col_set:
+                row[total_qty_col] = order_pcs
+            if "Add. Info" in col_set:
+                add_info_template = blind_disk_defaults.get(add_info_key, "")
+                row["Add. Info"] = render_template(add_info_template, blind_ctx) if add_info_template else NA_VALUE
+
+            blind_disk_rows.append(row)
+
         updates: List[Tuple[Any, Any, Any, Any, Any, Any, Any, int]] = []
         for state in row_states:
+            if state["cls"] == "other":
+                tubi_pre_val: Any = NA_VALUE
+                tubi_post_val: Any = NA_VALUE
+                surface_w_spare_val: Any = NA_VALUE
+            else:
+                tubi_pre_val = (
+                    to_numeric_cell(float(state["tubi_cs_shop_pre_paint"]))
+                    if state["tubi_cs_shop_pre_paint"] is not None
+                    else None
+                )
+                tubi_post_val = (
+                    to_numeric_cell(float(state["tubi_cs_shop_post_paint"]))
+                    if state["tubi_cs_shop_post_paint"] is not None
+                    else None
+                )
+                surface_w_spare_val = (
+                    to_numeric_cell(float(state["surface_w_spare"]))
+                    if state["surface_w_spare"] is not None
+                    else None
+                )
+
             updates.append(
                 (
                     to_numeric_cell(float(state["spare_num"])),
                     state["note"],
                     to_numeric_cell(float(state["total_qty"])),
                     to_numeric_cell(float(state["weight_w_spare"])),
-                    to_numeric_cell(float(state["tubi_cs_shop_pre_paint"])) if state["tubi_cs_shop_pre_paint"] is not None else None,
-                    to_numeric_cell(float(state["tubi_cs_shop_post_paint"])) if state["tubi_cs_shop_post_paint"] is not None else None,
-                    to_numeric_cell(float(state["surface_w_spare"])) if state["surface_w_spare"] is not None else None,
+                    tubi_pre_val,
+                    tubi_post_val,
+                    surface_w_spare_val,
                     int(state["rowid"]),
                 )
             )
@@ -763,6 +975,11 @@ def run_spare_calcs(db_path: Path, revision_table: str, settings_workbook: Path)
                 updates,
             )
 
+        # Keep helper calculated columns explicit in exports: fill non-applicable NULLs with N/A.
+        conn.execute(f'UPDATE "{agg_table}" SET "{tubi_cs_pre_col}"=? WHERE "{tubi_cs_pre_col}" IS NULL', (NA_VALUE,))
+        conn.execute(f'UPDATE "{agg_table}" SET "{tubi_cs_post_col}"=? WHERE "{tubi_cs_post_col}" IS NULL', (NA_VALUE,))
+        conn.execute(f'UPDATE "{agg_table}" SET "{surface_w_spare_col}"=? WHERE "{surface_w_spare_col}" IS NULL', (NA_VALUE,))
+
         if paint_erection_rows:
             insert_cols = [col for col in existing_columns if any(col in row for row in paint_erection_rows)]
             placeholders = ", ".join(["?" for _ in insert_cols])
@@ -770,6 +987,100 @@ def run_spare_calcs(db_path: Path, revision_table: str, settings_workbook: Path)
             insert_sql = f'INSERT INTO "{agg_table}" ({cols_sql}) VALUES ({placeholders})'
             insert_values = [[row.get(col, None) for col in insert_cols] for row in paint_erection_rows]
             conn.executemany(insert_sql, insert_values)
+
+        if blind_disk_rows:
+            insert_cols = [col for col in existing_columns if any(col in row for row in blind_disk_rows)]
+            placeholders = ", ".join(["?" for _ in insert_cols])
+            cols_sql = ", ".join([f'"{c}"' for c in insert_cols])
+            insert_sql = f'INSERT INTO "{agg_table}" ({cols_sql}) VALUES ({placeholders})'
+            insert_values = [[row.get(col, None) for col in insert_cols] for row in blind_disk_rows]
+            conn.executemany(insert_sql, insert_values)
+
+        flange_guard_settings = settings.get("flange_guard", {})
+        flange_guard_keywords = [str(v).strip().lower() for v in flange_guard_settings.get("system_keywords", []) if str(v).strip()]
+        flange_guard_defaults = flange_guard_settings.get("columns", {})
+        flange_guard_rows: List[Dict[str, Any]] = []
+
+        base_rows = conn.execute(
+            f'SELECT "Material type", "Material", "Type", "Description", "Size", "System", "Qty pcs", "Qty m" FROM "{revision_table}"'
+        ).fetchall()
+
+        flange_group_totals: Dict[Tuple[str, str, str], float] = {}
+        for base_row in base_rows:
+            material_type_text = str(base_row[0] or "")
+            if "paint shop" in material_type_text.lower():
+                continue
+
+            type_text = str(base_row[2] or "")
+            if not contains_any(type_text, ["flan"]):
+                continue
+
+            system_text = str(base_row[5] or "").strip()
+            system_l = system_text.lower()
+            if not flange_guard_keywords or not any(k in system_l for k in flange_guard_keywords):
+                continue
+
+            material_text = str(base_row[1] or "").strip() or NA_VALUE
+            size_text = str(base_row[4] or "").strip() or NA_VALUE
+            qty_pcs = max(0.0, parse_float(base_row[6], 0.0))
+            qty_m = max(0.0, parse_float(base_row[7], 0.0))
+            qty_base = qty_pcs if qty_pcs > 0 else qty_m
+            if qty_base <= 0:
+                continue
+
+            key = (material_text, size_text, system_text or NA_VALUE)
+            flange_group_totals[key] = flange_group_totals.get(key, 0.0) + qty_base
+
+        for (material_text, size_text, system_text), qty_sum in sorted(
+            flange_group_totals.items(),
+            key=lambda kv: (str(kv[0][2]).lower(), str(kv[0][0]).lower(), extract_numeric(kv[0][1]), str(kv[0][1])),
+        ):
+            spare_fg = max(1, ceil_int(qty_sum * 0.05))
+            order_fg = qty_sum + spare_fg
+
+            row: Dict[str, Any] = {col: NA_VALUE for col in existing_columns if col != "UID"}
+            if "UID" in col_set:
+                row["UID"] = next_uid
+                next_uid += 1
+
+            fg_ctx = {
+                "material": material_text,
+                "size": size_text,
+                "system": system_text,
+                "flange_qty": fmt_num(qty_sum),
+                "spare_qty": fmt_num(spare_fg),
+                "order_qty": fmt_num(order_fg),
+            }
+
+            for column_name, template_value in flange_guard_defaults.items():
+                target_col = mt_col if column_name == "Material type" else column_name
+                target_col = note_col if column_name == "Spare info" else target_col
+                target_col = size_col if column_name == "Size" else target_col
+                if target_col in col_set:
+                    row[target_col] = render_template(template_value, fg_ctx)
+
+            if size_col in col_set:
+                row[size_col] = size_text
+            if "System" in col_set:
+                row["System"] = system_text
+            if qty_pcs_col in col_set:
+                row[qty_pcs_col] = to_numeric_cell(qty_sum)
+            if spare_col in col_set:
+                row[spare_col] = to_numeric_cell(spare_fg)
+            if total_qty_col in col_set:
+                row[total_qty_col] = to_numeric_cell(order_fg)
+
+            flange_guard_rows.append(row)
+
+        if flange_guard_rows:
+            insert_cols = [col for col in existing_columns if any(col in row for row in flange_guard_rows)]
+            placeholders = ", ".join(["?" for _ in insert_cols])
+            cols_sql = ", ".join([f'"{c}"' for c in insert_cols])
+            insert_sql = f'INSERT INTO "{agg_table}" ({cols_sql}) VALUES ({placeholders})'
+            insert_values = [[row.get(col, None) for col in insert_cols] for row in flange_guard_rows]
+            conn.executemany(insert_sql, insert_values)
+
+        rewrite_aggregated_uids(conn, agg_table, mt_col)
 
         conn.commit()
 
@@ -780,6 +1091,8 @@ def run_spare_calcs(db_path: Path, revision_table: str, settings_workbook: Path)
         logger.info("Skipped rows (other): %s", skipped_count)
         logger.info("TUBI post-process adjusted CS sizes: %s", adjusted_size_count)
         logger.info("Paint erection rows inserted: %s", len(paint_erection_rows))
+        logger.info("Blind disk rows inserted: %s", len(blind_disk_rows))
+        logger.info("Flange guard rows inserted: %s", len(flange_guard_rows))
         for warning_text in warnings:
             logger.warning("%s", warning_text)
 

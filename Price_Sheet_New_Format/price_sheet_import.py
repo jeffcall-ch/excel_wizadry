@@ -73,6 +73,11 @@ PAINT_REQUIRED_KEYS = (
     "insulated",
 )
 
+ORIFICE_REQUIRED_KEYS = (
+    "kks",
+    "nominal_pipe_size",
+)
+
 SQLITE_NUMERIC_COLUMNS = {
     "UID",
     "Size",
@@ -92,12 +97,22 @@ AGGREGATE_MATERIAL_TYPE_SORT_PREFIXES = ("mapress", "ss", "cs", "paint")
 
 SHOP_SUFFIX = "shop"
 ERECTION_SUFFIX = "erection"
-PAINT_MATERIAL_TYPE_LABEL = "Paint shop"
+PAINT_MATERIAL_TYPE_LABEL = "05 Paint shop"
 AGGREGATE_TABLE_SUFFIX = "aggreated"
 
 PAINT_FILE_KEYWORDS = ("paint", "painting")
+ORIFICE_FILE_KEYWORDS = ("orifice", "orifices")
 
 MATERIAL_TYPE_BASE_LABELS = {"ss": "SS", "cs": "CS", "mapress": "Mapress"}
+
+BASE_MATERIAL_TYPE_VALUES = {
+    ("mapress", False): "01 Mapress shop",
+    ("ss", False): "02 SS shop",
+    ("cs", False): "03 CS shop",
+    ("mapress", True): "04a Mapress erection",
+    ("ss", True): "04b SS erection",
+    ("cs", True): "05b CS erection",
+}
 
 NORMAL_SOURCE_TO_SQLITE = {
     "system": "System",
@@ -135,6 +150,23 @@ PAINT_SOURCE_TO_SQLITE = {
     "insulated": "Insulated",
 }
 
+ORIFICE_SOURCE_TO_SQLITE = {
+    "kks": "KKS",
+    "nominal_pipe_size": "Size",
+}
+
+ORIFICE_MATERIAL_TYPE_LABEL = "08 Orifice Plates"
+ORIFICE_TYPE_VALUE = "ORIFICE PLATE"
+ORIFICE_DESCRIPTION_TEXT = "Orifice Plate between flanges EN-1092-1/11/B1/PN16"
+ORIFICE_ADD_INFO_TEMPLATE = "Orifice plate thickness S1={thickness} mm (DN {dn})."
+ORIFICE_ADD_INFO_MISSING_TEMPLATE = "Orifice plate thickness S1=N/A (DN {dn})."
+ORIFICE_QTY_PER_ROW = 1
+ORIFICE_MATERIAL_VALUE = "1.4571 or 1.4404"
+ORIFICE_THICKNESS_BY_DN: Dict[str, str] = {}
+
+MAPRESS_SEAL_NOTE = 'Note: The required seal rings are listed separately with "SEAL" type this list.'
+MAPRESS_SEAL_ORDER_SIZE: Dict[str, str] = {}
+
 ALIAS_MAP = {
     "system": ["system"],
     "pipe": ["pipe"],
@@ -155,11 +187,13 @@ ALIAS_MAP = {
     "external_surface_m2": ["external surface m2", "external surface"],
     "corrosion_class": ["corrosion class"],
     "insulated": ["insulated"],
+    "kks": ["kks"],
+    "nominal_pipe_size": ["nominal pipe size", "dn", "dn size", "nominal size"],
 }
 
 AGGREGATION_MATERIAL_TYPE_RULES = [
-    ("endswith", "erection", "Erection"),
-    ("startswith", "paint", "Paint shop"),
+    ("endswith", "erection", "04 Erection"),
+    ("contains", "paint shop", "05 Paint shop"),
 ]
 
 
@@ -210,12 +244,18 @@ def is_paint_file(path: Path) -> bool:
     return any(any(token.startswith(keyword) for keyword in PAINT_FILE_KEYWORDS) for token in tokens)
 
 
+def is_orifice_file(path: Path) -> bool:
+    tokens = tokenize_filename(path.name)
+    return any(any(token.startswith(keyword) for keyword in ORIFICE_FILE_KEYWORDS) for token in tokens)
+
+
 def locate_required_files(
     input_dir: Path,
-) -> Tuple[Dict[Tuple[str, bool], ClassifiedFile], List[str], List[Path], List[Path]]:
+) -> Tuple[Dict[Tuple[str, bool], ClassifiedFile], List[str], List[Path], List[Path], List[Path]]:
     found: Dict[Tuple[str, bool], ClassifiedFile] = {}
     warnings: List[str] = []
     paint_files: List[Path] = []
+    orifice_files: List[Path] = []
     ignored_files: List[Path] = []
 
     for path in sorted(input_dir.glob("*.xls*")):
@@ -226,6 +266,8 @@ def locate_required_files(
         if classified is None:
             if is_paint_file(path):
                 paint_files.append(path)
+            elif is_orifice_file(path):
+                orifice_files.append(path)
             else:
                 ignored_files.append(path)
             continue
@@ -246,7 +288,7 @@ def locate_required_files(
             f"{settings_sheet_hint('RequiredFileCategories', 'MaterialTypes')}"
         )
 
-    return found, warnings, paint_files, ignored_files
+    return found, warnings, paint_files, orifice_files, ignored_files
 
 
 def format_category(category: Tuple[str, bool]) -> str:
@@ -256,6 +298,9 @@ def format_category(category: Tuple[str, bool]) -> str:
 
 
 def material_type_value(material_type: str, is_erection: bool) -> str:
+    key = (material_type, is_erection)
+    if key in BASE_MATERIAL_TYPE_VALUES:
+        return BASE_MATERIAL_TYPE_VALUES[key]
     base = MATERIAL_TYPE_BASE_LABELS[material_type]
     return f"{base} {ERECTION_SUFFIX}" if is_erection else f"{base} {SHOP_SUFFIX}"
 
@@ -315,6 +360,7 @@ def load_import_settings(settings_workbook: Path) -> None:
     global NORMAL_REQUIRED_KEYS
     global ERECTION_REQUIRED_KEYS
     global PAINT_REQUIRED_KEYS
+    global ORIFICE_REQUIRED_KEYS
     global SQLITE_NUMERIC_COLUMNS
     global AGGREGATE_SUM_COLUMNS
     global SHOP_SUFFIX
@@ -322,10 +368,21 @@ def load_import_settings(settings_workbook: Path) -> None:
     global PAINT_MATERIAL_TYPE_LABEL
     global AGGREGATE_TABLE_SUFFIX
     global PAINT_FILE_KEYWORDS
+    global ORIFICE_FILE_KEYWORDS
     global MATERIAL_TYPE_BASE_LABELS
     global NORMAL_SOURCE_TO_SQLITE
     global ERECTION_SOURCE_TO_SQLITE
     global PAINT_SOURCE_TO_SQLITE
+    global ORIFICE_SOURCE_TO_SQLITE
+    global ORIFICE_MATERIAL_TYPE_LABEL
+    global ORIFICE_TYPE_VALUE
+    global ORIFICE_DESCRIPTION_TEXT
+    global ORIFICE_ADD_INFO_TEMPLATE
+    global ORIFICE_ADD_INFO_MISSING_TEMPLATE
+    global ORIFICE_QTY_PER_ROW
+    global ORIFICE_MATERIAL_VALUE
+    global ORIFICE_THICKNESS_BY_DN
+    global MAPRESS_SEAL_ORDER_SIZE
     global ALIAS_MAP
     global AGGREGATION_MATERIAL_TYPE_RULES
 
@@ -389,6 +446,12 @@ def load_import_settings(settings_workbook: Path) -> None:
     if required:
         PAINT_REQUIRED_KEYS = required
 
+    mapping, required = _load_mapping_sheet(settings_doc.get_records("ColumnMappings_Orifice"))
+    if mapping:
+        ORIFICE_SOURCE_TO_SQLITE = mapping
+    if required:
+        ORIFICE_REQUIRED_KEYS = required
+
     alias_records = settings_doc.get_records("Aliases")
     if alias_records:
         grouped_aliases: Dict[str, List[str]] = collections.defaultdict(list)
@@ -409,6 +472,15 @@ def load_import_settings(settings_workbook: Path) -> None:
     paint_keywords = [k for k in paint_keywords if k]
     if paint_keywords:
         PAINT_FILE_KEYWORDS = tuple(paint_keywords)
+
+    orifice_keywords = [
+        str(rec.get("Keyword", "")).strip().lower()
+        for rec in keyword_records
+        if str(rec.get("Kind", "")).strip().lower() == "orifice"
+    ]
+    orifice_keywords = [k for k in orifice_keywords if k]
+    if orifice_keywords:
+        ORIFICE_FILE_KEYWORDS = tuple(orifice_keywords)
 
     numeric_col_records = settings_doc.get_records("SqliteNumericColumns")
     loaded_numeric_cols = [str(rec.get("Column", "")).strip() for rec in numeric_col_records]
@@ -432,6 +504,37 @@ def load_import_settings(settings_workbook: Path) -> None:
             loaded_rules.append((match_type, pattern, output))
     if loaded_rules:
         AGGREGATION_MATERIAL_TYPE_RULES = loaded_rules
+
+    orifice_defaults_records = settings_doc.get_records("OrificeDefaults")
+    orifice_defaults = {str(r.get("Key", "")).strip(): r.get("Value") for r in orifice_defaults_records}
+    ORIFICE_MATERIAL_TYPE_LABEL = str(orifice_defaults.get("material_type_label", ORIFICE_MATERIAL_TYPE_LABEL) or ORIFICE_MATERIAL_TYPE_LABEL)
+    ORIFICE_TYPE_VALUE = str(orifice_defaults.get("type_value", ORIFICE_TYPE_VALUE) or ORIFICE_TYPE_VALUE)
+    ORIFICE_DESCRIPTION_TEXT = str(orifice_defaults.get("description", ORIFICE_DESCRIPTION_TEXT) or ORIFICE_DESCRIPTION_TEXT)
+    ORIFICE_ADD_INFO_TEMPLATE = str(orifice_defaults.get("add_info_template", ORIFICE_ADD_INFO_TEMPLATE) or ORIFICE_ADD_INFO_TEMPLATE)
+    ORIFICE_ADD_INFO_MISSING_TEMPLATE = str(
+        orifice_defaults.get("add_info_missing_template", ORIFICE_ADD_INFO_MISSING_TEMPLATE)
+        or ORIFICE_ADD_INFO_MISSING_TEMPLATE
+    )
+    ORIFICE_QTY_PER_ROW = int(orifice_defaults.get("qty_per_row", ORIFICE_QTY_PER_ROW) or ORIFICE_QTY_PER_ROW)
+    ORIFICE_MATERIAL_VALUE = str(orifice_defaults.get("material_value", ORIFICE_MATERIAL_VALUE) or ORIFICE_MATERIAL_VALUE)
+
+    thickness_records = settings_doc.get_records("BlindDiskThickness")
+    loaded_thickness: Dict[str, str] = {}
+    for rec in thickness_records:
+        dn = str(rec.get("DN", "")).strip()
+        s1 = str(rec.get("S1 mm", "")).strip()
+        if dn and s1:
+            loaded_thickness[dn] = s1
+    ORIFICE_THICKNESS_BY_DN = loaded_thickness
+
+    mapress_seal_records = settings_doc.get_records("MapressSealOrderSize")
+    loaded_seal_sizes: Dict[str, str] = {}
+    for rec in mapress_seal_records:
+        order_no = str(rec.get("OrderNo", "")).strip()
+        size = str(rec.get("Size", "")).strip()
+        if order_no and size:
+            loaded_seal_sizes[order_no] = size
+    MAPRESS_SEAL_ORDER_SIZE = loaded_seal_sizes
 
 
 def smart_find_paint_colour_column(
@@ -650,11 +753,123 @@ def resolve_paint_required_column_indices(
     return matched, warnings
 
 
+def resolve_orifice_required_column_indices(
+    ws,
+    header_row_idx: int,
+) -> Tuple[Dict[str, int], List[str]]:
+    warnings: List[str] = []
+    headers = [ws.cell(row=header_row_idx, column=col).value for col in range(1, ws.max_column + 1)]
+    normalized_map: Dict[str, int] = {}
+
+    for idx, value in enumerate(headers, start=1):
+        normalized = normalize_text(value)
+        if normalized:
+            normalized_map[normalized] = idx
+
+    matched: Dict[str, int] = {}
+    used_indices: set[int] = set()
+
+    for key in ORIFICE_REQUIRED_KEYS:
+        aliases = aliases_for_key(key)
+        exact_idx = None
+        for alias in aliases:
+            alias_norm = normalize_text(alias)
+            if alias_norm in normalized_map and normalized_map[alias_norm] not in used_indices:
+                exact_idx = normalized_map[alias_norm]
+                break
+
+        if exact_idx is not None:
+            matched[key] = exact_idx
+            used_indices.add(exact_idx)
+            continue
+
+        fuzzy_idx = None
+        for alias in aliases:
+            alias_norm = normalize_text(alias)
+            fuzzy_idx = best_fuzzy_match(alias_norm, normalized_map, used_indices)
+            if fuzzy_idx is not None:
+                warnings.append(
+                    f"Fuzzy matched orifice source column for '{key}' to header '{headers[fuzzy_idx - 1]}'."
+                )
+                break
+
+        if fuzzy_idx is None:
+            raise ValueError(
+                f"Required orifice column '{key}' was not found. "
+                f"{settings_sheet_hint('ColumnMappings_Orifice', 'Aliases')}"
+            )
+
+        matched[key] = fuzzy_idx
+        used_indices.add(fuzzy_idx)
+
+    return matched, warnings
+
+
 def get_cell_text(value: object) -> str:
     if value is None:
         return NA_VALUE
     text = str(value).strip()
     return text if text else NA_VALUE
+
+
+def dn_numeric_text(value: Any) -> str:
+    text = "" if value is None else str(value).strip()
+    if not text or text.upper() == NA_VALUE:
+        return NA_VALUE
+    match = re.search(r"(\d+(?:[\.,]\d+)?)", text)
+    if not match:
+        return text
+    raw = match.group(1).replace(",", ".")
+    try:
+        num = float(raw)
+        if abs(num - round(num)) < 1e-12:
+            return str(int(round(num)))
+        return str(num)
+    except ValueError:
+        return text
+
+
+def _find_mapress_seal_marker_index(description: str) -> int:
+    lowered = description.lower()
+    markers = ["seal ring fkm blue order no.", "seal ring fmk blue order no."]
+    hits = [lowered.find(m) for m in markers if lowered.find(m) >= 0]
+    return min(hits) if hits else -1
+
+
+def rewrite_mapress_seal_description(description: str) -> str:
+    idx = _find_mapress_seal_marker_index(description)
+    if idx < 0:
+        return description
+    prefix = description[:idx].rstrip()
+    if not prefix:
+        return MAPRESS_SEAL_NOTE
+    return f"{prefix} {MAPRESS_SEAL_NOTE}"
+
+
+def extract_mapress_seal_orders(description: str) -> List[Tuple[str, int]]:
+    idx = _find_mapress_seal_marker_index(description)
+    if idx < 0:
+        return []
+    tail = description[idx:]
+    out: List[Tuple[str, int]] = []
+    for m in re.finditer(r"\b(\d{5})\b", tail):
+        order_no = m.group(1)
+        before = tail[max(0, m.start() - 16):m.start()]
+        after = tail[m.end():m.end() + 16]
+        mult = 1
+        mb = re.search(r"(\d+)\s*x(?:\s+and)?\s*$", before, flags=re.IGNORECASE)
+        if mb:
+            mult = int(mb.group(1))
+        else:
+            ma = re.search(r"^\s*(\d+)\s*x\b", after, flags=re.IGNORECASE)
+            if ma:
+                mult = int(ma.group(1))
+            else:
+                ma2 = re.search(r"^\s*x\s*(\d+)\b", after, flags=re.IGNORECASE)
+                if ma2:
+                    mult = int(ma2.group(1))
+        out.append((order_no, max(1, mult)))
+    return out
 
 
 def _decimal_places_from_excel_number_format(number_format: str) -> Optional[int]:
@@ -852,6 +1067,80 @@ def build_rows_for_paint_file(
     return rows, warnings
 
 
+def build_rows_for_orifice_file(
+    orifice_file: Path,
+    sqlite_headers: List[str],
+    uid_start: int,
+) -> Tuple[List[Dict[str, Any]], List[str]]:
+    wb = load_workbook(orifice_file, data_only=True, read_only=True)
+    sheet_name = choose_sheet_with_max_rows(wb)
+    ws = wb[sheet_name]
+
+    header_row_idx = detect_header_row(ws)
+    source_columns, warnings = resolve_orifice_required_column_indices(ws, header_row_idx)
+
+    rows: List[Dict[str, Any]] = []
+    uid = uid_start
+
+    for row_cells in ws.iter_rows(
+        min_row=header_row_idx + 1,
+        max_row=ws.max_row,
+        min_col=1,
+        max_col=ws.max_column,
+        values_only=False,
+    ):
+        source_values: Dict[str, Any] = {}
+        for source_key, col_idx in source_columns.items():
+            source_values[source_key] = cell_to_sql_value(row_cells[col_idx - 1])
+
+        if all(value == NA_VALUE for value in source_values.values()):
+            continue
+
+        record: Dict[str, Any] = {header: NA_VALUE for header in sqlite_headers}
+        record["UID"] = uid
+        uid += 1
+
+        record["Material type"] = ORIFICE_MATERIAL_TYPE_LABEL
+        record["File name - complete"] = orifice_file.name
+        record["BoM rev from file name"] = parse_bom_revision(orifice_file.name)
+
+        kks_col = ORIFICE_SOURCE_TO_SQLITE.get("kks", "KKS")
+        size_col = ORIFICE_SOURCE_TO_SQLITE.get("nominal_pipe_size", "Size")
+        mat_col = "Material"
+
+        if kks_col in record:
+            record[kks_col] = source_values.get("kks", NA_VALUE)
+        size_dn = dn_numeric_text(source_values.get("nominal_pipe_size", NA_VALUE))
+        if size_col in record:
+            record[size_col] = size_dn
+        if mat_col in record:
+            record[mat_col] = ORIFICE_MATERIAL_VALUE
+
+        if "Description" in record:
+            record["Description"] = ORIFICE_DESCRIPTION_TEXT
+        if "Type" in record:
+            record["Type"] = ORIFICE_TYPE_VALUE
+
+        thickness = ORIFICE_THICKNESS_BY_DN.get(size_dn, NA_VALUE)
+        if "Add. Info" in record:
+            if thickness != NA_VALUE:
+                record["Add. Info"] = ORIFICE_ADD_INFO_TEMPLATE.format(thickness=thickness, dn=size_dn)
+            else:
+                record["Add. Info"] = ORIFICE_ADD_INFO_MISSING_TEMPLATE.format(dn=size_dn)
+
+        if "Qty pcs" in record:
+            record["Qty pcs"] = ORIFICE_QTY_PER_ROW
+
+        rows.append(record)
+
+    if not rows:
+        raise ValueError(
+            f"No orifice data rows found in file '{orifice_file.name}' after applying required column mapping."
+        )
+
+    return rows, warnings
+
+
 def insert_rows(conn: sqlite3.Connection, table_name: str, sqlite_headers: List[str], rows: List[Dict[str, Any]]) -> None:
     placeholders = ", ".join(["?" for _ in sqlite_headers])
     columns = ", ".join([f'"{h}"' for h in sqlite_headers])
@@ -863,6 +1152,12 @@ def insert_rows(conn: sqlite3.Connection, table_name: str, sqlite_headers: List[
 
 def normalize_material_type_for_aggregation(material_type: str) -> str:
     text = material_type.strip().lower()
+
+    if "paint shop" in text:
+        return "05 Paint shop"
+    if text.endswith("erection") and "paint" not in text:
+        return "04 Erection"
+
     for match_type, pattern, output in AGGREGATION_MATERIAL_TYPE_RULES:
         if match_type == "equals" and text == pattern:
             return output
@@ -902,14 +1197,22 @@ def int_if_whole(value: float) -> Any:
 
 def material_type_sort_rank(material_type: str) -> int:
     mt = material_type.strip().lower()
-    if mt.startswith("paint shop"):
+    if "mapress shop" in mt:
+        return 0
+    if "ss shop" in mt:
+        return 1
+    if "cs shop" in mt:
+        return 2
+    if "paint shop" in mt:
         return 3
-    if mt.startswith("paint erection"):
+    if "04 erection" in mt or ("erection" in mt and "paint" not in mt):
         return 4
+    if "paint erection" in mt:
+        return 5
     for idx, prefix in enumerate(AGGREGATE_MATERIAL_TYPE_SORT_PREFIXES):
         if mt.startswith(prefix):
-            return idx
-    return len(AGGREGATE_MATERIAL_TYPE_SORT_PREFIXES)
+            return idx + 6
+    return len(AGGREGATE_MATERIAL_TYPE_SORT_PREFIXES) + 6
 
 
 def size_sort_key(size_value: Any) -> Tuple[int, float, str]:
@@ -944,10 +1247,32 @@ def create_aggregated_table(
     rows = conn.execute(f'SELECT {cols_sql} FROM "{source_table_name}";').fetchall()
 
     grouped: Dict[Tuple[str, str, str, str, str, str, str], Dict[str, Any]] = {}
+    orifice_kks_by_group: Dict[Tuple[str, str, str, str, str, str, str], set[str]] = {}
+    mapress_seal_qty_by_order: Dict[str, float] = {}
     for db_row in rows:
         record = dict(zip(sqlite_headers, db_row))
+        type_text_raw = str(record.get("Type", NA_VALUE))
+        description_raw = str(record.get("Description", NA_VALUE))
+
+        if type_text_raw.strip().upper() == "OLET" and "branch" in description_raw.lower():
+            continue
+
+        mt_raw_l = str(record.get("Material type", NA_VALUE)).strip().lower()
+        is_mapress_fkm_install = (
+            "mapress" in description_raw.lower()
+            and "fkm blue" in description_raw.lower()
+            and "must be installed" in description_raw.lower()
+        )
+        if mt_raw_l == "01 mapress shop" and is_mapress_fkm_install:
+            qty_base = to_float_or_zero(record.get("Qty pcs", 0.0))
+            if qty_base <= 0:
+                qty_base = to_float_or_zero(record.get("Qty m", 0.0))
+            for order_no, mult in extract_mapress_seal_orders(description_raw):
+                mapress_seal_qty_by_order[order_no] = mapress_seal_qty_by_order.get(order_no, 0.0) + (qty_base * float(mult))
+            record["Description"] = rewrite_mapress_seal_description(description_raw)
         material_type_norm = normalize_material_type_for_aggregation(str(record.get("Material type", NA_VALUE)))
-        is_paint_shop = material_type_norm.strip().lower().startswith("paint")
+        mt_norm_l = material_type_norm.strip().lower()
+        is_paint_shop = "paint shop" in mt_norm_l
         corrosion_category = str(record.get("Corrosion category", NA_VALUE)) if is_paint_shop else NA_VALUE
         paint_colour = str(record.get("Paint colour", NA_VALUE)) if is_paint_shop else NA_VALUE
 
@@ -976,6 +1301,11 @@ def create_aggregated_table(
                 base[col] = 0.0
             grouped[key] = base
 
+        if material_type_norm.strip().lower() == "08 orifice plates":
+            kks_text = str(record.get("KKS", NA_VALUE)).strip()
+            if kks_text and kks_text.upper() != NA_VALUE:
+                orifice_kks_by_group.setdefault(key, set()).add(kks_text)
+
         group_record = grouped[key]
         for col in AGGREGATE_SUM_COLUMNS:
             group_record[col] = to_float_or_zero(group_record.get(col, 0.0)) + to_float_or_zero(record.get(col, 0.0))
@@ -991,13 +1321,56 @@ def create_aggregated_table(
         ),
     )
 
-    uid = 1
-    final_rows: List[Dict[str, Any]] = []
+    pre_uid_rows: List[Dict[str, Any]] = []
     for row in sorted_groups:
-        row["UID"] = uid
-        uid += 1
         for col in AGGREGATE_SUM_COLUMNS:
             row[col] = int_if_whole(to_float_or_zero(row[col]))
+
+        if str(row.get("Material type", "")).strip().lower() == "08 orifice plates":
+            key = (
+                str(row.get("Description", NA_VALUE)),
+                str(row.get("Material", NA_VALUE)),
+                str(row.get("Type", NA_VALUE)),
+                str(row.get("Size", NA_VALUE)),
+                str(row.get("Material type", NA_VALUE)),
+                str(row.get("Corrosion category", NA_VALUE)),
+                str(row.get("Paint colour", NA_VALUE)),
+            )
+            kks_values = sorted(orifice_kks_by_group.get(key, set()))
+            if "Add. Info" in row:
+                row["Add. Info"] = f"KKS: {', '.join(kks_values)}" if kks_values else NA_VALUE
+
+            # Keep non-used orifice columns as N/A in aggregated output.
+            for col in ("Qty m", "Weight kg", "Surface m2", "Corrosion category", "Paint colour", "System", "Insulated"):
+                if col in row:
+                    row[col] = NA_VALUE
+
+        pre_uid_rows.append(row)
+
+    generated_seal_rows: List[Dict[str, Any]] = []
+    mapress_shop_label = material_type_value("mapress", False)
+    for order_no, qty_sum in sorted(mapress_seal_qty_by_order.items(), key=lambda kv: int(kv[0])):
+        row = {header: NA_VALUE for header in sqlite_headers}
+        row["Material type"] = mapress_shop_label
+        row["Material"] = "FKM"
+        row["Type"] = "SEAL"
+        row["Description"] = f"Seal ring FKM blue Order no. {order_no}"
+        row["Size"] = MAPRESS_SEAL_ORDER_SIZE.get(order_no, NA_VALUE)
+        row["Qty pcs"] = int_if_whole(qty_sum)
+        generated_seal_rows.append(row)
+
+    if generated_seal_rows:
+        insert_pos = 0
+        for idx, row in enumerate(pre_uid_rows):
+            if str(row.get("Material type", "")).strip().lower() == mapress_shop_label.lower():
+                insert_pos = idx + 1
+        pre_uid_rows[insert_pos:insert_pos] = generated_seal_rows
+
+    uid = 1
+    final_rows: List[Dict[str, Any]] = []
+    for row in pre_uid_rows:
+        row["UID"] = uid
+        uid += 1
         final_rows.append(row)
 
     create_table(conn, aggregate_table_name, sqlite_headers)
@@ -1046,7 +1419,7 @@ def run_import(
     sqlite_headers = load_sqlite_headers(headers_workbook)
     table_name = sanitize_table_name(revision_folder.name)
 
-    found_files, file_warnings, paint_files, ignored_files = locate_required_files(input_dir)
+    found_files, file_warnings, paint_files, orifice_files, ignored_files = locate_required_files(input_dir)
 
     if ignored_files:
         for path in ignored_files:
@@ -1120,6 +1493,23 @@ def run_import(
             all_rows.extend(rows)
             for warning in mapping_warnings:
                 logger.warning("%s: %s", paint_file.name, warning)
+
+        for orifice_file in sorted(orifice_files):
+            logger.info("Processing orifice file path=%s", orifice_file)
+            try:
+                rows, mapping_warnings = build_rows_for_orifice_file(orifice_file, sqlite_headers, uid_counter)
+            except ValueError as exc:
+                logger.error("%s", exc)
+                logger.error("Import stopped due to missing required column/data. file=%s", orifice_file)
+                return 1
+            except Exception:
+                logger.exception("Unexpected failure while processing orifice file=%s", orifice_file)
+                return 1
+
+            uid_counter += len(rows)
+            all_rows.extend(rows)
+            for warning in mapping_warnings:
+                logger.warning("%s: %s", orifice_file.name, warning)
 
         create_table(conn, table_name, sqlite_headers)
         insert_rows(conn, table_name, sqlite_headers, all_rows)
@@ -1202,7 +1592,7 @@ def main() -> int:
     except Exception as exc:
         logger.exception(
             f"ERROR: Failed to load settings file: {exc} "
-            f"{settings_sheet_hint('General', 'MaterialTypes', 'RequiredFileCategories', 'ColumnMappings_Normal', 'ColumnMappings_Erection', 'ColumnMappings_Paint', 'Aliases')}"
+            f"{settings_sheet_hint('General', 'MaterialTypes', 'RequiredFileCategories', 'ColumnMappings_Normal', 'ColumnMappings_Erection', 'ColumnMappings_Paint', 'ColumnMappings_Orifice', 'OrificeDefaults', 'Aliases')}"
         )
         return 1
 

@@ -13,6 +13,10 @@ from sqlite_export_tables_to_xlsm import export_sqlite_to_xlsm
 logger = logging.getLogger(__name__)
 
 
+def build_timestamped_export_path(base_path: Path, timestamp: str) -> Path:
+    return base_path.with_name(f"{base_path.stem}_{timestamp}{base_path.suffix}")
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Run Price Sheet import+spare+export pipeline (test mode uses timestamped DB files).",
@@ -74,7 +78,7 @@ def parse_args() -> argparse.Namespace:
         "--export-path",
         type=Path,
         default=Path("Price_Sheet_New_Format/price_sheet_export.xlsx"),
-        help="Export XLSX path. This file is always overwritten.",
+        help="Base export XLSX path. A timestamp suffix is always added to the filename.",
     )
     parser.add_argument(
         "--log-dir",
@@ -89,15 +93,18 @@ def main() -> int:
     args = parse_args()
     log_file = setup_csv_logging(run_name="run_price_sheet_pipeline", log_dir=args.log_dir)
     logger.info("CSV logging initialized. log_file=%s", log_file)
+    run_ts = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     if args.test:
         args.test_db_dir.mkdir(parents=True, exist_ok=True)
-        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-        db_path = args.test_db_dir / f"{args.test_db_prefix}_{ts}.db"
+        db_path = args.test_db_dir / f"{args.test_db_prefix}_{run_ts}.db"
         logger.info("Test mode database path=%s", db_path)
     else:
         db_path = args.production_db_path
         logger.info("Production mode database path=%s", db_path)
+
+    export_path = build_timestamped_export_path(args.export_path, run_ts)
+    logger.info("Timestamped export path=%s", export_path)
 
     try:
         load_import_settings(args.settings_workbook)
@@ -118,7 +125,7 @@ def main() -> int:
 
     export_result = export_sqlite_to_xlsm(
         db_path=db_path,
-        output_path=args.export_path,
+        output_path=export_path,
         overwrite=True,
     )
     if int(export_result) != 0:

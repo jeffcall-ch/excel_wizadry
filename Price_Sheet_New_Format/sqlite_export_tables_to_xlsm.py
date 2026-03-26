@@ -160,6 +160,21 @@ def coerce_cell_for_excel(header: str, value, numeric_headers: Set[str]):
     return value
 
 
+def should_sort_uid_as_text(conn: sqlite3.Connection, table_name: str) -> bool:
+    rows = conn.execute(f'SELECT "UID" FROM "{table_name}" WHERE "UID" IS NOT NULL;').fetchall()
+    if not rows:
+        return False
+
+    pattern = re.compile(r"^\d{2}-[A-Z]{2,3}-\d{3}$")
+    for (uid_value,) in rows:
+        text = str(uid_value).strip()
+        if not text:
+            continue
+        if not pattern.fullmatch(text):
+            return False
+    return True
+
+
 def export_sqlite_to_xlsm(db_path: Path, output_path: Path, overwrite: bool) -> int:
     if not db_path.exists():
         logger.error("Database file not found: %s", db_path)
@@ -197,7 +212,10 @@ def export_sqlite_to_xlsm(db_path: Path, output_path: Path, overwrite: bool) -> 
             header_cur = conn.execute(f'SELECT * FROM "{table_name}" LIMIT 0;')
             headers = [col[0] for col in header_cur.description] if header_cur.description else []
             if "UID" in headers:
-                cur = conn.execute(f'SELECT * FROM "{table_name}" ORDER BY CAST("UID" AS NUMERIC), rowid;')
+                if should_sort_uid_as_text(conn, table_name):
+                    cur = conn.execute(f'SELECT * FROM "{table_name}" ORDER BY "UID", rowid;')
+                else:
+                    cur = conn.execute(f'SELECT * FROM "{table_name}" ORDER BY CAST("UID" AS NUMERIC), rowid;')
             else:
                 cur = conn.execute(f'SELECT * FROM "{table_name}";')
 

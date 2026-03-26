@@ -24,6 +24,14 @@ SECTION_LABELS: Dict[str, str] = {
     "SpareErectionRules": "Section 15. SpareErectionRules",
     "SpareKeywords": "Section 16. SpareKeywords",
     "SpareRuleGuide": "Section 17. SpareRuleGuide",
+    "BlindDiskThickness": "Section 18. BlindDiskThickness",
+    "PaintErectionDefaults": "Section 19. PaintErectionDefaults",
+    "BlindDiskDefaults": "Section 20. BlindDiskDefaults",
+    "FlangeGuardSystems": "Section 21. FlangeGuardSystems",
+    "FlangeGuardDefaults": "Section 22. FlangeGuardDefaults",
+    "ColumnMappings_Orifice": "Section 23. ColumnMappings_Orifice",
+    "OrificeDefaults": "Section 24. OrificeDefaults",
+    "MapressSealOrderSize": "Section 25. MapressSealOrderSize",
 }
 
 
