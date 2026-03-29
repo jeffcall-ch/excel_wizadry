@@ -8,7 +8,7 @@ namespace FileExplorer.Core.Models;
 public sealed class FileSystemEntry
 {
     /// <summary>Full path to the file or directory.</summary>
-    public required string FullPath { get; init; }
+    public required string FullPath { get; set; }
 
     /// <summary>Display name shown in the file list.</summary>
     public required string Name { get; set; }
@@ -26,7 +26,7 @@ public sealed class FileSystemEntry
     public string TypeDescription { get; set; } = string.Empty;
 
     /// <summary>File extension including the leading dot.</summary>
-    public string Extension { get; init; } = string.Empty;
+    public string Extension { get; set; } = string.Empty;
 
     /// <summary>File attributes from the file system.</summary>
     public FileAttributes Attributes { get; init; }

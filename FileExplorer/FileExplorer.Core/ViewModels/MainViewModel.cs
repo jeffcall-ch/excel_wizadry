@@ -15,6 +15,8 @@ namespace FileExplorer.Core.ViewModels;
 /// </summary>
 public sealed partial class MainViewModel : ObservableObject, IDisposable
 {
+    private const string DefaultStartupPath = @"C:\Users\szil\Shortcuts_to_folders";
+
     private readonly IFileSystemService _fileSystemService;
     private readonly IShellIntegrationService _shellService;
     private readonly ICloudStatusService _cloudStatusService;
@@ -98,8 +100,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         TreeView.NavigationRequested += OnTreeNavigationRequested;
     }
 
-    /// <summary>Initializes the application: loads settings, detects OneDrive, restores session.</summary>
-    public async Task InitializeAsync()
+    /// <summary>Initializes the application: loads settings, detects OneDrive, and opens the initial tab.</summary>
+    public async Task InitializeAsync(string? startupPath = null)
     {
         await _settingsService.LoadAsync();
         var settings = _settingsService.Settings;
@@ -116,31 +118,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         // Load tree view
         await TreeView.LoadAsync();
 
-        // Restore session or open default tab
-        if (settings.RestoreSessionOnLaunch)
-        {
-            var savedTabs = await _settingsService.LoadTabSessionAsync();
-            if (savedTabs.Count > 0)
-            {
-                foreach (var saved in savedTabs)
-                {
-                    var tabState = new TabState
-                    {
-                        CurrentPath = saved.Path,
-                        IsPinned = saved.IsPinned
-                    };
-                    var tab = _tabFactory(tabState);
-                    tab.Navigated += OnTabNavigated;
-                    Tabs.Add(tab);
-                    await tab.NavigateAsync(saved.Path);
-                }
-                ActiveTab = Tabs.First();
-                return;
-            }
-        }
-
-        // Default: open one tab to This PC
-        await NewTabAsync();
+        var initialPath = ResolveInitialStartupPath(startupPath, settings.NewTabDefaultPath);
+        await OpenTabAsync(initialPath, null);
     }
 
     #region Tab Management
@@ -150,20 +129,67 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public async Task NewTabAsync()
     {
         var defaultPath = _settingsService.Settings.NewTabDefaultPath;
-        var tab = _tabFactory(null);
-        tab.Navigated += OnTabNavigated;
-        Tabs.Add(tab);
-        ActiveTab = tab;
 
         if (!string.IsNullOrEmpty(defaultPath) && Directory.Exists(defaultPath))
         {
-            await tab.NavigateAsync(defaultPath);
+            await OpenTabAsync(defaultPath, null);
         }
         else
         {
             var userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-            await tab.NavigateAsync(userProfile);
+            await OpenTabAsync(userProfile, null);
         }
+    }
+
+    public async Task OpenFolderInNewTabAsync(string path)
+    {
+        var normalizedPath = NormalizeStartupPath(path);
+        if (!Directory.Exists(normalizedPath))
+            return;
+
+        await OpenTabAsync(normalizedPath, null);
+    }
+
+    private async Task OpenTabAsync(string path, TabState? state)
+    {
+        var tab = _tabFactory(state);
+        tab.Navigated += OnTabNavigated;
+        Tabs.Add(tab);
+        ActiveTab = tab;
+        await tab.NavigateAsync(path);
+    }
+
+    private string ResolveInitialStartupPath(string? startupPath, string? fallbackNewTabPath)
+    {
+        if (!string.IsNullOrWhiteSpace(startupPath))
+        {
+            var normalizedStartupPath = NormalizeStartupPath(startupPath);
+
+            if (Directory.Exists(normalizedStartupPath))
+                return normalizedStartupPath;
+
+            if (File.Exists(normalizedStartupPath))
+            {
+                var parent = Path.GetDirectoryName(normalizedStartupPath);
+                if (!string.IsNullOrEmpty(parent) && Directory.Exists(parent))
+                    return parent;
+            }
+
+            _logger.LogWarning("Startup path does not exist: {Path}", startupPath);
+        }
+
+        if (Directory.Exists(DefaultStartupPath))
+            return DefaultStartupPath;
+
+        if (!string.IsNullOrWhiteSpace(fallbackNewTabPath) && Directory.Exists(fallbackNewTabPath))
+            return fallbackNewTabPath;
+
+        return Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+    }
+
+    private static string NormalizeStartupPath(string path)
+    {
+        return TabContentViewModel.NormalizeNavigationPath(path);
     }
 
     /// <summary>Closes the specified tab.</summary>
@@ -480,11 +506,6 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     {
         NotifyNavigationState();
         OnPropertyChanged(nameof(HasSelection));
-
-        if (value is not null)
-        {
-            TreeView.SyncWithPath(value.CurrentPath);
-        }
     }
 
     private void OnTreeNavigationRequested(object? sender, string path)
@@ -498,7 +519,6 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private void OnTabNavigated(object? sender, string path)
     {
         NotifyNavigationState();
-        TreeView.SyncWithPath(path);
     }
 
     private void NotifyNavigationState()

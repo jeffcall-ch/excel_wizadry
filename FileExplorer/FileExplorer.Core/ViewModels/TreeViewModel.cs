@@ -28,9 +28,6 @@ public sealed partial class TreeViewModel : ObservableObject, IDisposable
     /// <summary>Raised when the user selects a tree node to navigate to that path.</summary>
     public event EventHandler<string>? NavigationRequested;
 
-    /// <summary>Raised when SyncWithPathAsync completes and a node was selected.</summary>
-    public event EventHandler<TreeNodeViewModel>? SyncCompleted;
-
     /// <summary>Initializes a new instance of the <see cref="TreeViewModel"/> class.</summary>
     public TreeViewModel(
         IFileSystemService fileSystemService,
@@ -84,44 +81,28 @@ public sealed partial class TreeViewModel : ObservableObject, IDisposable
     }
 
     /// <summary>Synchronizes the tree selection with the given filesystem path, expanding intermediate nodes as needed.</summary>
-    public async Task SyncWithPathAsync(string path)
+    public async Task<TreeNodeViewModel?> SyncWithPathAsync(string path)
     {
-        if (string.IsNullOrEmpty(path)) return;
+        if (string.IsNullOrWhiteSpace(path)) return null;
 
-        // Normalize path
-        path = Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar);
+        var normalizedPath = NormalizeFileSystemPath(path);
+        SelectedNode = null;
 
         foreach (var root in RootNodes)
         {
-            var found = await ExpandAndSelectAsync(root, path);
+            var found = await ExpandAndSelectAsync(root, normalizedPath);
             if (found) break;
         }
 
-        if (SelectedNode is not null)
-            SyncCompleted?.Invoke(this, SelectedNode);
-    }
-
-    /// <summary>Legacy sync — fires and forgets SyncWithPathAsync.</summary>
-    public void SyncWithPath(string path)
-    {
-        _ = SyncWithPathSafeAsync(path);
-    }
-
-    private async Task SyncWithPathSafeAsync(string path)
-    {
-        try
-        {
-            await SyncWithPathAsync(path);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "SyncWithPathAsync failed for {Path}", path);
-        }
+        return SelectedNode;
     }
 
     private async Task<bool> ExpandAndSelectAsync(TreeNodeViewModel node, string targetPath)
     {
         var nodePath = node.Model.Path;
+
+        if (string.IsNullOrWhiteSpace(nodePath))
+            return false;
 
         // Skip shell paths that can't be ancestors
         if (nodePath.StartsWith("shell:", StringComparison.OrdinalIgnoreCase))
@@ -132,6 +113,9 @@ public sealed partial class TreeViewModel : ObservableObject, IDisposable
 
             foreach (var child in node.Children)
             {
+                if (string.IsNullOrWhiteSpace(child.Model.Path))
+                    continue;
+
                 var found = await ExpandAndSelectAsync(child, targetPath);
                 if (found)
                 {
@@ -143,18 +127,23 @@ public sealed partial class TreeViewModel : ObservableObject, IDisposable
         }
 
         // Normalize node path for comparison
-        var normalizedNodePath = Path.GetFullPath(nodePath).TrimEnd(Path.DirectorySeparatorChar);
+        var normalizedNodePath = NormalizeFileSystemPath(nodePath);
 
         // Exact match — select this node
         if (normalizedNodePath.Equals(targetPath, StringComparison.OrdinalIgnoreCase))
         {
+            if (!node.IsLoaded && node.Model.HasChildren)
+            {
+                await ExpandNodeAsync(node);
+            }
+
             SelectedNode = node;
             node.IsExpanded = true;
             return true;
         }
 
         // Check if target is under this node's path
-        var prefix = normalizedNodePath.EndsWith(Path.DirectorySeparatorChar.ToString())
+        var prefix = HasTrailingDirectorySeparator(normalizedNodePath)
             ? normalizedNodePath
             : normalizedNodePath + Path.DirectorySeparatorChar;
 
@@ -171,13 +160,40 @@ public sealed partial class TreeViewModel : ObservableObject, IDisposable
         // Search children
         foreach (var child in node.Children)
         {
+            if (string.IsNullOrWhiteSpace(child.Model.Path))
+                continue;
+
             var found = await ExpandAndSelectAsync(child, targetPath);
             if (found) return true;
         }
 
         // If exact child not found, select this node as the closest ancestor
+        if (!node.IsLoaded && node.Model.HasChildren)
+        {
+            await ExpandNodeAsync(node);
+        }
+
         SelectedNode = node;
         return true;
+    }
+
+    private static string NormalizeFileSystemPath(string path)
+    {
+        var fullPath = Path.GetFullPath(path);
+        var root = Path.GetPathRoot(fullPath);
+
+        if (!string.IsNullOrEmpty(root) && fullPath.Equals(root, StringComparison.OrdinalIgnoreCase))
+            return root;
+
+        return fullPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+    }
+
+    private static bool HasTrailingDirectorySeparator(string path)
+    {
+        if (string.IsNullOrEmpty(path)) return false;
+
+        var lastChar = path[^1];
+        return lastChar == Path.DirectorySeparatorChar || lastChar == Path.AltDirectorySeparatorChar;
     }
 
     /// <summary>Expands a tree node and loads its children lazily.</summary>

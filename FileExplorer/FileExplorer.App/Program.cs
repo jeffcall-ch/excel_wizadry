@@ -8,6 +8,8 @@ public static class Program
     [STAThread]
     static void Main(string[] args)
     {
+        App.StartupPath = args.Length > 0 ? args[0] : null;
+
         global::WinRT.ComWrappersSupport.InitializeComWrappers();
         global::Microsoft.UI.Xaml.Application.Start((p) =>
         {

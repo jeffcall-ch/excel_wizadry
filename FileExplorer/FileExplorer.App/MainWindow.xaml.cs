@@ -1,7 +1,10 @@
 // Copyright (c) FileExplorer contributors. All rights reserved.
 
+using System.Diagnostics;
 using System.Linq;
 using FileExplorer.Core.ViewModels;
+using FileExplorer.Core.Models;
+using FileExplorer.Core.Interfaces;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Input;
@@ -22,6 +25,8 @@ namespace FileExplorer.App;
 public sealed partial class MainWindow : Window
 {
     private readonly DispatcherQueue _dispatcherQueue;
+    private TreeNodeViewModel? _pendingSelectedTreeNode;
+    private string? _lastSyncedTreePath;
 
     /// <summary>Gets the main view model.</summary>
     public MainViewModel ViewModel { get; }
@@ -46,9 +51,7 @@ public sealed partial class MainWindow : Window
 
         RegisterKeyboardAccelerators();
         Closed += MainWindow_Closed;
-
-        // Subscribe to tree sync so we can update the WinUI TreeView selection
-        ViewModel.TreeView.SyncCompleted += OnTreeSyncCompleted;
+        NavigationTree.Loaded += NavigationTree_Loaded;
 
         _ = InitializeAsync();
     }
@@ -57,7 +60,14 @@ public sealed partial class MainWindow : Window
     {
         try
         {
-            await ViewModel.InitializeAsync();
+            await ViewModel.InitializeAsync(App.StartupPath);
+
+            TreeNodeViewModel? initialSelectedTreeNode = null;
+            if (ViewModel.ActiveTab is not null)
+            {
+                initialSelectedTreeNode = await ViewModel.TreeView.SyncWithPathAsync(ViewModel.ActiveTab.CurrentPath);
+                _lastSyncedTreePath = NormalizeTreeSyncPath(ViewModel.ActiveTab.CurrentPath);
+            }
 
             UpdateTabBindings();
             UpdateStatusBar();
@@ -77,6 +87,15 @@ public sealed partial class MainWindow : Window
                 FileList.BindToTab(ViewModel.ActiveTab);
                 UpdateAddressBar(ViewModel.ActiveTab.CurrentPath);
                 UpdateSearchPlaceholder(ViewModel.ActiveTab.CurrentPath);
+
+                if (_navigationTreeLoaded)
+                {
+                    ApplyTreeSelection(initialSelectedTreeNode);
+                }
+                else
+                {
+                    _pendingSelectedTreeNode = initialSelectedTreeNode;
+                }
             }
         }
         catch (Exception ex)
@@ -112,6 +131,7 @@ public sealed partial class MainWindow : Window
             UpdateAddressBar(tab.CurrentPath);
             UpdateStatusBar();
             UpdateSearchPlaceholder(tab.CurrentPath);
+            _ = SyncNavigationTreeAsync(tab.CurrentPath);
         }
     }
 
@@ -150,6 +170,7 @@ public sealed partial class MainWindow : Window
             UpdateAddressBar(path);
             UpdateStatusBar();
             UpdateSearchPlaceholder(path);
+            _ = SyncNavigationTreeAsync(path);
         });
     }
 
@@ -230,7 +251,7 @@ public sealed partial class MainWindow : Window
     {
         BreadcrumbScroll.Visibility = Visibility.Collapsed;
         AddressBar.Visibility = Visibility.Visible;
-        AddressBar.Text = ViewModel.ActiveTab?.CurrentPath ?? "";
+        AddressBar.Text = NormalizeDisplayPath(ViewModel.ActiveTab?.CurrentPath ?? "");
         AddressBar.Focus(FocusState.Programmatic);
 
         // Find the inner TextBox once visible and select all text
@@ -269,6 +290,8 @@ public sealed partial class MainWindow : Window
 
     private void UpdateAddressBar(string path)
     {
+        path = NormalizeDisplayPath(path);
+
         // Update hidden edit box text
         AddressBar.Text = path;
 
@@ -350,8 +373,23 @@ public sealed partial class MainWindow : Window
 
     private void UpdateSearchPlaceholder(string path)
     {
+        path = NormalizeDisplayPath(path);
         var folderName = Path.GetFileName(path.TrimEnd(Path.DirectorySeparatorChar));
         SearchBox.PlaceholderText = string.IsNullOrEmpty(folderName) ? "Search..." : $"Search {folderName}";
+    }
+
+    private static string NormalizeDisplayPath(string path)
+    {
+        if (string.IsNullOrEmpty(path))
+            return path;
+
+        if (path.StartsWith(@"\\?\UNC\", StringComparison.OrdinalIgnoreCase))
+            return @"\\" + path[8..];
+
+        if (path.StartsWith(@"\\?\", StringComparison.OrdinalIgnoreCase))
+            return path[4..];
+
+        return path;
     }
 
     private void SearchBox_QuerySubmitted(AutoSuggestBox sender, AutoSuggestBoxQuerySubmittedEventArgs args)
@@ -430,11 +468,33 @@ public sealed partial class MainWindow : Window
         }
     }
 
+    private void NavigationTree_RightTapped(object sender, RightTappedRoutedEventArgs e)
+    {
+        if (FindAncestorOfType<TreeViewItem>(e.OriginalSource as DependencyObject) is not TreeViewItem treeViewItem)
+            return;
+
+        if (NavigationTree.NodeFromContainer(treeViewItem) is not TreeViewNode tvNode)
+            return;
+
+        if (tvNode.Content is not TreeNodeViewModel node)
+            return;
+
+        NavigationTree.SelectedNode = tvNode;
+        var resolvedPath = ResolveTreeNodePath(node);
+        if (string.IsNullOrWhiteSpace(resolvedPath))
+            return;
+
+        var flyout = new MenuFlyout();
+        AddFolderOpenItems(flyout, resolvedPath);
+        if (flyout.Items.Count == 0)
+            return;
+
+        flyout.ShowAt(treeViewItem, e.GetPosition(treeViewItem));
+        e.Handled = true;
+    }
+
     private async void NavigationTree_Expanding(TreeView sender, TreeViewExpandingEventArgs args)
     {
-        // Skip if we're programmatically syncing the tree — nodes already have children
-        if (_isSyncingTree) return;
-
         var tvNode = args.Node;
         if (tvNode.Content is TreeNodeViewModel node)
         {
@@ -463,6 +523,9 @@ public sealed partial class MainWindow : Window
         }
     }
 
+    private bool _navigationTreeLoaded;
+    private string? _pendingTreeSyncPath;
+
     private void TreeSplitter_ManipulationDelta(object sender, ManipulationDeltaRoutedEventArgs e)
     {
         var newWidth = TreeColumn.Width.Value + e.Delta.Translation.X;
@@ -473,56 +536,81 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    /// <summary>Flag to suppress the Expanding handler during programmatic sync.</summary>
-    private bool _isSyncingTree;
+    private int _treeSyncRequestId;
 
-    /// <summary>Called when TreeViewModel.SyncWithPathAsync finishes — syncs the WinUI TreeView control.</summary>
-    private void OnTreeSyncCompleted(object? sender, TreeNodeViewModel selectedVm)
+    private async Task SyncNavigationTreeAsync(string path)
     {
+        if (string.IsNullOrWhiteSpace(path))
+            return;
+
+        var normalizedPath = NormalizeTreeSyncPath(path);
+
+        if (!string.IsNullOrWhiteSpace(normalizedPath) &&
+            string.Equals(normalizedPath, _lastSyncedTreePath, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        if (!_navigationTreeLoaded)
+        {
+            _pendingTreeSyncPath = path;
+            return;
+        }
+
+        var requestId = Interlocked.Increment(ref _treeSyncRequestId);
+        TreeNodeViewModel? selectedVm;
+
+        try
+        {
+            selectedVm = await ViewModel.TreeView.SyncWithPathAsync(path);
+            _lastSyncedTreePath = normalizedPath;
+        }
+        catch (Exception ex)
+        {
+            ShowError($"Tree sync failed: {ex.Message}");
+            return;
+        }
+
         _dispatcherQueue.TryEnqueue(() =>
         {
-            _isSyncingTree = true;
-            try
-            {
-                // Full rebuild from authoritative VM state
-                PopulateTreeView();
+            if (requestId != _treeSyncRequestId)
+                return;
 
-                // Expand nodes bottom-up: collect all nodes needing expansion, then expand deepest first
-                var toExpand = new List<TreeViewNode>();
-                CollectExpandedNodes(NavigationTree.RootNodes, toExpand);
-                foreach (var tvNode in toExpand)
-                {
-                    tvNode.IsExpanded = true;
-                }
-            }
-            finally
-            {
-                _isSyncingTree = false;
-            }
-
-            // Defer selection so WinUI can finish expanding layout
-            _dispatcherQueue.TryEnqueue(() =>
-            {
-                var tvNode = FindTreeViewNode(NavigationTree.RootNodes, selectedVm);
-                if (tvNode is not null)
-                {
-                    NavigationTree.SelectedNode = tvNode;
-                }
-            });
+            PopulateTreeView();
+            ApplyTreeSelection(selectedVm);
         });
     }
 
-    /// <summary>Recursively collect TreeViewNodes whose ViewModel.IsExpanded is true, deepest-first.</summary>
-    private static void CollectExpandedNodes(IList<TreeViewNode> nodes, List<TreeViewNode> result)
+    private void ApplyTreeSelection(TreeNodeViewModel? selectedVm)
     {
-        foreach (var tvNode in nodes)
-        {
-            // Recurse into children first (bottom-up)
-            if (tvNode.Children.Count > 0)
-                CollectExpandedNodes(tvNode.Children, result);
+        ApplyExpansionState(NavigationTree.RootNodes);
 
-            if (tvNode.Content is TreeNodeViewModel vm && vm.IsExpanded)
-                result.Add(tvNode);
+        if (selectedVm is null)
+        {
+            NavigationTree.SelectedNode = null;
+            return;
+        }
+
+        var tvNode = FindTreeViewNode(NavigationTree.RootNodes, selectedVm);
+        if (tvNode is null)
+        {
+            NavigationTree.SelectedNode = null;
+            return;
+        }
+
+        ExpandNodePath(tvNode);
+        NavigationTree.SelectedNode = tvNode;
+    }
+
+    private static string NormalizeTreeSyncPath(string path)
+    {
+        try
+        {
+            return TabContentViewModel.NormalizeNavigationPath(path);
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return path.Trim();
         }
     }
 
@@ -537,6 +625,115 @@ public sealed partial class MainWindow : Window
             if (found is not null) return found;
         }
         return null;
+    }
+
+    public async Task OpenFolderInNewTabAsync(string path)
+    {
+        await ViewModel.OpenFolderInNewTabAsync(path);
+        UpdateTabBindings();
+    }
+
+    public void OpenFolderInNewWindow(string path)
+    {
+        path = TabContentViewModel.NormalizeNavigationPath(path);
+        if (!Directory.Exists(path))
+            return;
+
+        var executablePath = Environment.ProcessPath;
+        if (string.IsNullOrWhiteSpace(executablePath))
+            return;
+
+        Process.Start(new ProcessStartInfo
+        {
+            FileName = executablePath,
+            Arguments = $"\"{path}\"",
+            UseShellExecute = true,
+            WorkingDirectory = Path.GetDirectoryName(executablePath) ?? Environment.CurrentDirectory
+        });
+    }
+
+    private void AddFolderOpenItems(MenuFlyout flyout, string path)
+    {
+        flyout.Items.Add(new MenuFlyoutItem { Text = "Open", Icon = new FontIcon { Glyph = "\uE8E5" } });
+        ((MenuFlyoutItem)flyout.Items[^1]).Click += (_, _) =>
+        {
+            _ = ViewModel.NavigateToAddressAsync(path);
+        };
+
+        flyout.Items.Add(new MenuFlyoutItem { Text = "Open in new tab", Icon = new FontIcon { Glyph = "\uE7C3" } });
+        ((MenuFlyoutItem)flyout.Items[^1]).Click += (_, _) =>
+        {
+            _ = OpenFolderInNewTabAsync(path);
+        };
+
+        flyout.Items.Add(new MenuFlyoutItem { Text = "Open in new window", Icon = new FontIcon { Glyph = "\uE8A7" } });
+        ((MenuFlyoutItem)flyout.Items[^1]).Click += (_, _) =>
+        {
+            OpenFolderInNewWindow(path);
+        };
+    }
+
+    private static TreeViewItem? FindAncestorOfType<TreeViewItem>(DependencyObject? element) where TreeViewItem : DependencyObject
+    {
+        while (element is not null)
+        {
+            if (element is TreeViewItem match)
+                return match;
+
+            element = VisualTreeHelper.GetParent(element);
+        }
+
+        return null;
+    }
+
+    private static string? ResolveTreeNodePath(TreeNodeViewModel node)
+    {
+        var path = node.Model.Path;
+        if (string.IsNullOrWhiteSpace(path))
+            return null;
+
+        if (!path.StartsWith("shell:", StringComparison.OrdinalIgnoreCase))
+            return path;
+
+        var shellService = App.Services.GetRequiredService<IShellIntegrationService>();
+        return shellService.ResolveShellPath(path);
+    }
+
+    private void ExpandNodePath(TreeViewNode node)
+    {
+        var path = new Stack<TreeViewNode>();
+        for (TreeViewNode? current = node; current is not null; current = current.Parent)
+        {
+            path.Push(current);
+        }
+
+        while (path.Count > 0)
+        {
+            var current = path.Pop();
+            current.IsExpanded = true;
+            NavigationTree.Expand(current);
+        }
+    }
+
+    private void NavigationTree_Loaded(object sender, RoutedEventArgs e)
+    {
+        _navigationTreeLoaded = true;
+
+        ApplyExpansionState(NavigationTree.RootNodes);
+
+        if (_pendingSelectedTreeNode is not null)
+        {
+            ApplyTreeSelection(_pendingSelectedTreeNode);
+            _pendingSelectedTreeNode = null;
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_pendingTreeSyncPath))
+            return;
+
+        var path = _pendingTreeSyncPath;
+        _pendingTreeSyncPath = null;
+        _ = SyncNavigationTreeAsync(path);
     }
 
     #endregion
@@ -755,7 +952,6 @@ public sealed partial class MainWindow : Window
 
     private async void MainWindow_Closed(object sender, WindowEventArgs args)
     {
-        ViewModel.TreeView.SyncCompleted -= OnTreeSyncCompleted;
         await ViewModel.SaveSessionAsync();
         ViewModel.Dispose();
     }

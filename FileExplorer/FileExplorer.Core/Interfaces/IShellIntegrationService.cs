@@ -30,6 +30,9 @@ public interface IShellIntegrationService
     /// <summary>Resolves a shell path (e.g., "shell:Downloads") to a filesystem path.</summary>
     string? ResolveShellPath(string shellPath);
 
+    /// <summary>Resolves a Windows shortcut (.lnk) to its target path.</summary>
+    string? ResolveShortcutTarget(string shortcutPath);
+
     /// <summary>Opens a file with the default handler.</summary>
     void OpenFile(string path);
 

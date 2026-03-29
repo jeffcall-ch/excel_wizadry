@@ -9,6 +9,10 @@
 
     <Grid>
         <Grid.Resources>
+            <SolidColorBrush x:Key="TreeViewItemBackgroundPointerOver" Color="Transparent" />
+            <SolidColorBrush x:Key="TreeViewItemBackgroundPressed" Color="Transparent" />
+            <SolidColorBrush x:Key="TreeViewItemBorderBrushPointerOver" Color="Transparent" />
+            <SolidColorBrush x:Key="TreeViewItemBorderBrushPressed" Color="Transparent" />
             <Style x:Key="SubtleButtonStyle" TargetType="Button">
                 <Setter Property="Background" Value="Transparent" />
                 <Setter Property="BorderThickness" Value="0" />
@@ -205,6 +209,7 @@
                 Grid.Column="0"
                 SelectionMode="Single"
                 ItemInvoked="NavigationTree_ItemInvoked"
+                RightTapped="NavigationTree_RightTapped"
                 Expanding="NavigationTree_Expanding"
                 Collapsed="NavigationTree_Collapsed"
                 Padding="8,4,4,4" />

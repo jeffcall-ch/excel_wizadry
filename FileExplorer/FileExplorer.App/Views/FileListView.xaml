@@ -7,6 +7,24 @@
     xmlns:converters="using:FileExplorer.App.Converters">
 
     <UserControl.Resources>
+        <StaticResource x:Key="ListViewItemBackground" ResourceKey="SubtleFillColorTransparentBrush" />
+        <StaticResource x:Key="ListViewItemBackgroundPointerOver" ResourceKey="SubtleFillColorSecondaryBrush" />
+        <StaticResource x:Key="ListViewItemBackgroundPressed" ResourceKey="SubtleFillColorTertiaryBrush" />
+        <StaticResource x:Key="ListViewItemBackgroundSelected" ResourceKey="AccentFillColorSecondaryBrush" />
+        <StaticResource x:Key="ListViewItemBackgroundSelectedPointerOver" ResourceKey="AccentFillColorDefaultBrush" />
+        <StaticResource x:Key="ListViewItemBackgroundSelectedPressed" ResourceKey="AccentFillColorTertiaryBrush" />
+        <StaticResource x:Key="ListViewItemBackgroundSelectedDisabled" ResourceKey="SubtleFillColorSecondaryBrush" />
+        <StaticResource x:Key="ListViewItemBorderBackground" ResourceKey="SubtleFillColorTransparentBrush" />
+        <SolidColorBrush x:Key="ListViewItemRevealBackground" Color="Transparent" />
+        <SolidColorBrush x:Key="ListViewItemRevealBackgroundPointerOver" Color="Transparent" />
+        <SolidColorBrush x:Key="ListViewItemRevealBackgroundPressed" Color="Transparent" />
+        <SolidColorBrush x:Key="ListViewItemRevealBackgroundSelected" Color="Transparent" />
+        <SolidColorBrush x:Key="ListViewItemRevealBackgroundSelectedPointerOver" Color="Transparent" />
+        <SolidColorBrush x:Key="ListViewItemRevealBackgroundSelectedPressed" Color="Transparent" />
+        <SolidColorBrush x:Key="ListViewItemRevealBorderBrush" Color="Transparent" />
+        <SolidColorBrush x:Key="ListViewItemRevealBorderBrushPointerOver" Color="Transparent" />
+        <SolidColorBrush x:Key="ListViewItemRevealBorderBrushPressed" Color="Transparent" />
+        <Thickness x:Key="ListViewItemRevealBorderThemeThickness">0</Thickness>
         <Style x:Key="SubtleButtonStyle" TargetType="Button">
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="BorderThickness" Value="0" />
@@ -175,6 +193,7 @@
             Grid.Row="1"
             SelectionMode="Extended"
             IsItemClickEnabled="True"
+            PreviewKeyDown="FileListView_Inner_PreviewKeyDown"
             ItemClick="FileList_ItemClick"
             DoubleTapped="FileList_DoubleTapped"
             SelectionChanged="FileList_SelectionChanged"
@@ -194,6 +213,8 @@
                 <Style TargetType="ListViewItem">
                     <Setter Property="HorizontalContentAlignment" Value="Stretch" />
                     <Setter Property="Padding" Value="0" />
+                    <Setter Property="BorderThickness" Value="0" />
+                    <Setter Property="UseSystemFocusVisuals" Value="False" />
                 </Style>
             </ListView.ItemContainerStyle>
 
@@ -203,9 +224,7 @@
                         Padding="8,2"
                         MinHeight="28"
                         ColumnSpacing="0"
-                        Background="Transparent"
-                        PointerEntered="Row_PointerEntered"
-                        PointerExited="Row_PointerExited">
+                        Background="Transparent">
 
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />

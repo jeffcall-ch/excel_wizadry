@@ -34,46 +34,26 @@ public sealed class CloudStatusService : ICloudStatusService
         {
             _syncRoots.Clear();
 
-            // Check common OneDrive locations
-            var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-            var oneDriveDir = Path.Combine(localAppData, "Microsoft", "OneDrive", "settings");
-
             // Also check user profile for OneDrive directories
             var userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-            var potentialRoots = new[]
+            var potentialRoots = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             {
                 Path.Combine(userProfile, "OneDrive"),
                 Path.Combine(userProfile, "OneDrive - Personal"),
             };
 
+            foreach (var envVar in new[] { "OneDrive", "OneDriveConsumer", "OneDriveCommercial" })
+            {
+                var envPath = Environment.GetEnvironmentVariable(envVar);
+                if (!string.IsNullOrWhiteSpace(envPath))
+                {
+                    potentialRoots.Add(envPath);
+                }
+            }
+
             foreach (var root in potentialRoots)
             {
-                if (Directory.Exists(root))
-                {
-                    try
-                    {
-                        // Verify it's actually a sync root via CloudFilter API
-                        int bufferSize = 4096;
-                        nint buffer = Marshal.AllocHGlobal(bufferSize);
-                        try
-                        {
-                            int hr = NativeMethods.CfGetSyncRootInfoByPath(root, 0, buffer, bufferSize, out _);
-                            if (hr == 0)
-                            {
-                                _syncRoots.Add(root);
-                                _logger.LogInformation("Detected OneDrive sync root: {Path}", root);
-                            }
-                        }
-                        finally
-                        {
-                            Marshal.FreeHGlobal(buffer);
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogDebug(ex, "Path {Path} is not a cloud sync root", root);
-                    }
-                }
+                TryAddSyncRoot(root);
             }
 
             // Search for corporate OneDrive folders
@@ -81,28 +61,7 @@ public sealed class CloudStatusService : ICloudStatusService
             {
                 foreach (var dir in Directory.EnumerateDirectories(userProfile, "OneDrive*"))
                 {
-                    if (!_syncRoots.Contains(dir) && Directory.Exists(dir))
-                    {
-                        try
-                        {
-                            int bufferSize = 4096;
-                            nint buffer = Marshal.AllocHGlobal(bufferSize);
-                            try
-                            {
-                                int hr = NativeMethods.CfGetSyncRootInfoByPath(dir, 0, buffer, bufferSize, out _);
-                                if (hr == 0)
-                                {
-                                    _syncRoots.Add(dir);
-                                    _logger.LogInformation("Detected OneDrive sync root: {Path}", dir);
-                                }
-                            }
-                            finally
-                            {
-                                Marshal.FreeHGlobal(buffer);
-                            }
-                        }
-                        catch { /* Not a sync root */ }
-                    }
+                    TryAddSyncRoot(dir);
                 }
             }
             catch (Exception ex)
@@ -118,7 +77,9 @@ public sealed class CloudStatusService : ICloudStatusService
     public bool IsUnderSyncRoot(string filePath)
     {
         return _syncRoots.Any(root =>
-            filePath.StartsWith(root, StringComparison.OrdinalIgnoreCase));
+            filePath.Equals(root, StringComparison.OrdinalIgnoreCase) ||
+            filePath.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) ||
+            filePath.StartsWith(root + Path.AltDirectorySeparatorChar, StringComparison.OrdinalIgnoreCase));
     }
 
     /// <inheritdoc/>
@@ -130,10 +91,13 @@ public sealed class CloudStatusService : ICloudStatusService
 
             try
             {
-                var fileInfo = new FileInfo(filePath);
-                if (!fileInfo.Exists) return CloudFileStatus.NotApplicable;
+                var exists = File.Exists(filePath) || Directory.Exists(filePath);
+                if (!exists) return CloudFileStatus.NotApplicable;
 
-                var attrs = fileInfo.Attributes;
+                var attrs = File.GetAttributes(filePath);
+                var placeholderState = TryGetPlaceholderState(filePath, attrs.HasFlag(FileAttributes.Directory), out var state)
+                    ? state
+                    : NativeMethods.CF_PLACEHOLDER_STATE_NO_STATES;
 
                 // FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS (0x00400000) = cloud-only placeholder
                 // FILE_ATTRIBUTE_RECALL_ON_OPEN (0x00040000) = partial
@@ -145,13 +109,18 @@ public sealed class CloudStatusService : ICloudStatusService
                 const FileAttributes pinned = (FileAttributes)0x00080000;
                 const FileAttributes offline = FileAttributes.Offline;
 
-                if ((attrs & recallOnDataAccess) != 0 || (attrs & offline) != 0)
-                    return CloudFileStatus.CloudOnly;
-
-                if ((attrs & recallOnOpen) != 0)
+                if ((placeholderState & NativeMethods.CF_PLACEHOLDER_STATE_PARTIAL) != 0 || (attrs & recallOnOpen) != 0)
                     return CloudFileStatus.Syncing;
 
-                if ((attrs & pinned) != 0)
+                if (((placeholderState & NativeMethods.CF_PLACEHOLDER_STATE_PLACEHOLDER) != 0 &&
+                     (placeholderState & NativeMethods.CF_PLACEHOLDER_STATE_PARTIALLY_ON_DISK) == 0) ||
+                    (attrs & recallOnDataAccess) != 0 ||
+                    (attrs & offline) != 0)
+                    return CloudFileStatus.CloudOnly;
+
+                if ((placeholderState & NativeMethods.CF_PLACEHOLDER_STATE_IN_SYNC) != 0 ||
+                    (placeholderState & NativeMethods.CF_PLACEHOLDER_STATE_PARTIALLY_ON_DISK) != 0 ||
+                    (attrs & pinned) != 0)
                     return CloudFileStatus.LocallyAvailable;
 
                 // File exists locally under sync root — locally available
@@ -263,5 +232,81 @@ public sealed class CloudStatusService : ICloudStatusService
                 NativeMethods.CfCloseHandle(handle);
             }
         }, cancellationToken);
+    }
+
+    private void TryAddSyncRoot(string root)
+    {
+        if (string.IsNullOrWhiteSpace(root) || !Directory.Exists(root) || _syncRoots.Contains(root))
+            return;
+
+        try
+        {
+            int bufferSize = 4096;
+            nint buffer = Marshal.AllocHGlobal(bufferSize);
+            try
+            {
+                int hr = NativeMethods.CfGetSyncRootInfoByPath(root, 0, buffer, bufferSize, out _);
+                if (hr == 0)
+                {
+                    _syncRoots.Add(root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+                    _logger.LogInformation("Detected OneDrive sync root: {Path}", root);
+                }
+            }
+            finally
+            {
+                Marshal.FreeHGlobal(buffer);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Path {Path} is not a cloud sync root", root);
+        }
+    }
+
+    private bool TryGetPlaceholderState(string path, bool isDirectory, out int placeholderState)
+    {
+        placeholderState = NativeMethods.CF_PLACEHOLDER_STATE_NO_STATES;
+
+        var flags = isDirectory ? NativeMethods.FILE_FLAG_BACKUP_SEMANTICS : 0u;
+        var handle = NativeMethods.CreateFile(
+            path,
+            NativeMethods.FILE_READ_ATTRIBUTES,
+            NativeMethods.FILE_SHARE_READ | NativeMethods.FILE_SHARE_WRITE | NativeMethods.FILE_SHARE_DELETE,
+            0,
+            NativeMethods.OPEN_EXISTING,
+            flags,
+            0);
+
+        if (handle == NativeMethods.INVALID_HANDLE_VALUE)
+        {
+            return false;
+        }
+
+        try
+        {
+            var info = new NativeMethods.FILE_ATTRIBUTE_TAG_INFO();
+            var bufferSize = Marshal.SizeOf<NativeMethods.FILE_ATTRIBUTE_TAG_INFO>();
+            var buffer = Marshal.AllocHGlobal(bufferSize);
+
+            try
+            {
+                Marshal.StructureToPtr(info, buffer, false);
+                if (!NativeMethods.GetFileInformationByHandleEx(handle, NativeMethods.FileAttributeTagInfo, buffer, (uint)bufferSize))
+                {
+                    return false;
+                }
+
+                placeholderState = NativeMethods.CfGetPlaceholderStateFromFileInfo(buffer, NativeMethods.FileAttributeTagInfo);
+                return true;
+            }
+            finally
+            {
+                Marshal.FreeHGlobal(buffer);
+            }
+        }
+        finally
+        {
+            NativeMethods.CloseHandle(handle);
+        }
     }
 }

@@ -28,6 +28,37 @@ internal static partial class NativeMethods
     [return: MarshalAs(UnmanagedType.Bool)]
     internal static extern bool GetFileAttributesEx(string lpFileName, int fInfoLevelId, out WIN32_FILE_ATTRIBUTE_DATA lpFileInformation);
 
+    [LibraryImport("kernel32.dll", EntryPoint = "CreateFileW", SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
+    internal static partial nint CreateFile(
+        string lpFileName,
+        uint dwDesiredAccess,
+        uint dwShareMode,
+        nint lpSecurityAttributes,
+        uint dwCreationDisposition,
+        uint dwFlagsAndAttributes,
+        nint hTemplateFile);
+
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool GetFileInformationByHandleEx(
+        nint hFile,
+        int fileInformationClass,
+        nint lpFileInformation,
+        uint dwBufferSize);
+
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool CloseHandle(nint hObject);
+
+    internal const uint FILE_READ_ATTRIBUTES = 0x80;
+    internal const uint FILE_SHARE_READ = 0x00000001;
+    internal const uint FILE_SHARE_WRITE = 0x00000002;
+    internal const uint FILE_SHARE_DELETE = 0x00000004;
+    internal const uint OPEN_EXISTING = 3;
+    internal const uint FILE_FLAG_BACKUP_SEMANTICS = 0x02000000;
+    internal const int FileAttributeTagInfo = 9;
+    internal static readonly nint INVALID_HANDLE_VALUE = new(-1);
+
     [DllImport("kernel32.dll", EntryPoint = "FormatMessageW", SetLastError = true, CharSet = CharSet.Unicode)]
     internal static extern int FormatMessage(
         uint dwFlags,
@@ -62,6 +93,13 @@ internal static partial class NativeMethods
         public uint nFileSizeLow;
 
         public readonly long FileSize => ((long)nFileSizeHigh << 32) | nFileSizeLow;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct FILE_ATTRIBUTE_TAG_INFO
+    {
+        public FileAttributes FileAttributes;
+        public uint ReparseTag;
     }
 
     #endregion
@@ -321,6 +359,18 @@ internal static partial class NativeMethods
         int nShowCmd);
 
     internal const int SW_SHOW = 5;
+
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool SHObjectProperties(
+        nint hwnd,
+        uint shopObjectType,
+        string pszObjectName,
+        string? pszPropertyPage);
+
+    internal const uint SHOP_PRINTERNAME = 0x00000001;
+    internal const uint SHOP_FILEPATH = 0x00000002;
+    internal const uint SHOP_VOLUMEGUID = 0x00000004;
 
     #endregion
 

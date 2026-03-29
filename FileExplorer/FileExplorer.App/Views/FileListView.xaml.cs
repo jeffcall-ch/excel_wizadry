@@ -24,6 +24,8 @@ public sealed partial class FileListView : UserControl
     private string _typeAheadBuffer = string.Empty;
     private DateTimeOffset _lastKeyTime;
     private bool _isSearchMode;
+    private bool _isClearingSelection;
+    private bool _restoreFocusAfterNavigation;
 
     /// <summary>Initializes a new instance of the <see cref="FileListView"/> class.</summary>
     public FileListView()
@@ -34,33 +36,75 @@ public sealed partial class FileListView : UserControl
     /// <summary>Binds this view to a tab's content ViewModel.</summary>
     public void BindToTab(TabContentViewModel tab)
     {
+        if (_currentTab is not null)
+        {
+            _currentTab.Items.CollectionChanged -= CurrentTab_ItemsCollectionChanged;
+            _currentTab.PropertyChanged -= CurrentTab_PropertyChanged;
+            _currentTab.RevealItemRequested -= CurrentTab_RevealItemRequested;
+        }
+
         _currentTab = tab;
         FileListView_Inner.ItemsSource = tab.Items;
+    ClearTransientSelection();
         UpdateEmptyState();
         UpdateSortIndicators();
         UpdateOneDriveColumnVisibility();
 
-        // Subscribe to collection changes for empty state
-        tab.Items.CollectionChanged += (_, _) =>
+        tab.Items.CollectionChanged += CurrentTab_ItemsCollectionChanged;
+        tab.PropertyChanged += CurrentTab_PropertyChanged;
+        tab.RevealItemRequested += CurrentTab_RevealItemRequested;
+    }
+
+    private void CurrentTab_ItemsCollectionChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
+    {
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            UpdateEmptyState();
+
+            if (e.NewItems is null) return;
+
+            foreach (var item in e.NewItems.OfType<FileItemViewModel>())
+            {
+                if (item.IsRenaming || item.IsNewItem)
+                {
+                    RevealItem(item);
+                }
+            }
+        });
+    }
+
+    private void CurrentTab_PropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (_currentTab is null) return;
+
+        if (e.PropertyName == nameof(TabContentViewModel.IsLoading))
         {
             DispatcherQueue.TryEnqueue(() =>
             {
-                UpdateEmptyState();
-            });
-        };
-
-        // Subscribe to loading state
-        tab.PropertyChanged += (_, e) =>
-        {
-            if (e.PropertyName == nameof(TabContentViewModel.IsLoading))
-            {
-                DispatcherQueue.TryEnqueue(() =>
+                if (_currentTab.IsLoading)
                 {
-                    LoadingRing.Visibility = tab.IsLoading ? Visibility.Visible : Visibility.Collapsed;
-                    LoadingRing.IsActive = tab.IsLoading;
-                });
-            }
-        };
+                    ClearTransientSelection();
+                }
+
+                LoadingRing.Visibility = _currentTab.IsLoading ? Visibility.Visible : Visibility.Collapsed;
+                LoadingRing.IsActive = _currentTab.IsLoading;
+
+                if (!_currentTab.IsLoading && _restoreFocusAfterNavigation)
+                {
+                    _restoreFocusAfterNavigation = false;
+                    DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
+                    {
+                        FileListView_Inner.Focus(FocusState.Programmatic);
+                    });
+                }
+            });
+        }
+    }
+
+    private void CurrentTab_RevealItemRequested(object? sender, FileItemViewModel item)
+    {
+        _typeAheadBuffer = string.Empty;
+        DispatcherQueue.TryEnqueue(() => RevealItem(item));
     }
 
     #region Column Headers
@@ -146,8 +190,12 @@ public sealed partial class FileListView : UserControl
         {
             ColOneDrive.Width = new GridLength(0);
             OneDriveHeader.Visibility = Visibility.Collapsed;
-            ColOneDriveCheck.IsChecked = false;
+            return;
         }
+
+        ColOneDrive.Width = new GridLength(60);
+        OneDriveHeader.Visibility = Visibility.Visible;
+        ColOneDriveCheck.IsChecked = true;
     }
 
     #endregion
@@ -162,16 +210,67 @@ public sealed partial class FileListView : UserControl
     private void FileList_DoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
     {
         if (_currentTab is null) return;
-        var item = FileListView_Inner.SelectedItem as FileItemViewModel;
+        var item = ResolveItemFromOriginalSource(e.OriginalSource as DependencyObject) ?? GetActiveItem();
         if (item is not null)
         {
-            _ = _currentTab.OpenItemAsync(item);
+            FileListView_Inner.SelectedItem = item;
+            _ = OpenItemFromListAsync(item);
+        }
+    }
+
+    private async void FileListView_Inner_PreviewKeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        if (_currentTab is null)
+            return;
+
+        if (_currentTab.Items.Any(item => item.IsRenaming))
+            return;
+
+        switch (e.Key)
+        {
+            case Windows.System.VirtualKey.Enter:
+                if (GetActiveItem() is { } enterItem)
+                {
+                    e.Handled = true;
+                    await OpenItemFromListAsync(enterItem);
+                }
+                break;
+
+            case Windows.System.VirtualKey.Right:
+                if (GetActiveItem() is { } rightItem && CanOpenWithRightArrow(rightItem))
+                {
+                    e.Handled = true;
+                    await OpenItemFromListAsync(rightItem);
+                }
+                break;
+
+            case Windows.System.VirtualKey.Left:
+                if (!string.IsNullOrWhiteSpace(_currentTab.CurrentPath))
+                {
+                    e.Handled = true;
+                    _restoreFocusAfterNavigation = true;
+                    ClearTransientSelection();
+                    await _currentTab.GoUpAsync();
+                }
+                break;
+
+            case Windows.System.VirtualKey.Up:
+                e.Handled = MoveSelection(-1);
+                break;
+
+            case Windows.System.VirtualKey.Down:
+                e.Handled = MoveSelection(1);
+                break;
         }
     }
 
     private void FileList_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (_currentTab is null) return;
+
+        if (_isClearingSelection)
+            return;
+
         _currentTab.SelectedItems.Clear();
         foreach (var item in FileListView_Inner.SelectedItems.OfType<FileItemViewModel>())
         {
@@ -199,6 +298,8 @@ public sealed partial class FileListView : UserControl
 
         if (_currentTab.SelectedItems.Count == 0 && tappedItem is null) return;
 
+        var contextPaths = GetContextMenuPaths(tappedItem);
+
         var flyout = new MenuFlyout();
 
         // Standard items
@@ -208,6 +309,22 @@ public sealed partial class FileListView : UserControl
             var sel = _currentTab.SelectedItems.FirstOrDefault();
             if (sel is not null) _ = _currentTab.OpenItemAsync(sel);
         };
+
+        var folderTarget = ResolveFolderTarget(tappedItem);
+        if (folderTarget is not null && App.MainWindow is MainWindow mainWindow)
+        {
+            flyout.Items.Add(new MenuFlyoutItem { Text = "Open in new tab", Icon = new FontIcon { Glyph = "\uE7C3" } });
+            ((MenuFlyoutItem)flyout.Items[^1]).Click += (_, _) =>
+            {
+                _ = mainWindow.OpenFolderInNewTabAsync(folderTarget.Entry.FullPath);
+            };
+
+            flyout.Items.Add(new MenuFlyoutItem { Text = "Open in new window", Icon = new FontIcon { Glyph = "\uE8A7" } });
+            ((MenuFlyoutItem)flyout.Items[^1]).Click += (_, _) =>
+            {
+                mainWindow.OpenFolderInNewWindow(folderTarget.Entry.FullPath);
+            };
+        }
 
         if (_isSearchMode)
         {
@@ -266,10 +383,10 @@ public sealed partial class FileListView : UserControl
         flyout.Items.Add(new MenuFlyoutItem { Text = "Properties", Icon = new FontIcon { Glyph = "\uE946" } });
         ((MenuFlyoutItem)flyout.Items[^1]).Click += (_, _) =>
         {
-            if (App.MainWindow is MainWindow mw)
+            if (App.MainWindow is MainWindow mw && contextPaths.Count > 0)
             {
-                var mainVm = App.Services.GetRequiredService<MainViewModel>();
-                mainVm.ShowProperties(mw.Hwnd);
+                var shellService = App.Services.GetRequiredService<Core.Interfaces.IShellIntegrationService>();
+                shellService.ShowProperties(mw.Hwnd, contextPaths);
             }
         };
 
@@ -324,6 +441,142 @@ public sealed partial class FileListView : UserControl
                 tb.Select(0, dotIndex);
             else
                 tb.SelectAll();
+        }
+    }
+
+    private void RevealItem(FileItemViewModel item)
+    {
+        FileListView_Inner.SelectedItem = item;
+        FileListView_Inner.ScrollIntoView(item, ScrollIntoViewAlignment.Leading);
+
+        DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
+        {
+            FileListView_Inner.UpdateLayout();
+
+            if (FileListView_Inner.ContainerFromItem(item) is not ListViewItem container)
+                return;
+
+            container.StartBringIntoView();
+
+            if (!item.IsRenaming)
+                return;
+
+            if (FindChildOfType<TextBox>(container) is not TextBox tb)
+                return;
+
+            tb.Focus(FocusState.Programmatic);
+            var dotIndex = tb.Text.LastIndexOf('.');
+            if (dotIndex > 0)
+                tb.Select(0, dotIndex);
+            else
+                tb.SelectAll();
+        });
+    }
+
+    private async Task OpenItemFromListAsync(FileItemViewModel item)
+    {
+        if (item.Entry.IsDirectory || string.Equals(item.Entry.Extension, ".lnk", StringComparison.OrdinalIgnoreCase))
+        {
+            _restoreFocusAfterNavigation = true;
+            ClearTransientSelection();
+        }
+
+        await _currentTab!.OpenItemAsync(item);
+    }
+
+    private FileItemViewModel? ResolveItemFromOriginalSource(DependencyObject? source)
+    {
+        while (source is not null)
+        {
+            if (source is FrameworkElement element && element.DataContext is FileItemViewModel item)
+                return item;
+
+            source = VisualTreeHelper.GetParent(source);
+        }
+
+        return null;
+    }
+
+    private FileItemViewModel? GetActiveItem()
+    {
+        if (FileListView_Inner.SelectedItem is FileItemViewModel selectedItem)
+            return selectedItem;
+
+        return _currentTab?.Items.FirstOrDefault();
+    }
+
+    private bool MoveSelection(int delta)
+    {
+        if (_currentTab is null || _currentTab.Items.Count == 0)
+            return false;
+
+        var currentIndex = FileListView_Inner.SelectedItem is FileItemViewModel selectedItem
+            ? _currentTab.Items.IndexOf(selectedItem)
+            : -1;
+
+        var nextIndex = currentIndex < 0
+            ? (delta > 0 ? 0 : _currentTab.Items.Count - 1)
+            : Math.Clamp(currentIndex + delta, 0, _currentTab.Items.Count - 1);
+
+        if (nextIndex < 0 || nextIndex >= _currentTab.Items.Count)
+            return false;
+
+        var nextItem = _currentTab.Items[nextIndex];
+        FileListView_Inner.SelectedItems.Clear();
+        FileListView_Inner.SelectedItem = nextItem;
+        FileListView_Inner.ScrollIntoView(nextItem);
+        return true;
+    }
+
+    private IReadOnlyList<string> GetContextMenuPaths(FileItemViewModel? tappedItem)
+    {
+        if (_currentTab is null)
+            return [];
+
+        if (tappedItem is not null && _currentTab.SelectedItems.Contains(tappedItem))
+            return _currentTab.SelectedItems.Select(item => item.Entry.FullPath).ToList();
+
+        if (tappedItem is not null)
+            return [tappedItem.Entry.FullPath];
+
+        return _currentTab.SelectedItems.Select(item => item.Entry.FullPath).ToList();
+    }
+
+    private bool CanOpenWithRightArrow(FileItemViewModel item)
+    {
+        if (item.Entry.IsDirectory)
+            return true;
+
+        if (!string.Equals(item.Entry.Extension, ".lnk", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        if (App.Services.GetRequiredService<Core.Interfaces.IShellIntegrationService>()
+            .ResolveShortcutTarget(item.Entry.FullPath) is not string shortcutTarget)
+        {
+            return false;
+        }
+
+        return Directory.Exists(shortcutTarget);
+    }
+
+    private void ClearTransientSelection()
+    {
+        _typeAheadBuffer = string.Empty;
+
+        if (_currentTab is not null)
+        {
+            _currentTab.SelectedItems.Clear();
+        }
+
+        _isClearingSelection = true;
+        try
+        {
+            FileListView_Inner.SelectedItems.Clear();
+            FileListView_Inner.SelectedItem = null;
+        }
+        finally
+        {
+            _isClearingSelection = false;
         }
     }
 
@@ -395,28 +648,6 @@ public sealed partial class FileListView : UserControl
 
     #endregion
 
-    #region Row Hover
-
-    private void Row_PointerEntered(object sender, PointerRoutedEventArgs e)
-    {
-        if (sender is Grid grid)
-        {
-            // System accent color at 10% opacity
-            var accentColor = (Windows.UI.Color)Application.Current.Resources["SystemAccentColor"];
-            grid.Background = new SolidColorBrush(Windows.UI.Color.FromArgb(25, accentColor.R, accentColor.G, accentColor.B));
-        }
-    }
-
-    private void Row_PointerExited(object sender, PointerRoutedEventArgs e)
-    {
-        if (sender is Grid grid)
-        {
-            grid.Background = new SolidColorBrush(Colors.Transparent);
-        }
-    }
-
-    #endregion
-
     #region Empty State
 
     private void UpdateEmptyState()
@@ -432,6 +663,14 @@ public sealed partial class FileListView : UserControl
     private void FileListView_Inner_CharacterReceived(UIElement sender, Microsoft.UI.Xaml.Input.CharacterReceivedRoutedEventArgs args)
     {
         if (_currentTab is null) return;
+
+        if (_currentTab.Items.Any(item => item.IsRenaming))
+        {
+            _typeAheadBuffer = string.Empty;
+            args.Handled = true;
+            return;
+        }
+
         var ch = args.Character;
 
         // Ignore control characters
@@ -498,6 +737,17 @@ public sealed partial class FileListView : UserControl
         }
 
         args.Handled = true;
+    }
+
+    private FileItemViewModel? ResolveFolderTarget(FileItemViewModel? tappedItem)
+    {
+        if (_currentTab is null)
+            return null;
+
+        if (_currentTab.SelectedItems.Count == 1 && _currentTab.SelectedItems[0].Entry.IsDirectory)
+            return _currentTab.SelectedItems[0];
+
+        return tappedItem?.Entry.IsDirectory == true ? tappedItem : null;
     }
 
     #endregion

@@ -74,6 +74,9 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
     /// <summary>Raised when navigation occurs (for tree sync).</summary>
     public event EventHandler<string>? Navigated;
 
+    /// <summary>Raised when the UI should reveal and focus a specific item.</summary>
+    public event EventHandler<FileItemViewModel>? RevealItemRequested;
+
     /// <summary>Initializes a new instance of the <see cref="TabContentViewModel"/> class.</summary>
     public TabContentViewModel(
         IFileSystemService fileSystemService,
@@ -108,8 +111,16 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
             path = resolved;
         }
 
-        // Handle \\?\ prefix for long paths
-        path = path.TrimEnd('\\');
+        try
+        {
+            path = NormalizeNavigationPath(path);
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            _logger.LogWarning(ex, "Path is invalid: {Path}", path);
+            return;
+        }
+
         if (!Directory.Exists(path) && !path.Equals("shell:ThisPC", StringComparison.OrdinalIgnoreCase))
         {
             _logger.LogWarning("Path does not exist: {Path}", path);
@@ -225,6 +236,25 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
             item = SelectedItems[0];
         if (item is null) return;
 
+        if (string.Equals(item.Entry.Extension, ".lnk", StringComparison.OrdinalIgnoreCase))
+        {
+            var shortcutTarget = _shellService.ResolveShortcutTarget(item.Entry.FullPath);
+            if (!string.IsNullOrWhiteSpace(shortcutTarget))
+            {
+                if (Directory.Exists(shortcutTarget))
+                {
+                    await NavigateAsync(shortcutTarget);
+                    return;
+                }
+
+                if (File.Exists(shortcutTarget))
+                {
+                    _shellService.OpenFile(shortcutTarget);
+                    return;
+                }
+            }
+        }
+
         if (item.Entry.IsDirectory)
         {
             await NavigateAsync(item.Entry.FullPath);
@@ -242,6 +272,8 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
         if (SelectedItems.Count == 1)
         {
             SelectedItems[0].IsRenaming = true;
+            SelectedItems[0].EditingName = SelectedItems[0].Name;
+            RevealItemRequested?.Invoke(this, SelectedItems[0]);
         }
     }
 
@@ -252,24 +284,49 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
         if (!item.IsRenaming) return;
 
         var oldName = item.Entry.Name;
+        var oldFullPath = item.Entry.FullPath;
         var newName = item.EditingName;
         item.IsRenaming = false;
+        item.IsNewItem = false;
 
-        if (string.IsNullOrWhiteSpace(newName) || newName == oldName) return;
+        if (string.IsNullOrWhiteSpace(newName) || newName == oldName)
+        {
+            item.EditingName = oldName;
+            MoveItemToSortedPosition(item);
+            RevealItemRequested?.Invoke(this, item);
+            return;
+        }
 
         // Optimistic: update name immediately
         item.Entry.Name = newName;
         item.NotifyNameChanged();
 
-        var success = await _fileSystemService.RenameAsync(item.Entry.FullPath, newName);
+        var success = await _fileSystemService.RenameAsync(oldFullPath, newName);
         if (!success)
         {
             // Rollback
             item.Entry.Name = oldName;
+            item.EditingName = oldName;
             item.NotifyNameChanged();
             item.HasError = true;
             item.ErrorMessage = "Rename failed";
+            RevealItemRequested?.Invoke(this, item);
+            return;
         }
+
+        var parentPath = Path.GetDirectoryName(oldFullPath);
+        var renamedPath = string.IsNullOrEmpty(parentPath)
+            ? newName
+            : Path.Combine(parentPath, newName);
+
+        item.Entry.FullPath = renamedPath;
+        item.Entry.Extension = Path.GetExtension(newName);
+        item.Entry.TypeDescription = _shellService.GetTypeDescription(renamedPath);
+        item.Entry.IconIndex = _shellService.GetIconIndex(renamedPath, item.Entry.IsDirectory);
+        item.NotifyRenamed();
+
+        MoveItemToSortedPosition(item);
+        RevealItemRequested?.Invoke(this, item);
     }
 
     /// <summary>Creates a new folder in the current directory.</summary>
@@ -298,6 +355,7 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
             SelectedItems.Clear();
             SelectedItems.Add(vm);
             UpdateStatusText();
+            RevealItemRequested?.Invoke(this, vm);
         }
         catch (Exception ex)
         {
@@ -432,6 +490,49 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
         };
 
         return ordered.ToList();
+    }
+
+    private void MoveItemToSortedPosition(FileItemViewModel item)
+    {
+        var currentIndex = Items.IndexOf(item);
+        if (currentIndex < 0) return;
+
+        var sortedItems = ApplySort(Items.ToList());
+        var sortedIndex = sortedItems.IndexOf(item);
+        if (sortedIndex < 0 || sortedIndex == currentIndex) return;
+
+        Items.Move(currentIndex, sortedIndex);
+    }
+
+    public static string NormalizeNavigationPath(string path)
+    {
+        path = StripLongPathPrefix(path.Trim().Trim('"'));
+
+        if (path.Length == 2 && char.IsLetter(path[0]) && path[1] == Path.VolumeSeparatorChar)
+            return path + Path.DirectorySeparatorChar;
+
+        var fullPath = Path.GetFullPath(path);
+        fullPath = StripLongPathPrefix(fullPath);
+        var root = Path.GetPathRoot(fullPath);
+
+        if (!string.IsNullOrEmpty(root) && fullPath.Equals(root, StringComparison.OrdinalIgnoreCase))
+            return root;
+
+        return fullPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+    }
+
+    private static string StripLongPathPrefix(string path)
+    {
+        if (string.IsNullOrEmpty(path))
+            return path;
+
+        if (path.StartsWith(@"\\?\UNC\", StringComparison.OrdinalIgnoreCase))
+            return @"\\" + path[8..];
+
+        if (path.StartsWith(@"\\?\", StringComparison.OrdinalIgnoreCase))
+            return path[4..];
+
+        return path;
     }
 
     private void StartWatcher(string path)
@@ -654,6 +755,15 @@ public sealed partial class FileItemViewModel : ObservableObject
     public void NotifyNameChanged()
     {
         OnPropertyChanged(nameof(Name));
+    }
+
+    /// <summary>Notifies dependent properties that change after a successful rename.</summary>
+    public void NotifyRenamed()
+    {
+        OnPropertyChanged(nameof(Name));
+        OnPropertyChanged(nameof(FullPath));
+        OnPropertyChanged(nameof(TypeDescription));
+        OnPropertyChanged(nameof(IconGlyph));
     }
 
     partial void OnCloudStatusChanged(CloudFileStatus value)

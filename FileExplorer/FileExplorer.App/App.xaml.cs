@@ -20,6 +20,8 @@ public partial class App : Application
 {
     private static IServiceProvider? _services;
 
+    internal static string? StartupPath { get; set; }
+
     /// <summary>Gets the DI service provider.</summary>
     public static IServiceProvider Services => _services ?? throw new InvalidOperationException("Services not initialized");
 

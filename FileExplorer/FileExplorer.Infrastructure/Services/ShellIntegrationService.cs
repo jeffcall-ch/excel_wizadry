@@ -158,10 +158,48 @@ public sealed class ShellIntegrationService : IShellIntegrationService
     public void ShowProperties(nint hwnd, IReadOnlyList<string> paths)
     {
         if (paths.Count == 0) return;
+
         foreach (var path in paths)
         {
-            NativeMethods.ShellExecute(hwnd, "properties", path, null, null, NativeMethods.SW_SHOW);
+            try
+            {
+                var objectType = NativeMethods.SHOP_FILEPATH;
+                var objectName = path;
+
+                if (TryGetDriveRoot(path, out var driveRoot))
+                {
+                    objectType = NativeMethods.SHOP_VOLUMEGUID;
+                    objectName = driveRoot;
+                }
+
+                if (!NativeMethods.SHObjectProperties(hwnd, objectType, objectName, null))
+                {
+                    var error = Marshal.GetLastWin32Error();
+                    _logger.LogWarning("SHObjectProperties failed for {Path}: {ErrorCode} {ErrorMessage}", path, error, NativeMethods.FormatWin32Error(error));
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to show properties for {Path}", path);
+            }
         }
+    }
+
+    private static bool TryGetDriveRoot(string path, out string driveRoot)
+    {
+        driveRoot = string.Empty;
+        var root = Path.GetPathRoot(path);
+        if (string.IsNullOrWhiteSpace(root))
+            return false;
+
+        var trimmedPath = path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var trimmedRoot = root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+
+        if (!string.Equals(trimmedPath, trimmedRoot, StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        driveRoot = trimmedRoot;
+        return true;
     }
 
     /// <inheritdoc/>
@@ -216,6 +254,40 @@ public sealed class ShellIntegrationService : IShellIntegrationService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to open {Path}", path);
+        }
+    }
+
+    /// <inheritdoc/>
+    public string? ResolveShortcutTarget(string shortcutPath)
+    {
+        if (!File.Exists(shortcutPath) ||
+            !string.Equals(Path.GetExtension(shortcutPath), ".lnk", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        var shellType = Type.GetTypeFromProgID("WScript.Shell");
+        if (shellType is null)
+            return null;
+
+        dynamic? shell = Activator.CreateInstance(shellType);
+        if (shell is null)
+            return null;
+
+        try
+        {
+            dynamic shortcut = shell.CreateShortcut(shortcutPath);
+            var targetPath = shortcut.TargetPath as string;
+            return string.IsNullOrWhiteSpace(targetPath) ? null : targetPath;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to resolve shortcut target: {Path}", shortcutPath);
+            return null;
+        }
+        finally
+        {
+            Marshal.ReleaseComObject(shell);
         }
     }
 
