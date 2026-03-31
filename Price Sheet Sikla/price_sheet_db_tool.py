@@ -8,7 +8,8 @@ from typing import Any
 
 import pandas as pd
 from openpyxl import Workbook
-from openpyxl.styles import Font, PatternFill
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.utils import get_column_letter
 
 
 REQUIRED_HEADER_TITLES = {"item number", "qty", "description", "decscription"}
@@ -528,7 +529,7 @@ def populate_aggregated_table(db_path: Path, revision: str = "REV0") -> int:
                 "Description": entry["description"],
                 "Cut_Length_mm": None,
                 "Total_Weight_kg": net_cut_weight,
-                "Remarks": None,
+                "Remarks": f"{_BEAM_PHYSICAL_MM // 1000}m bar",
                 "Coating": coating,
                 "Material_Type": "04 Beam Sections",
                 "Spare": ordered - naive_qty,
@@ -567,7 +568,7 @@ def populate_aggregated_table(db_path: Path, revision: str = "REV0") -> int:
                 "Description": entry["description"],
                 "Cut_Length_mm": None,
                 "Total_Weight_kg": net_cut_weight,
-                "Remarks": None,
+                "Remarks": f"{phys_mm / 1000:g}m rod",
                 "Coating": coating,
                 "Material_Type": "01 Primary Supports",
                 "Spare": ordered - naive_qty,
@@ -585,6 +586,21 @@ def populate_aggregated_table(db_path: Path, revision: str = "REV0") -> int:
 
         _TAPE_ROLL_M = 10
         _TAPE_SPARE_FACTOR = 1.50
+        _TAPE_DENSITY_KG_M3 = 2600.0  # 2.6 g/cm³ — glass fabric tape material density
+
+        def _tape_weight_per_m(description: str | None) -> float | None:
+            """Parse 'GSK WW x TT' from description and return kg/m using material density."""
+            import re as _re
+            if not description:
+                return None
+            m = _re.search(r"(\d+(?:\.\d+)?)\s*[xX]\s*(\d+(?:\.\d+)?)", description)
+            if not m:
+                return None
+            width_mm = float(m.group(1))
+            thickness_mm = float(m.group(2))
+            # volume per metre of tape (m³): width × thickness × 1 m length
+            vol_per_m = (width_mm / 1000) * (thickness_mm / 1000) * 1.0
+            return vol_per_m * _TAPE_DENSITY_KG_M3
 
         for (item_number, coating), entry in tape_groups.items():
             net_cut_mm = entry["net_cut_mm"]
@@ -595,23 +611,25 @@ def populate_aggregated_table(db_path: Path, revision: str = "REV0") -> int:
             ordered_rolls = math.ceil(needed_m / _TAPE_ROLL_M)
             naive_rolls = math.ceil(net_cut_m / _TAPE_ROLL_M)
             total_order_m = round(ordered_rolls * _TAPE_ROLL_M, 3)
-            net_cut_weight = round(entry["weight"], 2) if entry["weight"] else None
-            if net_cut_weight is not None and net_cut_m > 0:
-                scaled_weight = round((net_cut_weight / net_cut_m) * total_order_m, 2)
+            wpm = _tape_weight_per_m(entry["description"])
+            if wpm is not None:
+                net_cut_weight = round(wpm * net_cut_m, 3)
+                naive_rolls_weight = round(wpm * naive_rolls * _TAPE_ROLL_M, 3)
+                order_weight = round(wpm * total_order_m, 3)
             else:
-                scaled_weight = None
+                net_cut_weight = naive_rolls_weight = order_weight = None
             aggregated.append({
                 "Article_Number": item_number,
                 "Qty": naive_rolls,
                 "Description": entry["description"],
                 "Cut_Length_mm": None,
-                "Total_Weight_kg": net_cut_weight,
+                "Total_Weight_kg": naive_rolls_weight,
                 "Remarks": f"{_TAPE_ROLL_M}m roll",
                 "Coating": entry["coating"],
                 "Material_Type": "05 Installation Material",
                 "Spare": ordered_rolls - naive_rolls,
                 "Order_Qty": ordered_rolls,
-                "Order_Weight_kg": scaled_weight,
+                "Order_Weight_kg": order_weight,
                 "Net_Cut_Length_m": net_cut_m,
                 "Net_Cut_Weight_kg": net_cut_weight,
                 "Total_Order_Length_m": total_order_m,
@@ -656,30 +674,37 @@ def populate_aggregated_table(db_path: Path, revision: str = "REV0") -> int:
                     f"{_pct}% spare: ceil({_base_qty} \u00d7 {_sp}) = {_spare_n}"
                     if _sp else "No spare"
                 )
+            # Fold Cut_Length_mm into Remarks; the column is dropped from AGG schema.
+            _cut = row_dict["Cut_Length_mm"]
+            _base_remark = row_dict["Remarks"]
+            if _cut is not None:
+                _cut_label = f"cut: {int(_cut)} mm"
+                _remarks = f"{_base_remark} / {_cut_label}" if _base_remark else _cut_label
+            else:
+                _remarks = _base_remark
             output_rows.append((
-                material_type,           # 0
+                material_type,               # 0
                 row_dict["Article_Number"],  # 1
                 row_dict["Description"],     # 2
                 row_dict["Qty"],             # 3
                 row_dict["Total_Weight_kg"], # 4
-                row_dict["Cut_Length_mm"],   # 5
-                row_dict["Remarks"],         # 6
-                coating,                     # 7
-                spare,                       # 8
-                order_qty,                   # 9
-                order_weight,                # 10
-                row_dict.get("Net_Cut_Length_m"),    # 11
-                row_dict.get("Net_Cut_Weight_kg"),   # 12
-                row_dict.get("Total_Order_Length_m"),# 13
-                row_dict.get("Utilisation_pct"),     # 14
-                spare_calc_rule,                     # 15
+                _remarks,                    # 5  (was index 6)
+                coating,                     # 6  (was index 7)
+                spare,                       # 7  (was index 8)
+                order_qty,                   # 8  (was index 9)
+                order_weight,                # 9  (was index 10)
+                row_dict.get("Net_Cut_Length_m"),    # 10
+                row_dict.get("Net_Cut_Weight_kg"),   # 11
+                row_dict.get("Total_Order_Length_m"),# 12
+                row_dict.get("Utilisation_pct"),     # 13
+                spare_calc_rule,                     # 14
             ))
 
-        # Final aggregation: group by (Article_Number, Coating, Cut_Length_mm, Remarks), sum Qty + weights
+        # Final aggregation: group by (Article_Number, Coating, Remarks), sum Qty + weights
         _final: dict[tuple, list] = {}
         for row in output_rows:
-            # key: article_number(1), coating(7), cut_length_mm(5), remarks(6)
-            key = (row[1], row[7], row[5], row[6])
+            # key: article_number(1), coating(6), remarks(5)
+            key = (row[1], row[6], row[5])
             if key not in _final:
                 _final[key] = list(row)
             else:
@@ -687,13 +712,13 @@ def populate_aggregated_table(db_path: Path, revision: str = "REV0") -> int:
                 existing[3] = (existing[3] or 0) + (row[3] or 0)   # Qty
                 if row[4] is not None:
                     existing[4] = round((existing[4] or 0) + row[4], 2)   # Total_Weight_kg
-                if row[8] is not None:
-                    existing[8] = (existing[8] or 0) + (row[8] or 0)      # Spare
-                existing[9] = (existing[9] or 0) + (row[9] or 0)          # Order_Qty
-                if row[10] is not None:
-                    existing[10] = round((existing[10] or 0) + row[10], 2) # Order_Weight_kg
-                if row[12] is not None:
-                    existing[12] = round((existing[12] or 0) + row[12], 2) # Net_Cut_Weight_kg
+                if row[7] is not None:
+                    existing[7] = (existing[7] or 0) + (row[7] or 0)      # Spare
+                existing[8] = (existing[8] or 0) + (row[8] or 0)          # Order_Qty
+                if row[9] is not None:
+                    existing[9] = round((existing[9] or 0) + row[9], 2)   # Order_Weight_kg
+                if row[11] is not None:
+                    existing[11] = round((existing[11] or 0) + row[11], 2) # Net_Cut_Weight_kg
         output_rows = [tuple(v) for v in _final.values()]
 
         output_rows.sort(key=lambda r: (r[0] or "", (r[2] or "").lower()))
@@ -706,7 +731,6 @@ def populate_aggregated_table(db_path: Path, revision: str = "REV0") -> int:
             f'"Description" TEXT, '
             f'"Qty" INTEGER, '
             f'"Total_Weight_kg" REAL, '
-            f'"Cut_Length_mm" REAL, '
             f'"Remarks" TEXT, '
             f'"Coating" TEXT, '
             f'"Spare" INTEGER, '
@@ -720,7 +744,7 @@ def populate_aggregated_table(db_path: Path, revision: str = "REV0") -> int:
             f")"
         )
         cur.executemany(
-            f"INSERT INTO {sql_quote_identifier(agg_table)} VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            f"INSERT INTO {sql_quote_identifier(agg_table)} VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             output_rows,
         )
         conn.commit()
@@ -824,7 +848,8 @@ def _run_validation_checks(
                  FROM {at} a
                  JOIN {rt} r ON r.Item_Number = a.Article_Number
                      AND r.Coating IS a.Coating
-                 WHERE a.Net_Cut_Length_m IS NULL AND a.Cut_Length_mm IS NULL
+                 WHERE a.Net_Cut_Length_m IS NULL
+                   AND (a.Remarks IS NULL OR a.Remarks NOT LIKE '%cut: % mm%')
                  GROUP BY a.Article_Number, a.Coating
                  HAVING ABS(a.Qty - SUM(r.Qty)) > 0.01
              """).fetchall())
@@ -848,8 +873,23 @@ def _run_validation_checks(
                             - SUM(r.Qty * r.Cut_Length_mm)) > 1
              """).fetchall())
 
-        raw_w = cur.execute(f"SELECT ROUND(SUM(Total_Weight_kg), 2) FROM {rt}").fetchone()[0] or 0.0
-        agg_w = cur.execute(f"SELECT ROUND(SUM(Total_Weight_kg), 2) FROM {at}").fetchone()[0] or 0.0
+        # V11: weight conservation for standard (non-FFD/tape) items only.
+        # Tape weights are NULL (source uses dummy 0.1 kg/piece), FFD weights
+        # are covered by V17. Exclude FFD/tape rows from both sides.
+        raw_ffd_articles = cur.execute(
+            f"SELECT DISTINCT Article_Number FROM {at} WHERE Net_Cut_Length_m IS NOT NULL"
+        ).fetchall()
+        ffd_placeholders = ",".join("?" * len(raw_ffd_articles)) if raw_ffd_articles else "NULL"
+        ffd_ids = [r[0] for r in raw_ffd_articles]
+        raw_w = cur.execute(
+            f"SELECT ROUND(SUM(Total_Weight_kg), 2) FROM {rt} "
+            f"WHERE Item_Number NOT IN ({ffd_placeholders})",
+            ffd_ids,
+        ).fetchone()[0] or 0.0
+        agg_w = cur.execute(
+            f"SELECT ROUND(SUM(Total_Weight_kg), 2) FROM {at} "
+            f"WHERE Net_Cut_Length_m IS NULL"
+        ).fetchone()[0] or 0.0
         diff_w = round(abs(raw_w - agg_w), 2)
         _stat("V11", "3 Aggregation fidelity",
               "Grand total net weight: raw total = AGG total (threshold < 1 kg)",
@@ -944,12 +984,12 @@ def _run_validation_checks(
 
     # ── 6. AGG DATA QUALITY ───────────────────────────────────────────────
     _chk("V22", "6 AGG quality",
-         "No duplicate (Article, Coating, Cut_Length_mm, Remarks) keys",
+         "No duplicate (Article, Coating, Remarks) keys",
          cur.execute(f"""
-             SELECT Article_Number, Coating, Cut_Length_mm, Remarks,
+             SELECT Article_Number, Coating, Remarks,
                     COUNT(*) AS cnt
              FROM {at}
-             GROUP BY Article_Number, Coating, Cut_Length_mm, Remarks
+             GROUP BY Article_Number, Coating, Remarks
              HAVING COUNT(*) > 1
          """).fetchall())
 
@@ -1110,6 +1150,441 @@ def _write_validation_sheet(wb: Workbook, checks: list[dict]) -> None:
         ws.column_dimensions[col_cells[0].column_letter].width = min(max_len + 2, 80)
 
 
+def _write_agg_sheet(ws, columns: list[str], rows: list[tuple]) -> None:
+    """Write aggregated sheet grouped by Material_Type with separator, per-group
+    subtotal rows, and a grand-total row.  All totals use SUBTOTAL(9,...) which
+    automatically ignores other SUBTOTAL rows, so autofilter keeps everything
+    consistent without double-counting."""
+
+    # ── Column display order ──────────────────────────────────────────────
+    # Order_Qty and Order_Weight_kg shift to the far right so that the four
+    # order-related columns (Order_Qty, Order_Weight_kg, Unit_Price, Total_Price)
+    # sit together as a visually distinct block.
+    _DB_COLS   = list(columns)                          # 15 DB columns (schema order)
+    _SHIFT     = ("Order_Qty", "Order_Weight_kg")       # pulled to far right
+    _base_cols = [c for c in _DB_COLS if c not in _SHIFT]
+    _ORD_XTRA  = ("Unit_Price", "Total_Price")          # appended, no DB source
+
+    # Internal-name sequence: drives col_idx and formula column letters
+    _int_seq    = list(_base_cols) + list(_SHIFT) + list(_ORD_XTRA)
+
+    # Mapping: display-position i → original DB tuple index (-1 = no DB col)
+    _db_pos     = {c: i for i, c in enumerate(_DB_COLS)}
+    _disp_to_db = [_db_pos.get(c, -1) for c in _int_seq]
+
+    def _reorder(row_data) -> list:
+        return [row_data[i] if i >= 0 else None for i in _disp_to_db]
+
+    # Quantity columns get a _pcs suffix in the displayed header row
+    _PCS_COLS = {"Qty", "Spare", "Order_Qty"}
+    headers   = [f"{c}_pcs" if c in _PCS_COLS else c for c in _int_seq]
+
+    # col_idx: internal_name → 1-based sheet column (used for formula building)
+    col_idx = {name: i + 1 for i, name in enumerate(_int_seq)}
+    n_cols  = len(headers)
+
+    ws.append(headers)
+
+    # ── Shared style objects ──────────────────────────────────────────────
+    _thin   = Side(style="thin")
+    _medium = Side(style="medium")
+
+    # Order column block boundaries
+    _ord_ci_start = col_idx["Order_Qty"]    # first column of the order block
+    _ord_ci_end   = col_idx["Total_Price"]  # last column of the order block
+
+    # ── Header row styling ────────────────────────────────────────────────
+    hdr_fill_base = PatternFill("solid", fgColor="FF203864")  # dark navy
+    hdr_fill_ord  = PatternFill("solid", fgColor="FF7B3F00")  # dark amber (order block)
+    hdr_font      = Font(bold=True, color="FFFFFFFF")
+    for ci, cell in enumerate(ws[1], start=1):
+        cell.fill = hdr_fill_ord if _ord_ci_start <= ci <= _ord_ci_end else hdr_fill_base
+        cell.font = hdr_font
+
+    def cl(name: str) -> str:
+        return get_column_letter(col_idx[name])
+
+    NUMERIC_COLS = ["Qty", "Total_Weight_kg", "Spare",
+                    "Order_Qty", "Order_Weight_kg", "Total_Price"]
+
+    # ── Row styles ────────────────────────────────────────────────────────
+    sep_fill  = PatternFill("solid", fgColor="FF2E4E7E")  # dark steel blue
+    sep_font  = Font(bold=True, color="FFFFFFFF", size=10)
+    sub_fill  = PatternFill("solid", fgColor="FFDCE6F1")  # pale blue
+    sub_font  = Font(bold=True, italic=True)
+    tot_fill  = PatternFill("solid", fgColor="FFFFF2CC")  # yellow
+    tot_font  = Font(bold=True)
+    unit_fill = PatternFill("solid", fgColor="FFBDD7EE")  # light blue — supplier input
+
+    # ── Group rows by Material_Type (use original DB index for grouping) ──
+    mt_db_idx = _db_pos["Material_Type"]
+    groups: dict[str, list] = {}
+    for row_data in rows:
+        mt = row_data[mt_db_idx] or ""
+        groups.setdefault(mt, []).append(row_data)
+    groups = dict(sorted(groups.items()))
+
+    current_row = 2
+
+    for group_name, group_rows in groups.items():
+        # ── Separator / group header row ──────────────────────────────────
+        sep_r = current_row
+        ws.cell(sep_r, 1).value = group_name
+        for ci in range(1, n_cols + 1):
+            cell = ws.cell(sep_r, ci)
+            cell.fill = sep_fill
+            cell.font = sep_font
+        ws.cell(sep_r, 1).alignment = Alignment(
+            horizontal="left", vertical="center", indent=1
+        )
+        ws.row_dimensions[sep_r].height = 18
+        current_row += 1
+
+        # ── Data rows ─────────────────────────────────────────────────────
+        first_data = current_row
+        # DB index for the two shifted columns (needed to pull static values)
+        _oqty_db = _db_pos["Order_Qty"]
+        _owt_db  = _db_pos["Order_Weight_kg"]
+        for row_data in group_rows:
+            r = current_row
+            ws.append(_reorder(row_data))
+            # Order_Qty and Order_Weight_kg are pre-computed by the Python
+            # aggregation pipeline and stored in the DB.  Write them as static
+            # numbers so cross-sheet SUMPRODUCT in PRICE_SHEET can read them
+            # immediately without depending on Excel's formula-evaluation order.
+            # (openpyxl writes formula cells with no cached value; if PRICE_SHEET
+            # is evaluated before AGG, formula cells appear as 0.)
+            oqty_val = row_data[_oqty_db]
+            owt_val  = row_data[_owt_db]
+            ws.cell(r, col_idx["Order_Qty"]).value        = oqty_val
+            ws.cell(r, col_idx["Order_Weight_kg"]).value  = owt_val
+            # Total_Price stays as a formula — it depends on Unit_Price which
+            # the supplier fills in later, so there is no DB value to write.
+            ws.cell(r, col_idx["Total_Price"]).value = (
+                f"=IF(ISNUMBER({cl('Unit_Price')}{r})"
+                f",{cl('Order_Qty')}{r}*{cl('Unit_Price')}{r},\"\")"
+            )
+            # Light blue fill signals that the supplier should fill in Unit_Price
+            ws.cell(r, col_idx["Unit_Price"]).fill = unit_fill
+            current_row += 1
+        last_data = current_row - 1
+
+        # ── Group subtotal row ────────────────────────────────────────────
+        # Keep col A (Material_Type) = group_name so the subtotal row is part
+        # of the same filter value as the data rows — no extra entry in dropdown.
+        sub_r = current_row
+        ws.cell(sub_r, col_idx["Material_Type"]).value = group_name
+        ws.cell(sub_r, col_idx["Description"]).value = f"↳ Subtotal — {group_name}"
+        for col_name in NUMERIC_COLS:
+            letter = cl(col_name)
+            c = ws.cell(sub_r, col_idx[col_name])
+            c.value = f"=SUBTOTAL(9,{letter}{first_data}:{letter}{last_data})"
+            c.number_format = "0.00"
+        for ci in range(1, n_cols + 1):
+            cell = ws.cell(sub_r, ci)
+            cell.fill = sub_fill
+            cell.font = sub_font
+        ws.cell(sub_r, 1).alignment = Alignment(
+            horizontal="left", vertical="center", indent=2
+        )
+        ws.row_dimensions[sub_r].height = 16
+        current_row += 1
+
+    # ── Number formats (column-based so formula cells are covered too) ────
+    FMT_INT  = "0"
+    FMT_2DP  = "0.00"
+    FMT_1DP  = "0.0"
+    _int_fmts = {col_idx[n] for n in ["Qty", "Spare", "Order_Qty"] if n in col_idx}
+    _2dp_fmts = {col_idx[n] for n in [
+        "Total_Weight_kg", "Order_Weight_kg", "Net_Cut_Weight_kg",
+        "Net_Cut_Length_m", "Total_Order_Length_m", "Unit_Price", "Total_Price",
+    ] if n in col_idx}
+    _1dp_fmts = {col_idx[n] for n in ["Utilisation_pct"] if n in col_idx}
+
+    for row in ws.iter_rows(min_row=2, max_row=current_row - 1):
+        for cell in row:
+            ci = cell.column
+            if ci in _int_fmts:
+                cell.number_format = FMT_INT
+            elif ci in _2dp_fmts:
+                cell.number_format = FMT_2DP
+            elif ci in _1dp_fmts:
+                cell.number_format = FMT_1DP
+
+    # ── Grand total row ───────────────────────────────────────────────────
+    # SUBTOTAL(9,...) over the entire body automatically skips nested SUBTOTALs.
+    grand_row = current_row
+    # Leave col A blank so this row does not appear in the Material_Type filter.
+    ws.cell(grand_row, col_idx["Description"]).value = "GRAND TOTAL"
+    for col_name in NUMERIC_COLS:
+        letter = cl(col_name)
+        c = ws.cell(grand_row, col_idx[col_name])
+        c.value = f"=SUBTOTAL(9,{letter}2:{letter}{grand_row - 1})"
+        c.number_format = "0.00"
+    for ci in range(1, n_cols + 1):
+        cell = ws.cell(grand_row, ci)
+        cell.fill = tot_fill
+        cell.font = tot_font
+    ws.cell(grand_row, col_idx["Description"]).alignment = Alignment(
+        horizontal="left", vertical="center", indent=1
+    )
+    ws.row_dimensions[grand_row].height = 20
+
+    # ── Thin borders on every cell ────────────────────────────────────────
+    _all_border = Border(left=_thin, right=_thin, top=_thin, bottom=_thin)
+    for r in range(1, grand_row + 1):
+        for ci in range(1, n_cols + 1):
+            ws.cell(r, ci).border = _all_border
+
+    # ── Medium-border frame around the 4 order columns on every row ───────
+    # A vertical "wall" on the left of Order_Qty and right of Total_Price
+    # makes the order block visually distinct across the whole sheet.
+    for r in range(1, grand_row + 1):
+        for ci in range(_ord_ci_start, _ord_ci_end + 1):
+            c   = ws.cell(r, ci)
+            lft = _medium if ci == _ord_ci_start else c.border.left
+            rgt = _medium if ci == _ord_ci_end   else c.border.right
+            c.border = Border(left=lft, right=rgt,
+                              top=c.border.top, bottom=c.border.bottom)
+
+    # Freeze header row; autofilter over header only (Excel extends it downward)
+    ws.freeze_panes = "A2"
+    ws.auto_filter.ref = f"A1:{get_column_letter(n_cols)}1"
+
+    # Column widths
+    for col_cells in ws.columns:
+        max_len = max(
+            len(str(c.value)) if c.value is not None else 0 for c in col_cells
+        )
+        ws.column_dimensions[col_cells[0].column_letter].width = min(max_len + 2, 60)
+
+
+def _write_price_sheet(
+    wb: Workbook,
+    agg_ws_title: str,
+    agg_all_headers: list[str],
+    revision: str,
+) -> None:
+    """Write a formatted PRICE_SHEET summary tab with one SUMIF row per material group."""
+    ws = wb.create_sheet(title=f"PRICE_SHEET_{revision}")
+
+    # AGG sheet reference (quote if name contains spaces)
+    agg_ref = f"'{agg_ws_title}'" if " " in agg_ws_title else agg_ws_title
+
+    def _acol(name: str) -> str:
+        return get_column_letter(agg_all_headers.index(name) + 1)
+
+    mt_c = _acol("Material_Type")
+    an_c = _acol("Article_Number")   # used to exclude separator/subtotal rows
+    tw_c = _acol("Total_Weight_kg")
+    ow_c = _acol("Order_Weight_kg")
+    tp_c = _acol("Total_Price")
+
+    # SUMIFS helper: sums col_letter only for real data rows.
+    # Separator & subtotal rows have Article_Number = "" → "<>" excludes them.
+    # SUMIFS natively skips non-numeric cells, so no IF(ISNUMBER) wrapper needed.
+    # Bounded range 2-2000 avoids full-column overhead.
+    def _sum_data(crit: str, col_letter: str) -> str:
+        return (
+            f"=IFERROR(SUMIFS("
+            f"{agg_ref}!${col_letter}$2:${col_letter}$2000,"
+            f"{agg_ref}!${mt_c}$2:${mt_c}$2000,{crit},"
+            f"{agg_ref}!${an_c}$2:${an_c}$2000,\"<>\"),0)"
+        )
+
+    # SUMIFS on Total_Price column: sums only rows where Material_Type matches
+    # and Article_Number is non-empty (excludes separator/subtotal rows).
+    # SUMIFS ignores non-numeric cells (e.g. "" from unpopulated Unit_Price rows)
+    # without erroring, so no IF(ISNUMBER) wrapper needed.
+    def _sum_total_price(crit: str) -> str:
+        return (
+            f"=IFERROR(SUMIFS("
+            f"{agg_ref}!${tp_c}$2:${tp_c}$2000,"
+            f"{agg_ref}!${mt_c}$2:${mt_c}$2000,{crit},"
+            f"{agg_ref}!${an_c}$2:${an_c}$2000,\"<>\"),0)"
+        )
+
+    # ── Shared styles ──────────────────────────────────────────────────────
+    _thin    = Side(style="thin")
+    _medium  = Side(style="medium")
+    _box     = Border(top=_thin,   bottom=_thin,   left=_thin,   right=_thin)
+    _box_hd  = Border(top=_medium, bottom=_medium, left=_thin,   right=_thin)
+
+    _ctr = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    _lft = Alignment(horizontal="left",   vertical="center", wrap_text=True)
+    _rgt = Alignment(horizontal="right",  vertical="center")
+
+    _f_title  = Font(bold=True, size=13)
+    _f_italic = Font(italic=True, size=10)
+    _f_bold   = Font(bold=True)
+    _f_hdr2   = Font(bold=True, size=10, color="FFFFFFFF")
+    _f_tot    = Font(bold=True, size=11)
+
+    _fill_hdr1   = PatternFill("solid", fgColor="FFD9E1F2")  # light blue
+    _fill_hdr2   = PatternFill("solid", fgColor="FF1F3864")  # dark navy
+    _fill_blue   = PatternFill("solid", fgColor="FFBDD7EE")  # input cell
+    _fill_yellow = PatternFill("solid", fgColor="FFFFFF00")  # order weight
+    _fill_total  = PatternFill("solid", fgColor="FFFFF2CC")  # grand total
+    _fill_alt    = [
+        PatternFill("solid", fgColor="FFF2F2F2"),  # light grey
+        PatternFill("solid", fgColor="FFFFFFFF"),  # white
+    ]
+
+    NUM = "#,##0.00"
+
+    # ── Column widths ──────────────────────────────────────────────────────
+    for col, w in zip("ABCDEF", [5, 54, 16, 16, 16, 20]):
+        ws.column_dimensions[col].width = w
+
+    # ── Rows 1-2: Title block ──────────────────────────────────────────────
+    ws.append(["Price sheet of Hangers and Supports Material \u2013 General Piping", None, None, None, None, None])
+    ws.merge_cells("A1:F1")
+    ws["A1"].font = _f_title
+    ws["A1"].alignment = _lft
+    ws.row_dimensions[1].height = 24
+
+    ws.append([f"BOM revision: {revision}", None, None, None, None, None])
+    ws.merge_cells("A2:F2")
+    ws["A2"].font = _f_italic
+    ws["A2"].alignment = _lft
+
+    # ── Row 3: subtitle / reference documents ─────────────────────────────
+    _subtitle = (
+        'based on \u201cTSD General Piping Hangers and Supports Material\u201d'
+        ' and BOM \u2013 Hangers and Supports Material \u2013 General Piping \u2013 Overall'
+    )
+    ws.append([_subtitle, None, None, None, None, None])
+    ws.merge_cells("A3:F3")
+    ws["A3"].font = _f_italic
+    ws["A3"].alignment = _lft
+    # ── Row 4: blank ───────────────────────────────────────────────────────
+    ws.append([None])
+
+    # ── Row 5: Supplier / Currency ─────────────────────────────────────────
+    ws.append(["\u25ba  Fields highlighted in light blue are to be filled in by the supplier.", None, None, None, "Currency:", None])
+    ws["A5"].font = Font(italic=True, size=10)
+    ws["E5"].font = _f_bold
+    ws["F5"].value = "EUR"
+    ws["F5"].fill  = _fill_blue
+    ws["F5"].alignment = _ctr
+
+    # ── Row 6: blank ───────────────────────────────────────────────────────
+    ws.append([None])
+
+    # ── Row 7: Supplier name (user fills B7) ───────────────────────────────
+    ws.append(["Supplier:", None, None, None, None, None])
+    ws["A7"].font = _f_bold
+    ws.merge_cells("B7:D7")
+    ws["B7"].fill = _fill_blue
+
+    # ── Row 8: blank ───────────────────────────────────────────────────────
+    ws.append([None])
+
+    # ── Row 9: Column header top band ─────────────────────────────────────
+    ws.append([None, None, "Material", "Spare", "Material for Order", None])
+    ws.merge_cells("E9:F9")
+    ws.row_dimensions[9].height = 36
+    for col in ["C", "D", "E", "F"]:
+        c = ws[f"{col}9"]
+        c.fill = _fill_hdr1
+        c.font = Font(bold=True, size=9, color="FF1F3864")
+        c.alignment = _ctr
+        c.border = _box
+
+    # ── Row 10: Column header bottom band (dark navy) ──────────────────────
+    ws.append(["#", "DESCRIPTION", "WEIGHT\n[kg]", "WEIGHT\n[kg]", "WEIGHT\n[kg]", "Total Price\n[EUR]"])
+    ws.row_dimensions[10].height = 34
+    for col in "ABCDEF":
+        c = ws[f"{col}10"]
+        c.fill = _fill_hdr2
+        c.font = _f_hdr2
+        c.alignment = _ctr
+        c.border = _box_hd
+
+    # ── Group rows 11-20 ───────────────────────────────────────────────────
+    GROUPS = [
+        ("01 Primary Supports",         "Primary Supports"),
+        ("02 Brackets Consoles",        "Brackets / Consoles  (Secondary Supports)"),
+        ("03 Bolts Screws Nuts",        "Bolts, Screws and Nuts"),
+        ("04 Beam Sections",            "Beam Sections"),
+        ("05 Installation Material",    "Installation Material"),
+        ("06 Primary Supports C5",      "Primary Supports \u2014 Corrosion Category C5"),
+        ("07 Brackets Consoles C5",     "Brackets / Consoles \u2014 Corrosion Category C5"),
+        ("08 Bolts Screws Nuts C5",     "Bolts, Screws and Nuts \u2014 Corrosion Category C5"),
+        ("09 Beam Sections C5",         "Beam Sections \u2014 Corrosion Category C5"),
+        ("10 Installation Material C5", "Installation Material \u2014 Corrosion Category C5"),
+    ]
+
+    FIRST_ROW = 11
+    for idx, (mt_key, label) in enumerate(GROUPS):
+        r    = FIRST_ROW + idx
+        fill = _fill_alt[idx % 2]
+        crit = f'"{mt_key}"'
+
+        bom_w = _sum_data(crit, tw_c)
+        ord_w = _sum_data(crit, ow_c)
+        spr_w = f"=E{r}-C{r}"
+        tot_p = _sum_total_price(crit)
+
+        ws.append([f"{idx + 1:02d}", label, bom_w, spr_w, ord_w, tot_p])
+        ws.row_dimensions[r].height = 18
+
+        aligns = [_ctr, _lft, _rgt, _rgt, _rgt, _rgt]
+        for col_letter, align in zip("ABCDEF", aligns):
+            c = ws[f"{col_letter}{r}"]
+            c.fill = fill
+            c.alignment = align
+            c.border = _box
+        for col_letter in "CDEF":
+            ws[f"{col_letter}{r}"].number_format = NUM
+
+        ws[f"E{r}"].font = _f_bold
+
+    # ── Grand Total row ────────────────────────────────────────────────────
+    LAST_GRP  = FIRST_ROW + len(GROUPS) - 1
+    GT_ROW    = LAST_GRP + 1
+
+    ws.append([
+        None,
+        "GRAND TOTAL PRICE FOR MATERIAL SUPPLY",
+        f"=SUM(C{FIRST_ROW}:C{LAST_GRP})",
+        f"=E{GT_ROW}-C{GT_ROW}",
+        f"=SUM(E{FIRST_ROW}:E{LAST_GRP})",
+        f"=SUM(F{FIRST_ROW}:F{LAST_GRP})",
+    ])
+    ws.row_dimensions[GT_ROW].height = 22
+    for col_letter, align in zip("ABCDEF", [_ctr, _lft, _rgt, _rgt, _rgt, _rgt]):
+        c = ws[f"{col_letter}{GT_ROW}"]
+        c.fill = _fill_total
+        c.font = _f_tot
+        c.alignment = align
+        c.border = _box_hd
+    for col_letter in "CDEF":
+        ws[f"{col_letter}{GT_ROW}"].number_format = NUM
+
+    # ── Blank row ─────────────────────────────────────────────────────────
+    ws.append([None])
+
+    # ── Extra service rows (manual input, price filled by hand) ───────────
+    for svc_label in [
+        "PRE-ASSEMBLY OF SECONDARY SUPPORTS IN SHOP",
+        "TRANSPORTATION SERVICES TO CONSTRUCTION SITE",
+    ]:
+        er = ws.max_row + 1
+        ws.append([None, svc_label, None, None, None, None])
+        ws.merge_cells(f"B{er}:E{er}")
+        ws[f"B{er}"].font = _f_bold
+        ws[f"B{er}"].alignment = _lft
+        ws[f"F{er}"].fill = _fill_blue
+        ws[f"F{er}"].number_format = NUM
+        ws[f"F{er}"].alignment = _rgt
+        ws.row_dimensions[er].height = 18
+        for col_letter in "ABCDEF":
+            ws[f"{col_letter}{er}"].border = _box
+
+    ws.freeze_panes = f"A{FIRST_ROW}"
+
+
 def export_aggregated_to_excel(db_path: Path, out_xlsx: Path | None = None, revision: str = "REV0") -> Path:
     if not db_path.exists():
         raise FileNotFoundError(f"DB file not found: {db_path}")
@@ -1172,8 +1647,12 @@ def export_aggregated_to_excel(db_path: Path, out_xlsx: Path | None = None, revi
             ws.column_dimensions[col_cells[0].column_letter].width = min(max_len + 2, 60)
 
     wb = Workbook()
-
-    # Raw sheet first
+    # Force Excel to fully recalculate all formulas on open.
+    # openpyxl writes formula cells with no cached value (default 0), so without
+    # this flag Excel may display stale 0s for cells that depend on other formula cells.
+    wb.calculation.calcMode = "auto"
+    wb.calculation.fullCalcOnLoad = True
+    # Create AGG first via the active sheet, then create PRICE_SHEET and move it to front.
     if has_raw:
         ws_raw = wb.active
         ws_raw.title = raw_table
@@ -1183,7 +1662,15 @@ def export_aggregated_to_excel(db_path: Path, out_xlsx: Path | None = None, revi
         ws_agg = wb.active
         ws_agg.title = table
 
-    _write_sheet(ws_agg, agg_columns, agg_rows)
+    _write_agg_sheet(ws_agg, agg_columns, agg_rows)
+    # Build the same column order that _write_agg_sheet uses so SUMIF formulas
+    # in PRICE_SHEET reference the correct AGG columns.
+    _ps_shift = ("Order_Qty", "Order_Weight_kg")
+    _ps_base  = [c for c in agg_columns if c not in _ps_shift]
+    _ps_cols  = _ps_base + list(_ps_shift) + ["Unit_Price", "Total_Price"]
+    _write_price_sheet(wb, ws_agg.title, _ps_cols, revision)
+    # Move PRICE_SHEET to front so it opens first
+    wb.move_sheet(f"PRICE_SHEET_{revision}", offset=-len(wb.sheetnames) + 1)
 
     _write_validation_sheet(wb, validation_checks)
     wb.save(out_xlsx)

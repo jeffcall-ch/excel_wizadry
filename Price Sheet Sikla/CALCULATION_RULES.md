@@ -148,3 +148,86 @@ Order_Weight_kg = Total_Weight_kg × (Order_Qty / Qty)
 | `_SPARE_PCT["03 Bolts Screws Nuts"]` | `0.15` | 15% |
 | `_SPARE_PCT["05 Installation Material"]` | `0.15` | 15% for end caps etc. |
 | C5 variants (06/07/08/10) | same as base | identical spare rules apply |
+| Channel rows in 04/09 | `0.10` | 10% spare (hardcoded, not in `_SPARE_PCT`) |
+
+---
+
+## Known Source Data Quirks
+
+| Article | Description | Issue |
+|---------|-------------|-------|
+| 160803 | Corner Bracket EW 41 | `Total_Weight_kg` is NULL in source Excel — no weight data available |
+| 190775 | Resin Anchor Rod VMZ-A 80 M12-25/125 | `Weight_kg` stored as `0.13` but actual unit weight is `~0.128 kg`; `Total_Weight_kg` was computed at higher precision before rounding — V05 WARN expected |
+| 190784 | Resin Anchor Rod VMZ-A 80 M12-50/150 | Same unit-weight rounding as above — V05 WARN expected |
+
+---
+
+## Validation Checks
+
+Run automatically at the end of every `test-run`, `populate`, and `export` command. Results appear in the **VALIDATION** sheet of the output xlsx.
+
+Colour coding: 🟢 PASS · 🔴 FAIL · 🟡 WARN · 🔵 INFO
+
+### Category 1 — Raw Data Integrity
+
+| ID | Level | Check |
+|----|-------|-------|
+| V01 | FAIL | No NULL Article Numbers in raw |
+| V02 | FAIL | No NULL/blank Descriptions in raw |
+| V03 | FAIL | All raw Qty values > 0 |
+| V04 | WARN | No NULL Total_Weight_kg in raw |
+| V05 | WARN | Standard items: `Weight_kg × Qty = Total_Weight_kg` (tolerance ±0.02 kg). Cut-length rows excluded — `Weight_kg` is linear density there, not per-piece weight. Source rounding may trigger this on a small number of rows. |
+| V06 | FAIL | `Cut_Length_mm > 0` whenever present |
+
+### Category 2 — Classification Completeness
+
+| ID | Level | Check |
+|----|-------|-------|
+| V07 | FAIL | All raw article numbers are present in the aggregated output |
+| V08 | FAIL | No unexpected article numbers appear in the aggregated output |
+
+### Category 3 — Aggregation Fidelity
+
+| ID | Level | Check |
+|----|-------|-------|
+| V09 | FAIL | For no-cut-length items: `AGG.Qty = SUM(raw Qty)` per `Article + Coating` |
+| V10 | FAIL | For FFD/tape items: `AGG.Net_Cut_Length_m × 1000 = SUM(raw Qty × Cut_Length_mm)` |
+| V11 | FAIL | Grand total net weight: raw `SUM(Total_Weight_kg)` ≈ AGG `SUM(Total_Weight_kg)` (threshold < 1 kg) |
+
+### Category 4 — Spare / Order Logic
+
+| ID | Level | Check |
+|----|-------|-------|
+| V12 | FAIL | `Order_Qty >= Qty` for every row |
+| V13 | FAIL | `Spare = Order_Qty − Qty` wherever `Spare` is not NULL |
+| V14 | WARN | All rows in groups with a spare rule (01–03, 05–08, 10) have `Spare` set |
+| V15 | FAIL | `Utilisation_pct <= 100%` for all FFD/tape rows |
+| V16 | FAIL | `Total_Order_Length_m >= Net_Cut_Length_m` for FFD/tape rows |
+| V17 | FAIL | `Order_Weight_kg >= Net_Cut_Weight_kg` for FFD/tape rows |
+
+### Category 5 — Weight Sanity
+
+| ID | Level | Check |
+|----|-------|-------|
+| V18 | FAIL | No negative `Total_Weight_kg` in aggregated output |
+| V19 | FAIL | No negative `Order_Weight_kg` in aggregated output |
+| V20 | FAIL | For percentage-spare items: `Order_Weight_kg / Order_Qty ≈ Total_Weight_kg / Qty` (tolerance ±0.05 kg/unit) |
+| V21 | WARN | No NULL `Total_Weight_kg` in aggregated output |
+
+### Category 6 — AGG Data Quality
+
+| ID | Level | Check |
+|----|-------|-------|
+| V22 | FAIL | No duplicate `(Article_Number, Coating, Cut_Length_mm, Remarks)` keys |
+| V23 | WARN | No zero-Qty rows in aggregated output |
+| V24 | FAIL | Every row has a non-empty `Spare_Calculation_Rule` |
+| V25 | WARN | 04/09 Beam Section rows that are neither FFD cut items nor channel items have a spare assigned |
+
+### Category 7 — Summary (INFO only)
+
+| ID | Content |
+|----|----------|
+| V26 | Raw row count vs AGG row count |
+| V27 | Grand totals: Net Qty / Spare / Order Qty |
+| V28 | Grand totals: Net Weight (kg) / Order Weight (kg) |
+| V29 | Per-material-type breakdown table: rows, net qty, spare, order qty, net weight, order weight |
