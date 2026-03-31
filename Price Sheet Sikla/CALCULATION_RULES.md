@@ -63,7 +63,7 @@ Each raw row is routed to one of six paths before quantity/weight summation:
 Cut-length items with `"threaded rod"` in description. Uses **First Fit Decreasing (FFD) packing** algorithm.
 
 - Bar length: parsed from description suffix `/NNNN` (e.g. `M10/2000` → 2000 mm physical)
-- Effective bar length: `physical_mm − 100 mm` (thread engagement allowance)
+- Effective bar length: `physical_mm` (no end-loss scrap)
 - Kerf: `3 mm` per cut
 - `Qty` = `ceil(net_cut_mm / physical_mm)` — naive minimum bars
 - FFD packs pieces into effective bars; result = minimum bar count
@@ -87,7 +87,7 @@ Cut-length items with `"threaded rod"` in description. Uses **First Fit Decreasi
 
 Items with `"beam section ms"` or `"beam section tp"` in description and a cut length. Uses **First Fit Decreasing (FFD) packing**.
 
-- Physical bar: `6000 mm`; effective bar: `5900 mm` (`−100 mm` end-loss)
+- Physical bar: `6000 mm`; effective bar: `6000 mm` (no end-loss scrap)
 - Kerf: `3 mm` per cut
 - `Qty` = `ceil(net_cut_mm / 6000)` — naive minimum bars
 - `Order_Qty` = `ceil(ffd_bar_count × 1.10)` — 10% buffer, rounded up to whole bars
@@ -140,7 +140,7 @@ Order_Weight_kg = Total_Weight_kg × (Order_Qty / Qty)
 | `_KERF_MM` | `3` | Saw-cut kerf per cut |
 | `_ORDER_BUFFER` | `1.10` | 10% workshop safety buffer for FFD items |
 | `_BEAM_PHYSICAL_MM` | `6000` | Beam bar physical length (mm) |
-| `_BEAM_BAR_MM` | `5900` | Beam effective cut length (mm) |
+| `_BEAM_BAR_MM` | `6000` | Beam effective cut length (mm) — no end-loss |
 | `_TAPE_ROLL_M` | `10` | Tape roll length (m) |
 | `_TAPE_SPARE_FACTOR` | `1.50` | 50% spare factor for tape |
 | `_SPARE_PCT["01 Primary Supports"]` | `0.05` | 5% for non-rod primary support items |

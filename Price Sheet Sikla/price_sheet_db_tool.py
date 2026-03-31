@@ -51,14 +51,15 @@ MATERIAL_TYPE_RULES: list[dict] = [
 _KERF_MM: int = 3            # saw-cut allowance per cut
 _ORDER_BUFFER: float = 1.1   # 10% workshop safety buffer
 
-# Beam sections: 6000mm physical, 5900mm effective
+# Beam sections: 6000mm physical, no end-loss scrap
 _BEAM_PHYSICAL_MM: int = 6000
-_BEAM_BAR_MM: int = 5900     # _BEAM_PHYSICAL_MM - 100
+_BEAM_BAR_MM: int = 6000     # = _BEAM_PHYSICAL_MM (no end-loss)
 
 # Spare percentages by material group — ceil(qty * pct) added on top of net qty.
 # Groups 04/09 Beam Sections use FFD-based spare; not listed here.
-# Group 01 threaded rods use FFD-based spare; non-rod 01 items use 5% below.
+# Group 01 threaded rods use FFD-based spare; non-rod 01 items use 5% rule below.
 # Group 05 glass fabric tape uses _TAPE_SPARE_FACTOR; other 05 items (end caps) use 15% below.
+# For 5% groups: spare = 0 when qty < 10; spare = ceil(qty * 0.05) when qty >= 10.
 _SPARE_PCT: dict[str, float] = {
     "01 Primary Supports":         0.05,
     "02 Brackets Consoles":        0.05,
@@ -90,6 +91,18 @@ def _ffd_bars(pieces: list[int], effective_bar_mm: int) -> int:
 def _calc_ordered_bars(num_bars: int, physical_bar_mm: int) -> int:
     """Apply 10% buffer then round up to whole bars."""
     return math.ceil(num_bars * physical_bar_mm * _ORDER_BUFFER / physical_bar_mm)
+
+
+def _spare_for_pct(qty: int, pct: float) -> int:
+    """Compute spare quantity for a given spare percentage.
+    For 5% groups: 0 spare when qty < 10; ceil(qty * 0.05) otherwise.
+    For all other percentages: ceil(qty * pct) unconditionally.
+    """
+    if pct == 0.0 or qty == 0:
+        return 0
+    if pct == 0.05:
+        return 0 if qty < 10 else math.ceil(qty * pct)
+    return math.ceil(qty * pct)
 
 
 def _beam_ffd_bars(pieces: list[int]) -> int:
@@ -457,14 +470,16 @@ def populate_aggregated_table(db_path: Path, revision: str = "REV0") -> int:
                 _sp = 0.10
             else:
                 _sp = _SPARE_PCT.get(mat_type, 0.0)
-            spare_n = math.ceil(total_qty * _sp) if _sp and total_qty else 0
+            spare_n = _spare_for_pct(total_qty, _sp)
             order_qty_v = total_qty + spare_n
             order_weight_v = round(total_weight * order_qty_v / total_qty, 2) if total_weight and total_qty else total_weight
             _pct = int(round(_sp * 100))
-            spare_calc_rule = (
-                f"{_pct}% spare: ceil({total_qty} \u00d7 {_sp}) = {spare_n}"
-                if _sp else "No spare"
-            )
+            if not _sp:
+                spare_calc_rule = "No spare"
+            elif _sp == 0.05 and total_qty < 10:
+                spare_calc_rule = f"5% spare: qty {total_qty} < 10 → 0 spare"
+            else:
+                spare_calc_rule = f"{_pct}% spare: ceil({total_qty} \u00d7 {_sp}) = {spare_n}"
             aggregated.append({
                 "Article_Number": item_number,
                 "Qty": total_qty,
@@ -474,7 +489,7 @@ def populate_aggregated_table(db_path: Path, revision: str = "REV0") -> int:
                 "Remarks": agg_remarks,
                 "Coating": coating,
                 "Material_Type": mat_type,
-                "Spare": spare_n if spare_n else None,
+                "Spare": spare_n if _sp else None,
                 "Order_Qty": order_qty_v,
                 "Order_Weight_kg": order_weight_v,
                 "Spare_Calculation_Rule": spare_calc_rule,
@@ -485,14 +500,16 @@ def populate_aggregated_table(db_path: Path, revision: str = "REV0") -> int:
             non_null_w = [r["Total_Weight_kg"] for r in group if r["Total_Weight_kg"] is not None]
             total_weight = round(sum(non_null_w), 2) if non_null_w else None
             _sp2 = _SPARE_PCT.get("02 Brackets Consoles", 0.0)
-            spare_n2 = math.ceil(total_qty * _sp2) if _sp2 and total_qty else 0
+            spare_n2 = _spare_for_pct(total_qty, _sp2)
             order_qty_v2 = total_qty + spare_n2
             order_weight_v2 = round(total_weight * order_qty_v2 / total_qty, 2) if total_weight and total_qty else total_weight
             _pct2 = int(round(_sp2 * 100))
-            spare_calc_rule2 = (
-                f"{_pct2}% spare: ceil({total_qty} \u00d7 {_sp2}) = {spare_n2}"
-                if _sp2 else "No spare"
-            )
+            if not _sp2:
+                spare_calc_rule2 = "No spare"
+            elif _sp2 == 0.05 and total_qty < 10:
+                spare_calc_rule2 = f"5% spare: qty {total_qty} < 10 → 0 spare"
+            else:
+                spare_calc_rule2 = f"{_pct2}% spare: ceil({total_qty} \u00d7 {_sp2}) = {spare_n2}"
             aggregated.append({
                 "Article_Number": item_number,
                 "Qty": total_qty,
@@ -502,7 +519,7 @@ def populate_aggregated_table(db_path: Path, revision: str = "REV0") -> int:
                 "Remarks": None,
                 "Coating": coating,
                 "Material_Type": "02 Brackets Consoles",
-                "Spare": spare_n2 if spare_n2 else None,
+                "Spare": spare_n2 if _sp2 else None,
                 "Order_Qty": order_qty_v2,
                 "Order_Weight_kg": order_weight_v2,
                 "Spare_Calculation_Rule": spare_calc_rule2,
@@ -547,7 +564,7 @@ def populate_aggregated_table(db_path: Path, revision: str = "REV0") -> int:
 
         for (item_number, coating), entry in rod_groups.items():
             phys_mm = entry["physical_bar_mm"]
-            eff_mm = phys_mm - 100
+            eff_mm = phys_mm  # no end-loss scrap
             pieces = sorted(entry["pieces"], reverse=True)
             if not pieces:
                 continue
@@ -664,16 +681,20 @@ def populate_aggregated_table(db_path: Path, revision: str = "REV0") -> int:
                 else:
                     _sp = _SPARE_PCT.get(material_type, 0.0)
                 _base_qty = row_dict["Qty"] or 0
-                _spare_n = math.ceil(_base_qty * _sp) if _sp and _base_qty else 0
-                spare = _spare_n if _spare_n else None
+                _spare_n = _spare_for_pct(_base_qty, _sp)
+                spare = _spare_n if _sp else None
                 order_qty = _base_qty + _spare_n
                 _w = row_dict["Total_Weight_kg"]
                 order_weight = round(_w * order_qty / _base_qty, 2) if _w and _base_qty else _w
                 _pct = int(round(_sp * 100))
-                spare_calc_rule = (
-                    f"{_pct}% spare: ceil({_base_qty} \u00d7 {_sp}) = {_spare_n}"
-                    if _sp else "No spare"
-                )
+                if not _sp:
+                    spare_calc_rule = "No spare"
+                elif _sp == 0.05 and _base_qty < 10:
+                    spare_calc_rule = f"5% spare: qty {_base_qty} < 10 → 0 spare"
+                else:
+                    spare_calc_rule = (
+                        f"{_pct}% spare: ceil({_base_qty} \u00d7 {_sp}) = {_spare_n}"
+                    )
             # Fold Cut_Length_mm into Remarks; the column is dropped from AGG schema.
             _cut = row_dict["Cut_Length_mm"]
             _base_remark = row_dict["Remarks"]
@@ -1429,6 +1450,7 @@ def _write_price_sheet(
         PatternFill("solid", fgColor="FFF2F2F2"),  # light grey
         PatternFill("solid", fgColor="FFFFFFFF"),  # white
     ]
+    _fill_red    = PatternFill("solid", fgColor="FFFF4444")  # red - reminder to verify/update
 
     NUM = "#,##0.00"
 
@@ -1443,59 +1465,56 @@ def _write_price_sheet(
     ws["A1"].alignment = _lft
     ws.row_dimensions[1].height = 24
 
-    ws.append([f"BOM revision: {revision}", None, None, None, None, None])
-    ws.merge_cells("A2:F2")
-    ws["A2"].font = _f_italic
-    ws["A2"].alignment = _lft
-
-    # ── Row 3: subtitle / reference documents ─────────────────────────────
+    # ── Row 2: subtitle / reference documents ─────────────────────────────
     _subtitle = (
-        'based on \u201cTSD General Piping Hangers and Supports Material\u201d'
+        'Based on \u201cTSD General Piping Hangers and Supports Material\u201d'
         ' and BOM \u2013 Hangers and Supports Material \u2013 General Piping \u2013 Overall'
     )
     ws.append([_subtitle, None, None, None, None, None])
-    ws.merge_cells("A3:F3")
-    ws["A3"].font = _f_italic
-    ws["A3"].alignment = _lft
-    # ── Row 4: blank ───────────────────────────────────────────────────────
+    ws.merge_cells("A2:F2")
+    ws["A2"].font = _f_italic
+    ws["A2"].alignment = _lft
+    # ── Row 3: blank ───────────────────────────────────────────────────────
     ws.append([None])
 
-    # ── Row 5: Supplier / Currency ─────────────────────────────────────────
+    # ── Row 4: Supplier / Currency ─────────────────────────────────────────
     ws.append(["\u25ba  Fields highlighted in light blue are to be filled in by the supplier.", None, None, None, "Currency:", None])
-    ws["A5"].font = Font(italic=True, size=10)
-    ws["E5"].font = _f_bold
-    ws["F5"].value = "EUR"
-    ws["F5"].fill  = _fill_blue
-    ws["F5"].alignment = _ctr
+    ws["A4"].font = Font(italic=True, size=10)
+    ws["E4"].font = _f_bold
+    ws["F4"].value = "EUR"
+    ws["F4"].fill  = _fill_blue
+    ws["F4"].alignment = _ctr
 
-    # ── Row 6: blank ───────────────────────────────────────────────────────
+    # ── Row 5: blank ───────────────────────────────────────────────────────
     ws.append([None])
 
-    # ── Row 7: Supplier name (user fills B7) ───────────────────────────────
+    # ── Row 6: Supplier name (red = reminder to verify before sending) ─────
     ws.append(["Supplier:", None, None, None, None, None])
-    ws["A7"].font = _f_bold
-    ws.merge_cells("B7:D7")
-    ws["B7"].fill = _fill_blue
+    ws["A6"].font = _f_bold
+    ws.merge_cells("B6:D6")
+    ws["B6"].value = "SIKLA UK LTD"
+    ws["B6"].fill = _fill_red
 
-    # ── Row 8: blank ───────────────────────────────────────────────────────
+    # ── Row 7: blank ───────────────────────────────────────────────────────
     ws.append([None])
 
-    # ── Row 9: Column header top band ─────────────────────────────────────
-    ws.append([None, None, "Material", "Spare", "Material for Order", None])
-    ws.merge_cells("E9:F9")
-    ws.row_dimensions[9].height = 36
+    # ── Row 8: Column header top band ─────────────────────────────────────
+    ws.append([None, None, "Material as per BoM Rev0.0", "Spare", "Material for Order", None])
+    ws.merge_cells("E8:F8")
+    ws.row_dimensions[8].height = 48
     for col in ["C", "D", "E", "F"]:
-        c = ws[f"{col}9"]
+        c = ws[f"{col}8"]
         c.fill = _fill_hdr1
         c.font = Font(bold=True, size=9, color="FF1F3864")
         c.alignment = _ctr
         c.border = _box
+    ws["C8"].fill = _fill_red  # red = reminder to update revision when re-generating
 
-    # ── Row 10: Column header bottom band (dark navy) ──────────────────────
+    # ── Row 9: Column header bottom band (dark navy) ───────────────────────
     ws.append(["#", "DESCRIPTION", "WEIGHT\n[kg]", "WEIGHT\n[kg]", "WEIGHT\n[kg]", "Total Price\n[EUR]"])
-    ws.row_dimensions[10].height = 34
+    ws.row_dimensions[9].height = 34
     for col in "ABCDEF":
-        c = ws[f"{col}10"]
+        c = ws[f"{col}9"]
         c.fill = _fill_hdr2
         c.font = _f_hdr2
         c.alignment = _ctr
@@ -1515,7 +1534,7 @@ def _write_price_sheet(
         ("10 Installation Material C5", "Installation Material \u2014 Corrosion Category C5"),
     ]
 
-    FIRST_ROW = 11
+    FIRST_ROW = 10
     for idx, (mt_key, label) in enumerate(GROUPS):
         r    = FIRST_ROW + idx
         fill = _fill_alt[idx % 2]
@@ -1567,6 +1586,7 @@ def _write_price_sheet(
 
     # ── Extra service rows (manual input, price filled by hand) ───────────
     for svc_label in [
+        "PROJECT DISCOUNT 5%",
         "PRE-ASSEMBLY OF SECONDARY SUPPORTS IN SHOP",
         "TRANSPORTATION SERVICES TO CONSTRUCTION SITE",
     ]:
