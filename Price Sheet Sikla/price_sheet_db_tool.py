@@ -254,14 +254,15 @@ def _find_header_row_in_df(df: "pd.DataFrame") -> int:
 
 
 def import_total_qty_to_sqlite(
-    excel_path: Path, revision: str = "REV0", db_path: Path | None = None
+    excel_path: Path, revision: str = "REV0", db_path: Path | None = None,
+    sheet_name: str = "Total Qty",
 ) -> Path:
     if not excel_path.exists():
         raise FileNotFoundError(f"Excel file not found: {excel_path}")
 
     raw_df = pd.read_excel(
         excel_path,
-        sheet_name="Total Qty",
+        sheet_name=sheet_name,
         header=None,
         engine="calamine",
     )
@@ -347,8 +348,11 @@ def populate_aggregated_table(db_path: Path, revision: str = "REV0") -> int:
         if cur.fetchone() is None:
             raise ValueError(f"Table {raw_table} does not exist.")
 
+        # Coating column is optional — not all source files include it.
+        _raw_cols = {r[1] for r in cur.execute(f"PRAGMA table_info({sql_quote_identifier(raw_table)})")}
+        _coating_expr = "Coating" if "Coating" in _raw_cols else "NULL"
         cur.execute(
-            f"SELECT Item_Number, Qty, Description, Cut_Length_mm, Total_Weight_kg, Remarks, Coating "
+            f"SELECT Item_Number, Qty, Description, Cut_Length_mm, Total_Weight_kg, Remarks, {_coating_expr} "
             f"FROM {sql_quote_identifier(raw_table)}"
         )
         raw_rows = cur.fetchall()
@@ -793,6 +797,10 @@ def _run_validation_checks(
     cur = conn.cursor()
     results: list[dict] = []
 
+    # Coating column is optional in the raw table — substitute NULL when absent.
+    _raw_cols = {r[1] for r in cur.execute(f"PRAGMA table_info({rt})")}
+    _r_coating = "r.Coating" if "Coating" in _raw_cols else "NULL"
+
     def _chk(check_id: str, cat: str, name: str, rows: list, level: str = "FAIL") -> None:
         results.append({
             "id": check_id, "category": cat, "name": name,
@@ -868,7 +876,7 @@ def _run_validation_checks(
                         a.Qty - SUM(r.Qty) AS diff
                  FROM {at} a
                  JOIN {rt} r ON r.Item_Number = a.Article_Number
-                     AND r.Coating IS a.Coating
+                     AND {_r_coating} IS a.Coating
                  WHERE a.Net_Cut_Length_m IS NULL
                    AND (a.Remarks IS NULL OR a.Remarks NOT LIKE '%cut: % mm%')
                  GROUP BY a.Article_Number, a.Coating
@@ -886,7 +894,7 @@ def _run_validation_checks(
                               - SUM(r.Qty * r.Cut_Length_mm)) AS diff_mm
                  FROM {at} a
                  JOIN {rt} r ON r.Item_Number = a.Article_Number
-                     AND r.Coating IS a.Coating
+                     AND {_r_coating} IS a.Coating
                      AND r.Cut_Length_mm IS NOT NULL
                  WHERE a.Net_Cut_Length_m IS NOT NULL
                  GROUP BY a.Article_Number, a.Coating
@@ -1402,11 +1410,35 @@ def _write_agg_sheet(ws, columns: list[str], rows: list[tuple]) -> None:
              else 0)
             for c in col_cells
         )
-        ws.column_dimensions[col_cells[0].column_letter].width = min(max_len + 2, 60)
+        # +5 extra chars: +2 padding + ~3 to account for the autofilter dropdown button
+        ws.column_dimensions[col_cells[0].column_letter].width = min(max_len + 5, 60)
 
     # ── Hide columns I to M ───────────────────────────────────────────────
     for _hide_col in ("I", "J", "K", "L", "M"):
         ws.column_dimensions[_hide_col].hidden = True
+
+    # ── Note at the bottom ────────────────────────────────────────────────
+    def _add_note(row: int, text: str) -> None:
+        cell = ws.cell(row, 1, value=text)
+        cell.font = Font(italic=True, color="FF808080")
+        cell.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
+        ws.row_dimensions[row].height = 30
+        ws.merge_cells(
+            start_row=row, start_column=1,
+            end_row=row, end_column=ws.max_column,
+        )
+
+    _add_note(ws.max_row + 2,
+        "Note: The Supplier shall verify all C5 material article numbers and related details, "
+        "and update them as required to ensure full compliance with the C5 corrosion category."
+    )
+    _add_note(ws.max_row + 1,
+        "Spare rules applied:  "
+        "Primary Supports \u2014 5%;  "
+        "Beam Sections, Threaded Rods \u2014 10%;  "
+        "Bolts / Screws / Nuts, Installation Material \u2014 15%;  "
+        "Glass Fabric Tape \u2014 50%."
+    )
 
 
 def _write_price_sheet(
@@ -1414,6 +1446,7 @@ def _write_price_sheet(
     agg_ws_title: str,
     agg_all_headers: list[str],
     revision: str,
+    has_coating: bool = True,
 ) -> None:
     """Write a formatted PRICE_SHEET summary tab with one SUMIF row per material group."""
     ws = wb.create_sheet(title=f"PRICE_SHEET_{revision}")
@@ -1556,12 +1589,15 @@ def _write_price_sheet(
         ("03 Bolts Screws Nuts",        "Bolts, Screws and Nuts"),
         ("04 Beam Sections",            "Beam Sections"),
         ("05 Installation Material",    "Installation Material"),
-        ("06 Primary Supports C5",      "Primary Supports \u2014 Corrosion Category C5"),
-        ("07 Brackets Consoles C5",     "Brackets / Consoles \u2014 Corrosion Category C5"),
-        ("08 Bolts Screws Nuts C5",     "Bolts, Screws and Nuts \u2014 Corrosion Category C5"),
-        ("09 Beam Sections C5",         "Beam Sections \u2014 Corrosion Category C5"),
-        ("10 Installation Material C5", "Installation Material \u2014 Corrosion Category C5"),
     ]
+    if has_coating:
+        GROUPS += [
+            ("06 Primary Supports C5",      "Primary Supports \u2014 Corrosion Category C5"),
+            ("07 Brackets Consoles C5",     "Brackets / Consoles \u2014 Corrosion Category C5"),
+            ("08 Bolts Screws Nuts C5",     "Bolts, Screws and Nuts \u2014 Corrosion Category C5"),
+            ("09 Beam Sections C5",         "Beam Sections \u2014 Corrosion Category C5"),
+            ("10 Installation Material C5", "Installation Material \u2014 Corrosion Category C5"),
+        ]
 
     FIRST_ROW = 10
     for idx, (mt_key, label) in enumerate(GROUPS):
@@ -1671,6 +1707,9 @@ def export_aggregated_to_excel(db_path: Path, out_xlsx: Path | None = None, revi
             raw_rows = cur.fetchall()
             cur.execute(f"PRAGMA table_info({sql_quote_identifier(raw_table)})")
             raw_columns = [r[1] for r in cur.fetchall()]
+            has_coating = "Coating" in raw_columns
+        else:
+            has_coating = True  # no raw table → assume coating may be present
 
         validation_checks = _run_validation_checks(conn, raw_table, table, has_raw)
     finally:
@@ -1717,7 +1756,7 @@ def export_aggregated_to_excel(db_path: Path, out_xlsx: Path | None = None, revi
     _ps_shift = ("Order_Qty", "Order_Weight_kg")
     _ps_base  = [c for c in agg_columns if c not in _ps_shift]
     _ps_cols  = _ps_base + list(_ps_shift) + ["Unit_Price", "Total_Price"]
-    _write_price_sheet(wb, ws_agg.title, _ps_cols, revision)
+    _write_price_sheet(wb, ws_agg.title, _ps_cols, revision, has_coating=has_coating)
     # Move PRICE_SHEET to front so it opens first
     wb.move_sheet(f"PRICE_SHEET_{revision}", offset=-len(wb.sheetnames) + 1)
 
@@ -1737,6 +1776,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     import_parser = subparsers.add_parser("import", help="Import 'Total Qty' from Excel into SQLite.")
     import_parser.add_argument("--excel", required=True, help="Path to source Excel file (.xlsm/.xlsx)")
+    import_parser.add_argument("--sheet", default="Total Qty", help="Sheet name to import (default: 'Total Qty')")
     import_parser.add_argument("--revision", default="REV0", help="Revision tag, e.g. REV0, REV1")
 
     export_parser = subparsers.add_parser("export", help="Export AGGREGATED table from SQLite to Excel.")
@@ -1751,6 +1791,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     test_parser = subparsers.add_parser("test-run", help="Import + populate + export into _test_runs/ with timestamp.")
     test_parser.add_argument("--excel", required=True, help="Path to source Excel file (.xlsm/.xlsx)")
+    test_parser.add_argument("--sheet", default="Total Qty", help="Sheet name to import (default: 'Total Qty')")
     test_parser.add_argument("--revision", default="REV0", help="Revision tag, e.g. REV0, REV1")
 
     return parser
@@ -1761,7 +1802,7 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.command == "import":
-        import_total_qty_to_sqlite(Path(args.excel), revision=args.revision)
+        import_total_qty_to_sqlite(Path(args.excel), revision=args.revision, sheet_name=args.sheet)
         return
 
     if args.command == "export":
@@ -1783,7 +1824,7 @@ def main() -> None:
         db_path = test_dir / f"{timestamp}.sqlite"
         out_xlsx = test_dir / f"{timestamp}_AGGREGATED_DATA_{args.revision}.xlsx"
         print(f"--- Test run: {timestamp} ---")
-        import_total_qty_to_sqlite(excel_path, revision=args.revision, db_path=db_path)
+        import_total_qty_to_sqlite(excel_path, revision=args.revision, db_path=db_path, sheet_name=args.sheet)
         populate_aggregated_table(db_path, revision=args.revision)
         export_aggregated_to_excel(db_path, out_xlsx=out_xlsx, revision=args.revision)
         return
