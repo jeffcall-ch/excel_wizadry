@@ -1372,12 +1372,41 @@ def _write_agg_sheet(ws, columns: list[str], rows: list[tuple]) -> None:
     ws.freeze_panes = "A2"
     ws.auto_filter.ref = f"A1:{get_column_letter(n_cols)}1"
 
-    # Column widths
+    # ── Center-align specified columns ───────────────────────────────────
+    _center_cols = {"B", "D", "E", "G", "H", "I", "J", "K", "L", "N", "O", "P", "Q"}
+    for row in ws.iter_rows(min_row=1, max_row=ws.max_row):
+        for cell in row:
+            if get_column_letter(cell.column) in _center_cols:
+                a = cell.alignment
+                cell.alignment = Alignment(
+                    horizontal="center", vertical=a.vertical,
+                    wrap_text=a.wrap_text, indent=a.indent,
+                )
+
+    # ── Row 1 (header): height 20, vertical center ────────────────────────
+    ws.row_dimensions[1].height = 20
+    for cell in ws[1]:
+        a = cell.alignment
+        cell.alignment = Alignment(
+            horizontal=a.horizontal, vertical="center",
+            wrap_text=a.wrap_text, indent=a.indent,
+        )
+
+    # ── Auto column widths (last step before hiding) ──────────────────────
+    # Skip formula cells — their value is the formula string, not the rendered
+    # display value, which would inflate the width measurement significantly.
     for col_cells in ws.columns:
         max_len = max(
-            len(str(c.value)) if c.value is not None else 0 for c in col_cells
+            (len(str(c.value))
+             if c.value is not None and not (isinstance(c.value, str) and c.value.startswith("="))
+             else 0)
+            for c in col_cells
         )
         ws.column_dimensions[col_cells[0].column_letter].width = min(max_len + 2, 60)
+
+    # ── Hide columns I to M ───────────────────────────────────────────────
+    for _hide_col in ("I", "J", "K", "L", "M"):
+        ws.column_dimensions[_hide_col].hidden = True
 
 
 def _write_price_sheet(
@@ -1455,7 +1484,7 @@ def _write_price_sheet(
     NUM = "#,##0.00"
 
     # ── Column widths ──────────────────────────────────────────────────────
-    for col, w in zip("ABCDEF", [5, 54, 16, 16, 16, 20]):
+    for col, w in zip("ABCDEF", [9, 54, 16, 16, 16, 20]):
         ws.column_dimensions[col].width = w
 
     # ── Rows 1-2: Title block ──────────────────────────────────────────────
