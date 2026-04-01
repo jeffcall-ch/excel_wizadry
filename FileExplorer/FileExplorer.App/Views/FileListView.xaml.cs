@@ -207,6 +207,17 @@ public sealed partial class FileListView : UserControl
         // Single click selects (handled by ListView default behavior)
     }
 
+    private void RightPane_PointerPressed(object sender, PointerRoutedEventArgs e)
+    {
+        if (FindAncestorOfType<TextBox>(e.OriginalSource as DependencyObject) is not null)
+            return;
+
+        if (FileListView_Inner.FocusState == FocusState.Unfocused)
+        {
+            FileListView_Inner.Focus(FocusState.Programmatic);
+        }
+    }
+
     private void FileList_DoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
     {
         if (_currentTab is null) return;
@@ -281,116 +292,156 @@ public sealed partial class FileListView : UserControl
     /// <summary>Sets whether the list is showing search results.</summary>
     public void SetSearchMode(bool isSearch) => _isSearchMode = isSearch;
 
+    /// <summary>Selects and reveals items whose full paths match the provided paths.</summary>
+    public void SelectAndRevealPaths(IReadOnlyList<string> fullPaths)
+    {
+        if (_currentTab is null || fullPaths.Count == 0)
+            return;
+
+        var pathSet = new HashSet<string>(fullPaths, StringComparer.OrdinalIgnoreCase);
+        var matches = _currentTab.Items
+            .Where(item => pathSet.Contains(item.Entry.FullPath))
+            .ToList();
+
+        if (matches.Count == 0)
+            return;
+
+        FileListView_Inner.SelectedItems.Clear();
+        foreach (var match in matches)
+        {
+            FileListView_Inner.SelectedItems.Add(match);
+        }
+
+        var first = matches[0];
+        FileListView_Inner.SelectedItem = first;
+        FileListView_Inner.ScrollIntoView(first, ScrollIntoViewAlignment.Leading);
+        FileListView_Inner.Focus(FocusState.Programmatic);
+    }
+
     private void FileList_RightTapped(object sender, RightTappedRoutedEventArgs e)
     {
-        if (_currentTab is null) return;
-
-        // Get the item under the pointer
-        FileItemViewModel? tappedItem = null;
-        if (e.OriginalSource is FrameworkElement element && element.DataContext is FileItemViewModel item)
+        try
         {
-            tappedItem = item;
-            if (!FileListView_Inner.SelectedItems.Contains(item))
+            if (_currentTab is null) return;
+
+            // Get the item under the pointer
+            FileItemViewModel? tappedItem = null;
+            if (e.OriginalSource is FrameworkElement element && element.DataContext is FileItemViewModel item)
             {
-                FileListView_Inner.SelectedItem = item;
+                tappedItem = item;
+                if (!FileListView_Inner.SelectedItems.Contains(item))
+                {
+                    FileListView_Inner.SelectedItem = item;
+                }
             }
-        }
 
-        if (_currentTab.SelectedItems.Count == 0 && tappedItem is null) return;
+            if (_currentTab.SelectedItems.Count == 0 && tappedItem is null) return;
 
-        var contextPaths = GetContextMenuPaths(tappedItem);
+            var contextPaths = GetContextMenuPaths(tappedItem);
 
-        var flyout = new MenuFlyout();
+            var flyout = new MenuFlyout();
 
-        // Standard items
-        flyout.Items.Add(new MenuFlyoutItem { Text = "Open", Icon = new FontIcon { Glyph = "\uE8E5" } });
-        ((MenuFlyoutItem)flyout.Items[^1]).Click += (_, _) =>
-        {
-            var sel = _currentTab.SelectedItems.FirstOrDefault();
-            if (sel is not null) _ = _currentTab.OpenItemAsync(sel);
-        };
-
-        var folderTarget = ResolveFolderTarget(tappedItem);
-        if (folderTarget is not null && App.MainWindow is MainWindow mainWindow)
-        {
-            flyout.Items.Add(new MenuFlyoutItem { Text = "Open in new tab", Icon = new FontIcon { Glyph = "\uE7C3" } });
+            // Standard items
+            flyout.Items.Add(new MenuFlyoutItem { Text = "Open", Icon = new FontIcon { Glyph = "\uE8E5" } });
             ((MenuFlyoutItem)flyout.Items[^1]).Click += (_, _) =>
             {
-                _ = mainWindow.OpenFolderInNewTabAsync(folderTarget.Entry.FullPath);
+                var sel = _currentTab.SelectedItems.FirstOrDefault();
+                if (sel is not null) _ = _currentTab.OpenItemAsync(sel);
             };
 
-            flyout.Items.Add(new MenuFlyoutItem { Text = "Open in new window", Icon = new FontIcon { Glyph = "\uE8A7" } });
+            var folderTarget = ResolveFolderTarget(tappedItem);
+            if (folderTarget is not null && App.MainWindow is MainWindow mainWindow)
+            {
+                flyout.Items.Add(new MenuFlyoutItem { Text = "Open in new tab", Icon = new FontIcon { Glyph = "\uE7C3" } });
+                ((MenuFlyoutItem)flyout.Items[^1]).Click += (_, _) =>
+                {
+                    _ = mainWindow.OpenFolderInNewTabAsync(folderTarget.Entry.FullPath);
+                };
+
+                flyout.Items.Add(new MenuFlyoutItem { Text = "Open in new window", Icon = new FontIcon { Glyph = "\uE8A7" } });
+                ((MenuFlyoutItem)flyout.Items[^1]).Click += (_, _) =>
+                {
+                    mainWindow.OpenFolderInNewWindow(folderTarget.Entry.FullPath);
+                };
+            }
+
+            if (_isSearchMode)
+            {
+                flyout.Items.Add(new MenuFlyoutItem { Text = "Open file location", Icon = new FontIcon { Glyph = "\uE8DA" } });
+                ((MenuFlyoutItem)flyout.Items[^1]).Click += (_, _) =>
+                {
+                    var sel = _currentTab.SelectedItems.FirstOrDefault() ?? tappedItem;
+                    if (sel?.Entry.ParentPath is string parentPath)
+                    {
+                        var mainVm = App.Services.GetRequiredService<MainViewModel>();
+                        _ = mainVm.NavigateToAddressAsync(parentPath);
+                    }
+                };
+            }
+
+            flyout.Items.Add(new MenuFlyoutSeparator());
+
+            flyout.Items.Add(new MenuFlyoutItem { Text = "Cut", Icon = new FontIcon { Glyph = "\uE8C6" } });
             ((MenuFlyoutItem)flyout.Items[^1]).Click += (_, _) =>
             {
-                mainWindow.OpenFolderInNewWindow(folderTarget.Entry.FullPath);
+                if (App.MainWindow is MainWindow mw) mw.CutToClipboard();
             };
-        }
 
-        if (_isSearchMode)
-        {
-            flyout.Items.Add(new MenuFlyoutItem { Text = "Open file location", Icon = new FontIcon { Glyph = "\uE8DA" } });
+            flyout.Items.Add(new MenuFlyoutItem { Text = "Copy", Icon = new FontIcon { Glyph = "\uE8C8" } });
+            ((MenuFlyoutItem)flyout.Items[^1]).Click += (_, _) =>
+            {
+                if (App.MainWindow is MainWindow mw) mw.CopyToClipboard();
+            };
+
+            flyout.Items.Add(new MenuFlyoutItem { Text = "Delete", Icon = new FontIcon { Glyph = "\uE74D" } });
+            ((MenuFlyoutItem)flyout.Items[^1]).Click += (_, _) =>
+            {
+                if (App.MainWindow is MainWindow mw)
+                {
+                    _ = mw.DeleteSelectedWithConfirmationAsync();
+                }
+                else
+                {
+                    _ = _currentTab.DeleteSelectedAsync();
+                }
+            };
+
+            flyout.Items.Add(new MenuFlyoutItem { Text = "Rename", Icon = new FontIcon { Glyph = "\uE8AC" } });
+            ((MenuFlyoutItem)flyout.Items[^1]).Click += (_, _) =>
+            {
+                _currentTab.StartRename();
+            };
+
+            flyout.Items.Add(new MenuFlyoutSeparator());
+
+            flyout.Items.Add(new MenuFlyoutItem { Text = "Copy path", Icon = new FontIcon { Glyph = "\uE71B" } });
             ((MenuFlyoutItem)flyout.Items[^1]).Click += (_, _) =>
             {
                 var sel = _currentTab.SelectedItems.FirstOrDefault() ?? tappedItem;
-                if (sel?.Entry.ParentPath is string parentPath)
+                if (sel is not null)
                 {
-                    var mainVm = App.Services.GetRequiredService<MainViewModel>();
-                    _ = mainVm.NavigateToAddressAsync(parentPath);
+                    var dp = new DataPackage();
+                    dp.SetText(sel.Entry.FullPath);
+                    Clipboard.SetContent(dp);
                 }
             };
+
+            flyout.Items.Add(new MenuFlyoutItem { Text = "Properties", Icon = new FontIcon { Glyph = "\uE946" } });
+            ((MenuFlyoutItem)flyout.Items[^1]).Click += (_, _) =>
+            {
+                if (App.MainWindow is MainWindow mw && contextPaths.Count > 0)
+                {
+                    var shellService = App.Services.GetRequiredService<Core.Interfaces.IShellIntegrationService>();
+                    shellService.ShowProperties(mw.Hwnd, contextPaths);
+                }
+            };
+
+            flyout.ShowAt(FileListView_Inner, e.GetPosition(FileListView_Inner));
         }
-
-        flyout.Items.Add(new MenuFlyoutSeparator());
-
-        flyout.Items.Add(new MenuFlyoutItem { Text = "Cut", Icon = new FontIcon { Glyph = "\uE8C6" } });
-        ((MenuFlyoutItem)flyout.Items[^1]).Click += (_, _) =>
+        catch (Exception ex)
         {
-            if (App.MainWindow is MainWindow mw) mw.CutToClipboard();
-        };
-
-        flyout.Items.Add(new MenuFlyoutItem { Text = "Copy", Icon = new FontIcon { Glyph = "\uE8C8" } });
-        ((MenuFlyoutItem)flyout.Items[^1]).Click += (_, _) =>
-        {
-            if (App.MainWindow is MainWindow mw) mw.CopyToClipboard();
-        };
-
-        flyout.Items.Add(new MenuFlyoutItem { Text = "Delete", Icon = new FontIcon { Glyph = "\uE74D" } });
-        ((MenuFlyoutItem)flyout.Items[^1]).Click += (_, _) =>
-        {
-            _ = _currentTab.DeleteSelectedAsync();
-        };
-
-        flyout.Items.Add(new MenuFlyoutItem { Text = "Rename", Icon = new FontIcon { Glyph = "\uE8AC" } });
-        ((MenuFlyoutItem)flyout.Items[^1]).Click += (_, _) =>
-        {
-            _currentTab.StartRename();
-        };
-
-        flyout.Items.Add(new MenuFlyoutSeparator());
-
-        flyout.Items.Add(new MenuFlyoutItem { Text = "Copy path", Icon = new FontIcon { Glyph = "\uE71B" } });
-        ((MenuFlyoutItem)flyout.Items[^1]).Click += (_, _) =>
-        {
-            var sel = _currentTab.SelectedItems.FirstOrDefault() ?? tappedItem;
-            if (sel is not null)
-            {
-                var dp = new DataPackage();
-                dp.SetText(sel.Entry.FullPath);
-                Clipboard.SetContent(dp);
-            }
-        };
-
-        flyout.Items.Add(new MenuFlyoutItem { Text = "Properties", Icon = new FontIcon { Glyph = "\uE946" } });
-        ((MenuFlyoutItem)flyout.Items[^1]).Click += (_, _) =>
-        {
-            if (App.MainWindow is MainWindow mw && contextPaths.Count > 0)
-            {
-                var shellService = App.Services.GetRequiredService<Core.Interfaces.IShellIntegrationService>();
-                shellService.ShowProperties(mw.Hwnd, contextPaths);
-            }
-        };
-
-        flyout.ShowAt(FileListView_Inner, e.GetPosition(FileListView_Inner));
+            System.Diagnostics.Debug.WriteLine($"FileList right-click menu failed: {ex}");
+        }
     }
 
     #endregion
@@ -452,24 +503,24 @@ public sealed partial class FileListView : UserControl
         DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
         {
             FileListView_Inner.UpdateLayout();
+            if (FileListView_Inner.ContainerFromItem(item) is ListViewItem container)
+            {
+                container.StartBringIntoView();
 
-            if (FileListView_Inner.ContainerFromItem(item) is not ListViewItem container)
-                return;
+                if (item.IsRenaming && FindChildOfType<TextBox>(container) is TextBox tb)
+                {
+                    tb.Focus(FocusState.Programmatic);
+                    var dotIndex = tb.Text.LastIndexOf('.');
+                    if (dotIndex > 0)
+                        tb.Select(0, dotIndex);
+                    else
+                        tb.SelectAll();
+                    return;
+                }
+            }
 
-            container.StartBringIntoView();
-
-            if (!item.IsRenaming)
-                return;
-
-            if (FindChildOfType<TextBox>(container) is not TextBox tb)
-                return;
-
-            tb.Focus(FocusState.Programmatic);
-            var dotIndex = tb.Text.LastIndexOf('.');
-            if (dotIndex > 0)
-                tb.Select(0, dotIndex);
-            else
-                tb.SelectAll();
+            // After inline rename commit (e.g., new folder), restore list focus so Enter/Arrows work immediately.
+            FileListView_Inner.Focus(FocusState.Programmatic);
         });
     }
 
@@ -860,6 +911,19 @@ public sealed partial class FileListView : UserControl
             var found = FindChildOfType<T>(child);
             if (found is not null) return found;
         }
+        return null;
+    }
+
+    private static T? FindAncestorOfType<T>(DependencyObject? child) where T : DependencyObject
+    {
+        while (child is not null)
+        {
+            if (child is T match)
+                return match;
+
+            child = VisualTreeHelper.GetParent(child);
+        }
+
         return null;
     }
 

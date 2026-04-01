@@ -16,6 +16,9 @@ public enum CloudFileStatus
     /// <summary>File is fully available locally.</summary>
     LocallyAvailable = 2,
 
+    /// <summary>File is pinned to stay always available on this device.</summary>
+    AlwaysAvailable = 7,
+
     /// <summary>File is currently syncing.</summary>
     Syncing = 3,
 

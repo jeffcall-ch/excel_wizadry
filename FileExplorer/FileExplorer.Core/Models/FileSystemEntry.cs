@@ -31,6 +31,9 @@ public sealed class FileSystemEntry
     /// <summary>File attributes from the file system.</summary>
     public FileAttributes Attributes { get; init; }
 
+    /// <summary>NTFS reparse tag, when <see cref="Attributes"/> includes a reparse point.</summary>
+    public uint ReparseTag { get; init; }
+
     /// <summary>Index of the shell icon for this entry (from SHGetFileInfo).</summary>
     public int IconIndex { get; set; }
 

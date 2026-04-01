@@ -33,6 +33,7 @@
         <converters:BoolToVisibilityConverter x:Key="BoolToVis" />
         <converters:BoolToVisibilityConverter x:Key="InverseBoolToVis" IsInverted="True" />
         <converters:CloudStatusToIconConverter x:Key="CloudStatusIcon" />
+        <converters:CloudStatusToToolTipConverter x:Key="CloudStatusToolTip" />
 
         <!-- Row hover style matching Explorer's accent color at 10% opacity -->
         <Style x:Key="FileRowStyle" TargetType="Grid">
@@ -41,7 +42,7 @@
         </Style>
     </UserControl.Resources>
 
-    <Grid>
+    <Grid PointerPressed="RightPane_PointerPressed">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />  <!-- Column headers -->
             <RowDefinition Height="*" />     <!-- Virtualized item list -->
@@ -283,6 +284,7 @@
                             FontFamily="{StaticResource SymbolThemeFontFamily}"
                             Glyph="{Binding CloudStatusIcon}"
                             FontSize="14"
+                            ToolTipService.ToolTip="{Binding CloudStatus, Converter={StaticResource CloudStatusToolTip}}"
                             HorizontalAlignment="Center"
                             VerticalAlignment="Center" />
 

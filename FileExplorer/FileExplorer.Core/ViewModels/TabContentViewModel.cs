@@ -139,8 +139,7 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
             // Update state
             CurrentPath = path;
             TabState.CurrentPath = path;
-            TabTitle = Path.GetFileName(path);
-            if (string.IsNullOrEmpty(TabTitle)) TabTitle = path; // Root drive
+            TabTitle = BuildFriendlyTabTitle(path);
             TabState.Title = TabTitle;
 
             // Add to navigation history
@@ -535,6 +534,26 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
         return path;
     }
 
+    private static string BuildFriendlyTabTitle(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            return "New tab";
+
+        var normalized = NormalizeNavigationPath(path);
+        var root = Path.GetPathRoot(normalized);
+
+        if (!string.IsNullOrEmpty(root) && string.Equals(normalized, root, StringComparison.OrdinalIgnoreCase))
+        {
+            return root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        }
+
+        var leaf = Path.GetFileName(normalized.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+        if (!string.IsNullOrWhiteSpace(leaf))
+            return leaf;
+
+        return normalized;
+    }
+
     private void StartWatcher(string path)
     {
         try
@@ -574,10 +593,25 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
                             Attributes = info.Exists ? info.Attributes : FileAttributes.Normal
                         };
                         entry.TypeDescription = _shellService.GetTypeDescription(change.FullPath);
-                        Items.Add(new FileItemViewModel(entry) { IsNewItem = true });
+                        var vm = new FileItemViewModel(entry) { IsNewItem = true };
+                        Items.Add(vm);
+
+                        if (_cloudStatusService.IsSyncRootDetected)
+                        {
+                            _ = RefreshSingleCloudStatusAsync(vm);
+                        }
+
                         UpdateStatusText();
                     }
                     catch { /* Race condition — file may already be deleted */ }
+                }
+                break;
+
+            case WatcherChangeTypes.Changed:
+                var changed = Items.FirstOrDefault(i => i.Entry.FullPath.Equals(change.FullPath, StringComparison.OrdinalIgnoreCase));
+                if (changed is not null && _cloudStatusService.IsSyncRootDetected)
+                {
+                    _ = RefreshSingleCloudStatusAsync(changed);
                 }
                 break;
 
@@ -607,8 +641,8 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
     {
         try
         {
-            var paths = Items.Select(i => i.Entry.FullPath).ToList();
-            var statuses = await _cloudStatusService.GetCloudStatusBatchAsync(paths, ct);
+            var entries = Items.Select(i => i.Entry).ToList();
+            var statuses = await _cloudStatusService.GetCloudStatusBatchAsync(entries, ct);
             foreach (var item in Items)
             {
                 if (statuses.TryGetValue(item.Entry.FullPath, out var status))
@@ -621,6 +655,18 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
         catch (Exception ex)
         {
             _logger.LogDebug(ex, "Failed to resolve cloud statuses");
+        }
+    }
+
+    private async Task RefreshSingleCloudStatusAsync(FileItemViewModel item)
+    {
+        try
+        {
+            item.CloudStatus = await _cloudStatusService.GetCloudStatusAsync(item.Entry.FullPath);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Failed to refresh cloud status for {Path}", item.Entry.FullPath);
         }
     }
 
@@ -679,6 +725,9 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
         _loadCts?.Dispose();
         _watcherHandle?.Dispose();
     }
+
+    /// <summary>Returns the current tab title as a fallback header text.</summary>
+    public override string ToString() => TabTitle;
 }
 
 /// <summary>
@@ -736,6 +785,7 @@ public sealed partial class FileItemViewModel : ObservableObject
     {
         CloudFileStatus.CloudOnly => "\uE753",      // Cloud icon
         CloudFileStatus.LocallyAvailable => "\uE73E", // Checkmark
+        CloudFileStatus.AlwaysAvailable => "\uE718", // Pinned
         CloudFileStatus.Syncing => "\uE895",         // Sync icon
         CloudFileStatus.SyncError => "\uE7BA",       // Warning
         CloudFileStatus.SharedWithMe => "\uE902",    // People icon

@@ -606,7 +606,7 @@ def populate_aggregated_table(db_path: Path, revision: str = "REV0") -> int:
             })
 
         _TAPE_ROLL_M = 10
-        _TAPE_SPARE_FACTOR = 1.50
+        _TAPE_SPARE_FACTOR = 1.30
         _TAPE_DENSITY_KG_M3 = 2600.0  # 2.6 g/cm³ — glass fabric tape material density
 
         def _tape_weight_per_m(description: str | None) -> float | None:
@@ -1437,7 +1437,7 @@ def _write_agg_sheet(ws, columns: list[str], rows: list[tuple]) -> None:
         "Primary Supports \u2014 5%;  "
         "Beam Sections, Threaded Rods \u2014 10%;  "
         "Bolts / Screws / Nuts, Installation Material \u2014 15%;  "
-        "Glass Fabric Tape \u2014 50%."
+        "Glass Fabric Tape \u2014 30%."
     )
 
 

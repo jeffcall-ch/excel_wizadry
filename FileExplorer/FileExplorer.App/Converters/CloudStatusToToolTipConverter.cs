@@ -19,6 +19,7 @@ public sealed class CloudStatusToToolTipConverter : IValueConverter
             {
                 CloudFileStatus.CloudOnly => "Available online only",
                 CloudFileStatus.LocallyAvailable => "Available on this device",
+                CloudFileStatus.AlwaysAvailable => "Always available on this device",
                 CloudFileStatus.Syncing => "Syncing...",
                 CloudFileStatus.SyncError => "Sync error",
                 CloudFileStatus.SharedWithMe => "Shared with you",

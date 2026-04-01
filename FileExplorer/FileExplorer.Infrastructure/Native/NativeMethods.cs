@@ -28,6 +28,23 @@ internal static partial class NativeMethods
     [return: MarshalAs(UnmanagedType.Bool)]
     internal static extern bool GetFileAttributesEx(string lpFileName, int fInfoLevelId, out WIN32_FILE_ATTRIBUTE_DATA lpFileInformation);
 
+    [DllImport("kernel32.dll", EntryPoint = "FindFirstFileExW", SetLastError = true, CharSet = CharSet.Unicode)]
+    internal static extern nint FindFirstFileEx(
+        string lpFileName,
+        int fInfoLevelId,
+        out WIN32_FIND_DATA lpFindFileData,
+        int fSearchOp,
+        nint lpSearchFilter,
+        int dwAdditionalFlags);
+
+    [DllImport("kernel32.dll", EntryPoint = "FindNextFileW", SetLastError = true, CharSet = CharSet.Unicode)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool FindNextFile(nint hFindFile, out WIN32_FIND_DATA lpFindFileData);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool FindClose(nint hFindFile);
+
     [LibraryImport("kernel32.dll", EntryPoint = "CreateFileW", SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
     internal static partial nint CreateFile(
         string lpFileName,
@@ -57,6 +74,21 @@ internal static partial class NativeMethods
     internal const uint OPEN_EXISTING = 3;
     internal const uint FILE_FLAG_BACKUP_SEMANTICS = 0x02000000;
     internal const int FileAttributeTagInfo = 9;
+    internal const int FindExInfoBasic = 1;
+    internal const int FindExSearchNameMatch = 0;
+    internal const int FIND_FIRST_EX_LARGE_FETCH = 2;
+    internal const int ERROR_NO_MORE_FILES = 18;
+
+    internal const uint FILE_ATTRIBUTE_REPARSE_POINT = 0x00000400;
+    internal const uint FILE_ATTRIBUTE_OFFLINE = 0x00001000;
+    internal const uint FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS = 0x00400000;
+    internal const uint FILE_ATTRIBUTE_PINNED = 0x00080000;
+
+    internal const uint IO_REPARSE_TAG_CLOUD = 0x9000001A;
+    internal const uint IO_REPARSE_TAG_CLOUD_1 = 0x9000101A;
+    internal const uint IO_REPARSE_TAG_CLOUD_2 = 0x9000201A;
+    internal const uint IO_REPARSE_TAG_CLOUD_3 = 0x9000301A;
+
     internal static readonly nint INVALID_HANDLE_VALUE = new(-1);
 
     [DllImport("kernel32.dll", EntryPoint = "FormatMessageW", SetLastError = true, CharSet = CharSet.Unicode)]
@@ -93,6 +125,25 @@ internal static partial class NativeMethods
         public uint nFileSizeLow;
 
         public readonly long FileSize => ((long)nFileSizeHigh << 32) | nFileSizeLow;
+    }
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    internal struct WIN32_FIND_DATA
+    {
+        public uint dwFileAttributes;
+        public FILETIME ftCreationTime;
+        public FILETIME ftLastAccessTime;
+        public FILETIME ftLastWriteTime;
+        public uint nFileSizeHigh;
+        public uint nFileSizeLow;
+        public uint dwReserved0;
+        public uint dwReserved1;
+
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)]
+        public string cFileName;
+
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 14)]
+        public string cAlternateFileName;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -383,6 +434,11 @@ internal static partial class NativeMethods
         nint InfoBuffer,
         int InfoClass);
 
+    [DllImport("cldapi.dll")]
+    internal static extern CF_PLACEHOLDER_STATE CfGetPlaceholderStateFromAttributeTag(
+        uint dwFileAttributes,
+        uint dwReparseTag);
+
     [DllImport("cldapi.dll", CharSet = CharSet.Unicode)]
     internal static extern int CfGetPlaceholderInfo(
         nint FileHandle,
@@ -439,6 +495,18 @@ internal static partial class NativeMethods
     internal const int CF_PIN_STATE_PINNED = 1;
     internal const int CF_PIN_STATE_UNPINNED = 2;
     internal const int CF_PIN_STATE_UNSPECIFIED = 0;
+
+    [Flags]
+    internal enum CF_PLACEHOLDER_STATE : uint
+    {
+        CF_PLACEHOLDER_STATE_NO_STATES = 0x00000000,
+        CF_PLACEHOLDER_STATE_IN_SYNC = 0x00000001,
+        CF_PLACEHOLDER_STATE_SYNC_ROOT = 0x00000002,
+        CF_PLACEHOLDER_STATE_ESSENTIAL_PROP_PRESENT = 0x00000004,
+        CF_PLACEHOLDER_STATE_VALID = 0x00000007,
+        CF_PLACEHOLDER_STATE_PARTIAL = 0x00000008,
+        CF_PLACEHOLDER_STATE_PARTIALLY_IN_SYNC = 0x0000000A
+    }
 
     internal const int CF_PLACEHOLDER_STATE_NO_STATES = 0;
     internal const int CF_PLACEHOLDER_STATE_PLACEHOLDER = 1;

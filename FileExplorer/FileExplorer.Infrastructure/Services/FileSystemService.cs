@@ -1,6 +1,7 @@
 // Copyright (c) FileExplorer contributors. All rights reserved.
 
 using System.Collections.Concurrent;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -18,6 +19,10 @@ namespace FileExplorer.Infrastructure.Services;
 /// </summary>
 public sealed class FileSystemService : IFileSystemService
 {
+    private const int ErrorAccessDenied = 5;
+    private const int ErrorSharingViolation = 32;
+    private const int ErrorLockViolation = 33;
+
     private readonly ILogger<FileSystemService> _logger;
     private readonly Channel<QueuedOperation> _operationChannel;
     private readonly ConcurrentStack<UndoableOperation> _undoStack = new();
@@ -56,56 +61,77 @@ public sealed class FileSystemService : IFileSystemService
     public async IAsyncEnumerable<FileSystemEntry> EnumerateDirectoryAsync(
         string path, [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        var longPath = NativeMethods.EnsureLongPath(path);
-        var options = new EnumerationOptions
+        await Task.CompletedTask; // Preserve async iterator semantics.
+
+        var normalizedPath = Path.GetFullPath(path);
+        var queryPath = Path.Combine(NativeMethods.EnsureLongPath(normalizedPath), "*");
+
+        nint findHandle = NativeMethods.FindFirstFileEx(
+            queryPath,
+            NativeMethods.FindExInfoBasic,
+            out var findData,
+            NativeMethods.FindExSearchNameMatch,
+            nint.Zero,
+            NativeMethods.FIND_FIRST_EX_LARGE_FETCH);
+
+        if (findHandle == NativeMethods.INVALID_HANDLE_VALUE)
         {
-            IgnoreInaccessible = true,
-            ReturnSpecialDirectories = false,
-            AttributesToSkip = 0 // We handle hidden/system filtering in the ViewModel
-        };
+            var error = Marshal.GetLastPInvokeError();
+            if (error == NativeMethods.ERROR_NO_MORE_FILES)
+                yield break;
 
-        await Task.CompletedTask; // Allow async enumeration pattern
+            var message = NativeMethods.FormatWin32Error(error);
+            _logger.LogWarning("Failed to enumerate {Path}: {Error}", path, message);
+            RaiseOperationError(path, message, error, isAccessDenied: error == 5);
+            yield break;
+        }
 
-        IEnumerable<FileSystemInfo> entries;
         try
         {
-            var dirInfo = new DirectoryInfo(longPath);
-            entries = dirInfo.EnumerateFileSystemInfos("*", options);
-        }
-        catch (UnauthorizedAccessException ex)
-        {
-            _logger.LogWarning(ex, "Access denied enumerating {Path}", path);
-            RaiseOperationError(path, ex.Message, Marshal.GetLastPInvokeError(), isAccessDenied: true);
-            yield break;
-        }
-        catch (DirectoryNotFoundException ex)
-        {
-            _logger.LogWarning(ex, "Directory not found: {Path}", path);
-            RaiseOperationError(path, ex.Message, 0, isAccessDenied: false);
-            yield break;
-        }
-
-        foreach (var entry in entries)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            var isDir = (entry.Attributes & FileAttributes.Directory) != 0;
-            long size = 0;
-            if (!isDir && entry is FileInfo fi)
+            while (true)
             {
-                try { size = fi.Length; } catch { /* Race condition if file deleted */ }
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var name = findData.cFileName;
+                if (!string.IsNullOrEmpty(name) &&
+                    !string.Equals(name, ".", StringComparison.Ordinal) &&
+                    !string.Equals(name, "..", StringComparison.Ordinal))
+                {
+                    var attributes = (FileAttributes)findData.dwFileAttributes;
+                    var isDir = (attributes & FileAttributes.Directory) != 0;
+                    var fullPath = Path.Combine(normalizedPath, name);
+                    var size = isDir ? 0L : ((long)findData.nFileSizeHigh << 32) | findData.nFileSizeLow;
+                    var reparseTag = (findData.dwFileAttributes & NativeMethods.FILE_ATTRIBUTE_REPARSE_POINT) != 0
+                        ? findData.dwReserved0
+                        : 0u;
+
+                    yield return new FileSystemEntry
+                    {
+                        FullPath = fullPath,
+                        Name = name,
+                        IsDirectory = isDir,
+                        Size = size,
+                        DateModified = FileTimeToDateTimeOffset(findData.ftLastWriteTime),
+                        Extension = isDir ? string.Empty : Path.GetExtension(name),
+                        Attributes = attributes,
+                        ReparseTag = reparseTag
+                    };
+                }
+
+                if (!NativeMethods.FindNextFile(findHandle, out findData))
+                {
+                    var error = Marshal.GetLastPInvokeError();
+                    if (error == NativeMethods.ERROR_NO_MORE_FILES)
+                        break;
+
+                    _logger.LogDebug("FindNextFile failed for {Path}: {Error}", path, NativeMethods.FormatWin32Error(error));
+                    break;
+                }
             }
-
-            yield return new FileSystemEntry
-            {
-                FullPath = entry.FullName,
-                Name = entry.Name,
-                IsDirectory = isDir,
-                Size = size,
-                DateModified = entry.LastWriteTime,
-                Extension = isDir ? string.Empty : entry.Extension,
-                Attributes = entry.Attributes
-            };
+        }
+        finally
+        {
+            NativeMethods.FindClose(findHandle);
         }
     }
 
@@ -194,7 +220,20 @@ public sealed class FileSystemService : IFileSystemService
             var destName = Path.GetFileName(src);
             var destPath = Path.Combine(op.DestinationPath, destName);
 
-            destPath = await ResolveConflictIfNeededAsync(src, destPath, ct);
+            var isSameFolderCopy = string.Equals(
+                NormalizeDirectoryPath(Path.GetDirectoryName(src)),
+                NormalizeDirectoryPath(op.DestinationPath),
+                StringComparison.OrdinalIgnoreCase);
+
+            if (isSameFolderCopy && (File.Exists(destPath) || Directory.Exists(destPath)))
+            {
+                destPath = GenerateExplorerCopyPath(destPath);
+            }
+            else
+            {
+                destPath = await ResolveConflictIfNeededAsync(src, destPath, ct);
+            }
+
             if (destPath is null) continue; // Skipped
 
             await Task.Run(() =>
@@ -396,6 +435,7 @@ public sealed class FileSystemService : IFileSystemService
         var dir = Path.GetDirectoryName(fullPath)!;
         var newPath = Path.Combine(dir, newName);
         var oldName = Path.GetFileName(fullPath);
+        int errorCode = 0;
 
         try
         {
@@ -406,8 +446,10 @@ public sealed class FileSystemService : IFileSystemService
                     NativeMethods.EnsureLongPath(newPath),
                     NativeMethods.MOVEFILE_WRITE_THROUGH))
                 {
-                    int err = Marshal.GetLastPInvokeError();
-                    throw new IOException(NativeMethods.FormatWin32Error(err));
+                    errorCode = Marshal.GetLastPInvokeError();
+                    throw new IOException(
+                        NativeMethods.FormatWin32Error(errorCode),
+                        new Win32Exception(errorCode));
                 }
             }, cancellationToken);
 
@@ -425,8 +467,14 @@ public sealed class FileSystemService : IFileSystemService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to rename {Path} to {NewName}", fullPath, newName);
-            int errorCode = Marshal.GetLastPInvokeError();
-            RaiseOperationError(fullPath, ex.Message, errorCode, errorCode == 5);
+            if (errorCode == 0)
+                errorCode = GetWin32ErrorCode(ex);
+
+            RaiseOperationError(
+                fullPath,
+                BuildOperationErrorMessage(ex, errorCode),
+                errorCode,
+                errorCode == ErrorAccessDenied);
             return false;
         }
     }
@@ -436,14 +484,31 @@ public sealed class FileSystemService : IFileSystemService
     {
         return Task.Run(() =>
         {
+            var firstPath = paths.FirstOrDefault() ?? string.Empty;
+
             try
             {
+                foreach (var path in paths)
+                {
+                    if (TryDetectInUseFile(path, out var inUseError))
+                    {
+                        RaiseOperationError(path, NativeMethods.FormatWin32Error(inUseError), inUseError, isAccessDenied: false);
+                        return false;
+                    }
+                }
+
                 SendToRecycleBin(paths);
                 return true;
             }
             catch (Exception ex)
             {
+                var errorCode = GetWin32ErrorCode(ex);
                 _logger.LogError(ex, "Failed to send items to Recycle Bin");
+                RaiseOperationError(
+                    firstPath,
+                    BuildOperationErrorMessage(ex, errorCode),
+                    errorCode,
+                    errorCode == ErrorAccessDenied);
                 return false;
             }
         }, cancellationToken);
@@ -454,10 +519,13 @@ public sealed class FileSystemService : IFileSystemService
     {
         return Task.Run(() =>
         {
+            var currentPath = paths.FirstOrDefault() ?? string.Empty;
+
             try
             {
                 foreach (var path in paths)
                 {
+                    currentPath = path;
                     cancellationToken.ThrowIfCancellationRequested();
                     var longPath = NativeMethods.EnsureLongPath(path);
                     if (Directory.Exists(longPath))
@@ -469,7 +537,13 @@ public sealed class FileSystemService : IFileSystemService
             }
             catch (Exception ex)
             {
+                var errorCode = GetWin32ErrorCode(ex);
                 _logger.LogError(ex, "Failed to permanently delete items");
+                RaiseOperationError(
+                    currentPath,
+                    BuildOperationErrorMessage(ex, errorCode),
+                    errorCode,
+                    errorCode == ErrorAccessDenied);
                 return false;
             }
         }, cancellationToken);
@@ -588,8 +662,50 @@ public sealed class FileSystemService : IFileSystemService
         int result = NativeMethods.SHFileOperation(ref fileOp);
         if (result != 0)
         {
-            throw new IOException($"SHFileOperation DELETE failed with code 0x{result:X8}");
+            throw new Win32Exception(result);
         }
+    }
+
+    private static bool TryDetectInUseFile(string path, out int errorCode)
+    {
+        errorCode = 0;
+
+        if (!File.Exists(path))
+            return false;
+
+        try
+        {
+            using var _ = new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+            return false;
+        }
+        catch (IOException ex)
+        {
+            errorCode = GetWin32ErrorCode(ex);
+            return errorCode is ErrorSharingViolation or ErrorLockViolation;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static int GetWin32ErrorCode(Exception ex)
+    {
+        if (ex is Win32Exception win32 && win32.NativeErrorCode > 0)
+            return win32.NativeErrorCode;
+
+        if (ex.InnerException is Win32Exception innerWin32 && innerWin32.NativeErrorCode > 0)
+            return innerWin32.NativeErrorCode;
+
+        return ex.HResult is 0 ? 0 : ex.HResult & 0xFFFF;
+    }
+
+    private static string BuildOperationErrorMessage(Exception ex, int errorCode)
+    {
+        if (errorCode > 0)
+            return NativeMethods.FormatWin32Error(errorCode);
+
+        return ex.Message;
     }
 
     private async Task<string?> ResolveConflictIfNeededAsync(string sourcePath, string destPath, CancellationToken ct)
@@ -636,6 +752,38 @@ public sealed class FileSystemService : IFileSystemService
         return newPath;
     }
 
+    private static string GenerateExplorerCopyPath(string existingPath)
+    {
+        var dir = Path.GetDirectoryName(existingPath) ?? string.Empty;
+        var isDirectory = Directory.Exists(existingPath);
+        var ext = isDirectory ? string.Empty : Path.GetExtension(existingPath);
+        var name = isDirectory
+            ? Path.GetFileName(existingPath)
+            : Path.GetFileNameWithoutExtension(existingPath);
+
+        var candidate = Path.Combine(dir, $"{name} - Copy{ext}");
+        if (!File.Exists(candidate) && !Directory.Exists(candidate))
+            return candidate;
+
+        var counter = 2;
+        while (true)
+        {
+            candidate = Path.Combine(dir, $"{name} - Copy ({counter}){ext}");
+            if (!File.Exists(candidate) && !Directory.Exists(candidate))
+                return candidate;
+
+            counter++;
+        }
+    }
+
+    private static string NormalizeDirectoryPath(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            return string.Empty;
+
+        return Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+    }
+
     private static void CopyDirectoryRecursive(string sourceDir, string destDir, CancellationToken ct)
     {
         Directory.CreateDirectory(destDir);
@@ -660,6 +808,15 @@ public sealed class FileSystemService : IFileSystemService
             Win32ErrorCode = win32Error,
             IsAccessDenied = isAccessDenied
         });
+    }
+
+    private static DateTimeOffset FileTimeToDateTimeOffset(System.Runtime.InteropServices.ComTypes.FILETIME fileTime)
+    {
+        long ticks = ((long)(uint)fileTime.dwHighDateTime << 32) | (uint)fileTime.dwLowDateTime;
+        if (ticks <= 0)
+            return DateTimeOffset.MinValue;
+
+        return DateTimeOffset.FromFileTime(ticks);
     }
 
     #endregion

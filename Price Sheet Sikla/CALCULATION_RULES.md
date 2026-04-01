@@ -106,7 +106,7 @@ Cut-length items with `"glass fabric"` in description. Aggregated by article + c
 
 - Roll length: `10 m`
 - `Qty` = `ceil(net_cut_m / 10)` — naive minimum rolls
-- `Order_Qty` = `ceil(net_cut_m × 1.50 / 10)` — 50% spare factor
+- `Order_Qty` = `ceil(net_cut_m × 1.30 / 10)` — 30% spare factor
 - `Spare` = `Order_Qty − Qty`
 - `Order_Weight_kg` = `Total_Weight_kg × (Total_Order_Length_m / Net_Cut_Length_m)`
 - `Remarks` = `"10m roll"`
@@ -142,7 +142,7 @@ Order_Weight_kg = Total_Weight_kg × (Order_Qty / Qty)
 | `_BEAM_PHYSICAL_MM` | `6000` | Beam bar physical length (mm) |
 | `_BEAM_BAR_MM` | `6000` | Beam effective cut length (mm) — no end-loss |
 | `_TAPE_ROLL_M` | `10` | Tape roll length (m) |
-| `_TAPE_SPARE_FACTOR` | `1.50` | 50% spare factor for tape |
+| `_TAPE_SPARE_FACTOR` | `1.30` | 30% spare factor for tape |
 | `_SPARE_PCT["01 Primary Supports"]` | `0.05` | 5% for non-rod primary support items |
 | `_SPARE_PCT["02 Brackets Consoles"]` | `0.05` | 5% |
 | `_SPARE_PCT["03 Bolts Screws Nuts"]` | `0.15` | 15% |

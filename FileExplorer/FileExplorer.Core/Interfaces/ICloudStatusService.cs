@@ -18,8 +18,14 @@ public interface ICloudStatusService
     /// <summary>Queries the cloud status for a single file.</summary>
     Task<CloudFileStatus> GetCloudStatusAsync(string filePath, CancellationToken cancellationToken = default);
 
+    /// <summary>Evaluates cloud status from already-fetched file metadata without additional disk I/O.</summary>
+    CloudFileStatus GetCloudStatus(uint fileAttributes, uint reparseTag);
+
     /// <summary>Queries cloud statuses for a batch of files.</summary>
     Task<IReadOnlyDictionary<string, CloudFileStatus>> GetCloudStatusBatchAsync(IReadOnlyList<string> filePaths, CancellationToken cancellationToken = default);
+
+    /// <summary>Queries cloud statuses for a batch using pre-fetched entry metadata.</summary>
+    Task<IReadOnlyDictionary<string, CloudFileStatus>> GetCloudStatusBatchAsync(IReadOnlyList<FileSystemEntry> entries, CancellationToken cancellationToken = default);
 
     /// <summary>Pins a file for offline availability (downloads it).</summary>
     Task PinFileAsync(string filePath, CancellationToken cancellationToken = default);

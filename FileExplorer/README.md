@@ -75,6 +75,16 @@ Structured logs via Serilog are written to:
 %LOCALAPPDATA%\FileExplorer\logs\log-yyyyMMdd.txt
 ```
 
+Crash reports for unhandled managed exceptions are written to:
+```
+%LOCALAPPDATA%\FileExplorer\crash-reports\crash-yyyyMMdd-HHmmss-fff-pidNNNN.txt
+```
+
+Windows Error Reporting (WER) mini dumps are configured per-user for native/fatal crashes at:
+```
+%LOCALAPPDATA%\FileExplorer\crash-reports\wer-dumps\
+```
+
 ## License
 
 Copyright (c) FileExplorer contributors. All rights reserved.

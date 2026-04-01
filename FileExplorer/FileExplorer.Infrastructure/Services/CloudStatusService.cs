@@ -91,40 +91,19 @@ public sealed class CloudStatusService : ICloudStatusService
 
             try
             {
-                var exists = File.Exists(filePath) || Directory.Exists(filePath);
-                if (!exists) return CloudFileStatus.NotApplicable;
+                if (!NativeMethods.GetFileAttributesEx(filePath, 0, out var attributeData))
+                    return CloudFileStatus.NotApplicable;
 
-                var attrs = File.GetAttributes(filePath);
-                var placeholderState = TryGetPlaceholderState(filePath, attrs.HasFlag(FileAttributes.Directory), out var state)
-                    ? state
-                    : NativeMethods.CF_PLACEHOLDER_STATE_NO_STATES;
+                var attributes = (uint)attributeData.dwFileAttributes;
+                uint reparseTag = 0;
 
-                // FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS (0x00400000) = cloud-only placeholder
-                // FILE_ATTRIBUTE_RECALL_ON_OPEN (0x00040000) = partial
-                // FILE_ATTRIBUTE_PINNED (0x00080000) = locally pinned
-                // FILE_ATTRIBUTE_UNPINNED (0x00100000) = free up space candidate
+                if ((attributes & NativeMethods.FILE_ATTRIBUTE_REPARSE_POINT) != 0)
+                {
+                    var isDirectory = (attributeData.dwFileAttributes & FileAttributes.Directory) != 0;
+                    TryGetReparseTag(filePath, isDirectory, out reparseTag);
+                }
 
-                const FileAttributes recallOnDataAccess = (FileAttributes)0x00400000;
-                const FileAttributes recallOnOpen = (FileAttributes)0x00040000;
-                const FileAttributes pinned = (FileAttributes)0x00080000;
-                const FileAttributes offline = FileAttributes.Offline;
-
-                if ((placeholderState & NativeMethods.CF_PLACEHOLDER_STATE_PARTIAL) != 0 || (attrs & recallOnOpen) != 0)
-                    return CloudFileStatus.Syncing;
-
-                if (((placeholderState & NativeMethods.CF_PLACEHOLDER_STATE_PLACEHOLDER) != 0 &&
-                     (placeholderState & NativeMethods.CF_PLACEHOLDER_STATE_PARTIALLY_ON_DISK) == 0) ||
-                    (attrs & recallOnDataAccess) != 0 ||
-                    (attrs & offline) != 0)
-                    return CloudFileStatus.CloudOnly;
-
-                if ((placeholderState & NativeMethods.CF_PLACEHOLDER_STATE_IN_SYNC) != 0 ||
-                    (placeholderState & NativeMethods.CF_PLACEHOLDER_STATE_PARTIALLY_ON_DISK) != 0 ||
-                    (attrs & pinned) != 0)
-                    return CloudFileStatus.LocallyAvailable;
-
-                // File exists locally under sync root — locally available
-                return CloudFileStatus.LocallyAvailable;
+                return GetCloudStatus(attributes, reparseTag);
             }
             catch (Exception ex)
             {
@@ -132,6 +111,35 @@ public sealed class CloudStatusService : ICloudStatusService
                 return CloudFileStatus.NotApplicable;
             }
         }, cancellationToken);
+    }
+
+    /// <inheritdoc/>
+    public CloudFileStatus GetCloudStatus(uint fileAttributes, uint reparseTag)
+    {
+        if ((fileAttributes & NativeMethods.FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS) != 0)
+            return CloudFileStatus.CloudOnly;
+
+        if ((fileAttributes & NativeMethods.FILE_ATTRIBUTE_PINNED) != 0)
+            return CloudFileStatus.AlwaysAvailable;
+
+        if ((fileAttributes & NativeMethods.FILE_ATTRIBUTE_REPARSE_POINT) != 0 && IsCloudReparseTag(reparseTag))
+        {
+            var placeholderState = NativeMethods.CfGetPlaceholderStateFromAttributeTag(fileAttributes, reparseTag);
+
+            if ((placeholderState & NativeMethods.CF_PLACEHOLDER_STATE.CF_PLACEHOLDER_STATE_PARTIAL) != 0)
+                return CloudFileStatus.Syncing;
+
+            if ((placeholderState & NativeMethods.CF_PLACEHOLDER_STATE.CF_PLACEHOLDER_STATE_IN_SYNC) != 0 ||
+                (placeholderState & NativeMethods.CF_PLACEHOLDER_STATE.CF_PLACEHOLDER_STATE_PARTIALLY_IN_SYNC) != 0)
+            {
+                return CloudFileStatus.LocallyAvailable;
+            }
+        }
+
+        if ((fileAttributes & NativeMethods.FILE_ATTRIBUTE_OFFLINE) != 0)
+            return CloudFileStatus.CloudOnly;
+
+        return CloudFileStatus.NotApplicable;
     }
 
     /// <inheritdoc/>
@@ -166,6 +174,32 @@ public sealed class CloudStatusService : ICloudStatusService
         {
             _batchSemaphore.Release();
         }
+    }
+
+    /// <inheritdoc/>
+    public Task<IReadOnlyDictionary<string, CloudFileStatus>> GetCloudStatusBatchAsync(
+        IReadOnlyList<FileSystemEntry> entries,
+        CancellationToken cancellationToken = default)
+    {
+        return Task.Run<IReadOnlyDictionary<string, CloudFileStatus>>(() =>
+        {
+            var results = new Dictionary<string, CloudFileStatus>(entries.Count, StringComparer.OrdinalIgnoreCase);
+
+            foreach (var entry in entries)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                if (!IsUnderSyncRoot(entry.FullPath))
+                {
+                    results[entry.FullPath] = CloudFileStatus.NotApplicable;
+                    continue;
+                }
+
+                results[entry.FullPath] = GetCloudStatus((uint)entry.Attributes, entry.ReparseTag);
+            }
+
+            return results;
+        }, cancellationToken);
     }
 
     /// <inheritdoc/>
@@ -263,9 +297,9 @@ public sealed class CloudStatusService : ICloudStatusService
         }
     }
 
-    private bool TryGetPlaceholderState(string path, bool isDirectory, out int placeholderState)
+    private bool TryGetReparseTag(string path, bool isDirectory, out uint reparseTag)
     {
-        placeholderState = NativeMethods.CF_PLACEHOLDER_STATE_NO_STATES;
+        reparseTag = 0;
 
         var flags = isDirectory ? NativeMethods.FILE_FLAG_BACKUP_SEMANTICS : 0u;
         var handle = NativeMethods.CreateFile(
@@ -296,7 +330,8 @@ public sealed class CloudStatusService : ICloudStatusService
                     return false;
                 }
 
-                placeholderState = NativeMethods.CfGetPlaceholderStateFromFileInfo(buffer, NativeMethods.FileAttributeTagInfo);
+                var tagInfo = Marshal.PtrToStructure<NativeMethods.FILE_ATTRIBUTE_TAG_INFO>(buffer);
+                reparseTag = tagInfo.ReparseTag;
                 return true;
             }
             finally
@@ -308,5 +343,13 @@ public sealed class CloudStatusService : ICloudStatusService
         {
             NativeMethods.CloseHandle(handle);
         }
+    }
+
+    private static bool IsCloudReparseTag(uint tag)
+    {
+        return tag == NativeMethods.IO_REPARSE_TAG_CLOUD ||
+               tag == NativeMethods.IO_REPARSE_TAG_CLOUD_1 ||
+               tag == NativeMethods.IO_REPARSE_TAG_CLOUD_2 ||
+               tag == NativeMethods.IO_REPARSE_TAG_CLOUD_3;
     }
 }

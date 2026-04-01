@@ -5,9 +5,10 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:local="using:FileExplorer.App"
     xmlns:views="using:FileExplorer.App.Views"
-    xmlns:converters="using:FileExplorer.App.Converters">
+    xmlns:converters="using:FileExplorer.App.Converters"
+    xmlns:corevm="using:FileExplorer.Core.ViewModels">
 
-    <Grid>
+    <Grid x:Name="RootGrid" PointerPressed="RootGrid_PointerPressed">
         <Grid.Resources>
             <SolidColorBrush x:Key="TreeViewItemBackgroundPointerOver" Color="Transparent" />
             <SolidColorBrush x:Key="TreeViewItemBackgroundPressed" Color="Transparent" />
@@ -21,6 +22,9 @@
                 <Setter Property="MinHeight" Value="32" />
                 <Setter Property="CornerRadius" Value="4" />
             </Style>
+            <Style x:Key="NavigationTreeItemStyle" TargetType="TreeViewItem">
+                <Setter Property="HorizontalContentAlignment" Value="Left" />
+            </Style>
             <converters:BoolToVisibilityConverter x:Key="BoolToVis" />
             <converters:BoolToVisibilityConverter x:Key="InverseBoolToVis" IsInverted="True" />
             <converters:FileSizeConverter x:Key="FileSizeConverter" />
@@ -31,7 +35,7 @@
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />  <!-- Row 0: Tab strip (title bar) -->
             <RowDefinition Height="40" />    <!-- Row 1: Navigation bar -->
-            <RowDefinition Height="40" />    <!-- Row 2: Command bar -->
+            <RowDefinition Height="0" />     <!-- Row 2: Command bar removed -->
             <RowDefinition Height="*" />     <!-- Row 3: Main content -->
             <RowDefinition Height="24" />    <!-- Row 4: Status bar -->
         </Grid.RowDefinitions>
@@ -47,13 +51,20 @@
             CanDragTabs="True"
             CanReorderTabs="True"
             TabWidthMode="Equal"
-            VerticalAlignment="Stretch" />
+            VerticalAlignment="Stretch">
+            <TabView.TabItemTemplate>
+                <DataTemplate>
+                    <TextBlock Text="{Binding TabTitle}" TextTrimming="CharacterEllipsis" />
+                </DataTemplate>
+            </TabView.TabItemTemplate>
+        </TabView>
 
         <!-- ROW 1: Navigation Bar -->
         <Grid Grid.Row="1" Padding="4,0" ColumnSpacing="4">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="220" />
             </Grid.ColumnDefinitions>
 
@@ -114,85 +125,23 @@
                                 KeyDown="AddressBar_KeyDown" />
             </Grid>
 
-            <AutoSuggestBox x:Name="SearchBox" Grid.Column="2"
+            <Button x:Name="ShortcutLauncherButton"
+                    Grid.Column="2"
+                    Style="{StaticResource SubtleButtonStyle}"
+                    Width="32"
+                    Height="32"
+                    Padding="0"
+                    VerticalAlignment="Center"
+                    ToolTipService.ToolTip="Shortcuts launcher"
+                    Click="ShortcutLauncherButton_Click">
+                <FontIcon FontFamily="{StaticResource SymbolThemeFontFamily}" Glyph="&#xE8B7;" FontSize="14" />
+            </Button>
+
+            <AutoSuggestBox x:Name="SearchBox" Grid.Column="3"
                             QueryIcon="Find" PlaceholderText="Search..."
                             VerticalAlignment="Center"
                             QuerySubmitted="SearchBox_QuerySubmitted" />
         </Grid>
-
-        <!-- ROW 2: Command Bar -->
-        <CommandBar Grid.Row="2" DefaultLabelPosition="Right" IsOpen="False" OverflowButtonVisibility="Auto">
-            <AppBarButton Icon="Add" Label="New" ToolTipService.ToolTip="Create new item">
-                <AppBarButton.Flyout>
-                    <MenuFlyout>
-                        <MenuFlyoutItem Text="Folder" Click="NewFolder_Click">
-                            <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8B7;" /></MenuFlyoutItem.Icon>
-                            <MenuFlyoutItem.KeyboardAccelerators>
-                                <KeyboardAccelerator Modifiers="Control,Shift" Key="N" />
-                            </MenuFlyoutItem.KeyboardAccelerators>
-                        </MenuFlyoutItem>
-                    </MenuFlyout>
-                </AppBarButton.Flyout>
-            </AppBarButton>
-            <AppBarSeparator />
-            <AppBarButton x:Name="CutButton" ToolTipService.ToolTip="Cut (Ctrl+X)" Click="Cut_Click">
-                <AppBarButton.Icon><FontIcon Glyph="&#xE8C6;" /></AppBarButton.Icon>
-                <AppBarButton.KeyboardAccelerators><KeyboardAccelerator Modifiers="Control" Key="X" /></AppBarButton.KeyboardAccelerators>
-            </AppBarButton>
-            <AppBarButton x:Name="CopyButton" ToolTipService.ToolTip="Copy (Ctrl+C)" Click="Copy_Click">
-                <AppBarButton.Icon><FontIcon Glyph="&#xE8C8;" /></AppBarButton.Icon>
-                <AppBarButton.KeyboardAccelerators><KeyboardAccelerator Modifiers="Control" Key="C" /></AppBarButton.KeyboardAccelerators>
-            </AppBarButton>
-            <AppBarButton x:Name="PasteButton" ToolTipService.ToolTip="Paste (Ctrl+V)" Click="Paste_Click">
-                <AppBarButton.Icon><FontIcon Glyph="&#xE77F;" /></AppBarButton.Icon>
-                <AppBarButton.KeyboardAccelerators><KeyboardAccelerator Modifiers="Control" Key="V" /></AppBarButton.KeyboardAccelerators>
-            </AppBarButton>
-            <AppBarButton x:Name="RenameButton" ToolTipService.ToolTip="Rename (F2)" Click="Rename_Click">
-                <AppBarButton.Icon><FontIcon Glyph="&#xE8AC;" /></AppBarButton.Icon>
-            </AppBarButton>
-            <AppBarButton x:Name="ShareButton" ToolTipService.ToolTip="Share" Click="Share_Click">
-                <AppBarButton.Icon><FontIcon Glyph="&#xE72D;" /></AppBarButton.Icon>
-            </AppBarButton>
-            <AppBarButton x:Name="DeleteButton" ToolTipService.ToolTip="Delete" Click="Delete_Click">
-                <AppBarButton.Icon><FontIcon Glyph="&#xE74D;" /></AppBarButton.Icon>
-                <AppBarButton.KeyboardAccelerators><KeyboardAccelerator Key="Delete" /></AppBarButton.KeyboardAccelerators>
-            </AppBarButton>
-            <AppBarSeparator />
-            <AppBarButton Label="Sort" ToolTipService.ToolTip="Sort by">
-                <AppBarButton.Icon><FontIcon Glyph="&#xE8CB;" /></AppBarButton.Icon>
-                <AppBarButton.Flyout>
-                    <MenuFlyout>
-                        <MenuFlyoutItem Text="Name" Click="SortByName_Click" />
-                        <MenuFlyoutItem Text="Date modified" Click="SortByDate_Click" />
-                        <MenuFlyoutItem Text="Type" Click="SortByType_Click" />
-                        <MenuFlyoutItem Text="Size" Click="SortBySize_Click" />
-                    </MenuFlyout>
-                </AppBarButton.Flyout>
-            </AppBarButton>
-            <AppBarButton Label="View" ToolTipService.ToolTip="View options">
-                <AppBarButton.Icon><FontIcon Glyph="&#xE8A9;" /></AppBarButton.Icon>
-                <AppBarButton.Flyout>
-                    <MenuFlyout>
-                        <ToggleMenuFlyoutItem x:Name="PreviewPaneToggle" Text="Preview pane" Click="TogglePreviewPane_Click" />
-                        <MenuFlyoutSeparator />
-                        <ToggleMenuFlyoutItem x:Name="HiddenFilesToggle" Text="Show hidden items" Click="ToggleHiddenFiles_Click" />
-                        <ToggleMenuFlyoutItem x:Name="FileExtensionsToggle" Text="Show file name extensions" Click="ToggleFileExtensions_Click" />
-                    </MenuFlyout>
-                </AppBarButton.Flyout>
-            </AppBarButton>
-            <CommandBar.SecondaryCommands>
-                <AppBarButton Label="Select all" Click="SelectAll_Click">
-                    <AppBarButton.KeyboardAccelerators><KeyboardAccelerator Modifiers="Control" Key="A" /></AppBarButton.KeyboardAccelerators>
-                </AppBarButton>
-                <AppBarButton Label="Undo" Click="Undo_Click">
-                    <AppBarButton.KeyboardAccelerators><KeyboardAccelerator Modifiers="Control" Key="Z" /></AppBarButton.KeyboardAccelerators>
-                </AppBarButton>
-                <AppBarSeparator />
-                <AppBarButton Label="Properties" Click="Properties_Click">
-                    <AppBarButton.KeyboardAccelerators><KeyboardAccelerator Modifiers="Menu" Key="Enter" /></AppBarButton.KeyboardAccelerators>
-                </AppBarButton>
-            </CommandBar.SecondaryCommands>
-        </CommandBar>
 
         <!-- ROW 3: Main Content -->
         <Grid Grid.Row="3">
@@ -212,14 +161,38 @@
                 RightTapped="NavigationTree_RightTapped"
                 Expanding="NavigationTree_Expanding"
                 Collapsed="NavigationTree_Collapsed"
-                Padding="8,4,4,4" />
+                ItemContainerStyle="{StaticResource NavigationTreeItemStyle}"
+                ScrollViewer.HorizontalScrollBarVisibility="Visible"
+                ScrollViewer.HorizontalScrollMode="Enabled"
+                ScrollViewer.VerticalScrollBarVisibility="Auto"
+                Padding="8,4,4,4">
+                <TreeView.ItemTemplate>
+                    <DataTemplate>
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <FontIcon FontFamily="{StaticResource SymbolThemeFontFamily}" Glyph="{Binding Content.IconGlyph}" FontSize="12" />
+                            <TextBlock Text="{Binding Content.DisplayName}" TextWrapping="NoWrap" />
+                        </StackPanel>
+                    </DataTemplate>
+                </TreeView.ItemTemplate>
+            </TreeView>
 
             <!-- Splitter -->
-            <Border Grid.Column="1" Width="4" Background="Transparent"
-                    BorderThickness="1,0,0,0"
-                    BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
-                    ManipulationMode="TranslateX"
-                    ManipulationDelta="TreeSplitter_ManipulationDelta" />
+                <Grid x:Name="TreeSplitter" Grid.Column="1" Width="8" Background="Transparent"
+                  ManipulationMode="TranslateX"
+                  PointerEntered="TreeSplitter_PointerEntered"
+                    PointerMoved="TreeSplitter_PointerMoved"
+                  PointerExited="TreeSplitter_PointerExited"
+                  ManipulationDelta="TreeSplitter_ManipulationDelta">
+                <Border HorizontalAlignment="Center" Width="1"
+                    Background="{ThemeResource DividerStrokeColorDefaultBrush}" />
+                <FontIcon x:Name="TreeSplitterHint"
+                      FontFamily="{StaticResource SymbolThemeFontFamily}"
+                      Glyph="&#xE76B;"
+                      FontSize="12"
+                      Visibility="Collapsed"
+                      HorizontalAlignment="Center"
+                      VerticalAlignment="Center" />
+                </Grid>
 
             <!-- Right Pane: File List -->
             <views:FileListView x:Name="FileList" Grid.Column="2" />
@@ -250,7 +223,6 @@
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
             <TextBlock x:Name="StatusBarLeft" Grid.Column="0" FontSize="11"
                        VerticalAlignment="Center"
@@ -258,17 +230,7 @@
             <TextBlock x:Name="StatusBarRight" Grid.Column="1" FontSize="11"
                        VerticalAlignment="Center"
                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                       Margin="0,0,12,0" />
-            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
-                <Button Style="{StaticResource SubtleButtonStyle}" Width="24" Height="24" Padding="0"
-                        ToolTipService.ToolTip="Details view">
-                    <FontIcon FontFamily="{StaticResource SymbolThemeFontFamily}" Glyph="&#xE8FD;" FontSize="12" />
-                </Button>
-                <Button Style="{StaticResource SubtleButtonStyle}" Width="24" Height="24" Padding="0"
-                        ToolTipService.ToolTip="Tiles view">
-                    <FontIcon FontFamily="{StaticResource SymbolThemeFontFamily}" Glyph="&#xE8A9;" FontSize="12" />
-                </Button>
-            </StackPanel>
+                       Margin="0" />
         </Grid>
 
         <!-- Progress drawer -->

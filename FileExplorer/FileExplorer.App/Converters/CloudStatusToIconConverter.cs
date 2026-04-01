@@ -19,6 +19,7 @@ public sealed class CloudStatusToIconConverter : IValueConverter
             {
                 CloudFileStatus.CloudOnly => "\uE753",        // Cloud
                 CloudFileStatus.LocallyAvailable => "\uE73E", // Checkmark
+                CloudFileStatus.AlwaysAvailable => "\uE718",  // Pinned
                 CloudFileStatus.Syncing => "\uE895",          // Sync
                 CloudFileStatus.SyncError => "\uE7BA",        // Warning
                 CloudFileStatus.SharedWithMe => "\uE902",     // People
