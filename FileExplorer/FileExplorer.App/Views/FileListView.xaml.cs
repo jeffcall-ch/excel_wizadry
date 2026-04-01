@@ -25,12 +25,32 @@ public sealed partial class FileListView : UserControl
     private DateTimeOffset _lastKeyTime;
     private bool _isSearchMode;
     private bool _isClearingSelection;
+    private int _selectionAnchorIndex = -1;
+    private bool _isProgrammaticRangeSelection;
+    private bool _isShiftPressed;
     private bool _restoreFocusAfterNavigation;
+    private string? _pendingSelectPathAfterGoUp;
 
     /// <summary>Initializes a new instance of the <see cref="FileListView"/> class.</summary>
     public FileListView()
     {
         InitializeComponent();
+    }
+
+    public void FocusForKeyboardNavigation()
+    {
+        DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
+        {
+            FileListView_Inner.Focus(FocusState.Programmatic);
+        });
+    }
+
+    public void PrepareSelectionAfterGoUp(string? previouslyOpenedFolderPath)
+    {
+        if (!string.IsNullOrWhiteSpace(previouslyOpenedFolderPath))
+        {
+            _pendingSelectPathAfterGoUp = previouslyOpenedFolderPath;
+        }
     }
 
     /// <summary>Binds this view to a tab's content ViewModel.</summary>
@@ -45,7 +65,7 @@ public sealed partial class FileListView : UserControl
 
         _currentTab = tab;
         FileListView_Inner.ItemsSource = tab.Items;
-    ClearTransientSelection();
+        ClearTransientSelection();
         UpdateEmptyState();
         UpdateSortIndicators();
         UpdateOneDriveColumnVisibility();
@@ -60,6 +80,8 @@ public sealed partial class FileListView : UserControl
         DispatcherQueue.TryEnqueue(() =>
         {
             UpdateEmptyState();
+
+            TryApplyPendingSelectionAfterGoUp();
 
             if (e.NewItems is null) return;
 
@@ -96,6 +118,14 @@ public sealed partial class FileListView : UserControl
                     {
                         FileListView_Inner.Focus(FocusState.Programmatic);
                     });
+                }
+
+                if (!_currentTab.IsLoading)
+                {
+                    if (!TryApplyPendingSelectionAfterGoUp())
+                    {
+                        EnsureTopRowVisibleWhenNoSelection();
+                    }
                 }
             });
         }
@@ -234,6 +264,12 @@ public sealed partial class FileListView : UserControl
         if (_currentTab is null)
             return;
 
+        if (IsShiftKey(e.Key))
+        {
+            _isShiftPressed = true;
+            return;
+        }
+
         if (_currentTab.Items.Any(item => item.IsRenaming))
             return;
 
@@ -258,20 +294,51 @@ public sealed partial class FileListView : UserControl
             case Windows.System.VirtualKey.Left:
                 if (!string.IsNullOrWhiteSpace(_currentTab.CurrentPath))
                 {
+                    _pendingSelectPathAfterGoUp = _currentTab.CurrentPath;
                     e.Handled = true;
                     _restoreFocusAfterNavigation = true;
                     ClearTransientSelection();
                     await _currentTab.GoUpAsync();
+                    EnsurePendingSelectionAfterGoUpAsync();
                 }
                 break;
 
+            case Windows.System.VirtualKey.Escape:
+                e.Handled = true;
+                ClearTransientSelection();
+                FileListView_Inner.Focus(FocusState.Programmatic);
+                break;
+
             case Windows.System.VirtualKey.Up:
-                e.Handled = MoveSelection(-1);
+                if (!IsShiftSelectionActive() && FileListView_Inner.SelectedItem is null && _currentTab.Items.Count > 0)
+                {
+                    e.Handled = true;
+                    var last = _currentTab.Items[^1];
+                    FileListView_Inner.SelectedItem = last;
+                    _selectionAnchorIndex = _currentTab.Items.Count - 1;
+                    FileListView_Inner.ScrollIntoView(last, ScrollIntoViewAlignment.Leading);
+                }
                 break;
 
             case Windows.System.VirtualKey.Down:
-                e.Handled = MoveSelection(1);
+                // Preserve native ListView range selection behavior (Shift+Arrow).
+                if (!IsShiftSelectionActive() && FileListView_Inner.SelectedItem is null && _currentTab.Items.Count > 0)
+                {
+                    e.Handled = true;
+                    var first = _currentTab.Items[0];
+                    FileListView_Inner.SelectedItem = first;
+                    _selectionAnchorIndex = 0;
+                    FileListView_Inner.ScrollIntoView(first, ScrollIntoViewAlignment.Leading);
+                }
                 break;
+        }
+    }
+
+    private void FileListView_Inner_KeyUp(object sender, KeyRoutedEventArgs e)
+    {
+        if (IsShiftKey(e.Key))
+        {
+            _isShiftPressed = false;
         }
     }
 
@@ -287,6 +354,13 @@ public sealed partial class FileListView : UserControl
         {
             _currentTab.SelectedItems.Add(item);
         }
+
+        if (!_isProgrammaticRangeSelection && FileListView_Inner.SelectedItem is FileItemViewModel selected)
+        {
+            _selectionAnchorIndex = _currentTab.Items.IndexOf(selected);
+        }
+
+        ApplySelectionFrames();
     }
 
     /// <summary>Sets whether the list is showing search results.</summary>
@@ -355,13 +429,21 @@ public sealed partial class FileListView : UserControl
                 flyout.Items.Add(new MenuFlyoutItem { Text = "Open in new tab", Icon = new FontIcon { Glyph = "\uE7C3" } });
                 ((MenuFlyoutItem)flyout.Items[^1]).Click += (_, _) =>
                 {
-                    _ = mainWindow.OpenFolderInNewTabAsync(folderTarget.Entry.FullPath);
+                    flyout.Hide();
+                    DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
+                    {
+                        _ = mainWindow.OpenFolderInNewTabAsync(folderTarget.Entry.FullPath);
+                    });
                 };
 
                 flyout.Items.Add(new MenuFlyoutItem { Text = "Open in new window", Icon = new FontIcon { Glyph = "\uE8A7" } });
                 ((MenuFlyoutItem)flyout.Items[^1]).Click += (_, _) =>
                 {
-                    mainWindow.OpenFolderInNewWindow(folderTarget.Entry.FullPath);
+                    flyout.Hide();
+                    DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
+                    {
+                        mainWindow.OpenFolderInNewWindow(folderTarget.Entry.FullPath);
+                    });
                 };
             }
 
@@ -466,6 +548,16 @@ public sealed partial class FileListView : UserControl
             e.Handled = true;
             item.IsRenaming = false;
             item.EditingName = item.Name;
+
+            DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
+            {
+                if (FileListView_Inner.SelectedItem is null)
+                {
+                    FileListView_Inner.SelectedItem = item;
+                }
+
+                FileListView_Inner.Focus(FocusState.Programmatic);
+            });
         }
     }
 
@@ -556,7 +648,7 @@ public sealed partial class FileListView : UserControl
         return _currentTab?.Items.FirstOrDefault();
     }
 
-    private bool MoveSelection(int delta)
+    private bool MoveSelection(int delta, bool extendRange)
     {
         if (_currentTab is null || _currentTab.Items.Count == 0)
             return false;
@@ -573,10 +665,67 @@ public sealed partial class FileListView : UserControl
             return false;
 
         var nextItem = _currentTab.Items[nextIndex];
-        FileListView_Inner.SelectedItems.Clear();
-        FileListView_Inner.SelectedItem = nextItem;
+
+        if (extendRange)
+        {
+            if (_selectionAnchorIndex < 0)
+                _selectionAnchorIndex = currentIndex >= 0 ? currentIndex : nextIndex;
+
+            ApplyRangeSelection(_selectionAnchorIndex, nextIndex);
+        }
+        else
+        {
+            _selectionAnchorIndex = nextIndex;
+            FileListView_Inner.SelectedItems.Clear();
+            FileListView_Inner.SelectedItem = nextItem;
+        }
+
         FileListView_Inner.ScrollIntoView(nextItem);
         return true;
+    }
+
+    private void ApplyRangeSelection(int anchorIndex, int targetIndex)
+    {
+        if (_currentTab is null || _currentTab.Items.Count == 0)
+            return;
+
+        var start = Math.Max(0, Math.Min(anchorIndex, targetIndex));
+        var end = Math.Min(_currentTab.Items.Count - 1, Math.Max(anchorIndex, targetIndex));
+
+        _isProgrammaticRangeSelection = true;
+        try
+        {
+            FileListView_Inner.SelectedItems.Clear();
+            for (var i = start; i <= end; i++)
+            {
+                FileListView_Inner.SelectedItems.Add(_currentTab.Items[i]);
+            }
+
+            FileListView_Inner.SelectedItem = _currentTab.Items[targetIndex];
+        }
+        finally
+        {
+            _isProgrammaticRangeSelection = false;
+        }
+    }
+
+    private bool IsShiftSelectionActive()
+    {
+        if (_isShiftPressed)
+            return true;
+
+        var left = InputKeyboardSource.GetKeyStateForCurrentThread(Windows.System.VirtualKey.LeftShift);
+        var right = InputKeyboardSource.GetKeyStateForCurrentThread(Windows.System.VirtualKey.RightShift);
+        var generic = InputKeyboardSource.GetKeyStateForCurrentThread(Windows.System.VirtualKey.Shift);
+
+        return ((left | right | generic) & Windows.UI.Core.CoreVirtualKeyStates.Down) == Windows.UI.Core.CoreVirtualKeyStates.Down;
+    }
+
+    private static bool IsShiftKey(Windows.System.VirtualKey key)
+    {
+        return key == Windows.System.VirtualKey.Shift ||
+               key == Windows.System.VirtualKey.LeftShift ||
+               key == Windows.System.VirtualKey.RightShift;
     }
 
     private IReadOnlyList<string> GetContextMenuPaths(FileItemViewModel? tappedItem)
@@ -613,6 +762,8 @@ public sealed partial class FileListView : UserControl
     private void ClearTransientSelection()
     {
         _typeAheadBuffer = string.Empty;
+        _selectionAnchorIndex = -1;
+        _isShiftPressed = false;
 
         if (_currentTab is not null)
         {
@@ -629,6 +780,99 @@ public sealed partial class FileListView : UserControl
         {
             _isClearingSelection = false;
         }
+
+        ApplySelectionFrames();
+    }
+
+    private bool TryApplyPendingSelectionAfterGoUp()
+    {
+        if (_currentTab is null || string.IsNullOrWhiteSpace(_pendingSelectPathAfterGoUp))
+            return false;
+
+        var pendingPath = NormalizePathForCompare(_pendingSelectPathAfterGoUp);
+        var pendingName = Path.GetFileName(pendingPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+
+        var targetItem = _currentTab.Items.FirstOrDefault(item =>
+            string.Equals(NormalizePathForCompare(item.Entry.FullPath), pendingPath, StringComparison.OrdinalIgnoreCase));
+
+        if (targetItem is null && !string.IsNullOrWhiteSpace(pendingName))
+        {
+            targetItem = _currentTab.Items.FirstOrDefault(item =>
+                item.Entry.IsDirectory && string.Equals(item.Entry.Name, pendingName, StringComparison.OrdinalIgnoreCase));
+        }
+
+        if (targetItem is null)
+            return false;
+
+        _pendingSelectPathAfterGoUp = null;
+
+        _isProgrammaticRangeSelection = true;
+        try
+        {
+            FileListView_Inner.SelectedItems.Clear();
+            FileListView_Inner.SelectedItem = targetItem;
+        }
+        finally
+        {
+            _isProgrammaticRangeSelection = false;
+        }
+
+        _selectionAnchorIndex = _currentTab.Items.IndexOf(targetItem);
+        FileListView_Inner.ScrollIntoView(targetItem, ScrollIntoViewAlignment.Leading);
+        FileListView_Inner.Focus(FocusState.Programmatic);
+        ApplySelectionFrames();
+        return true;
+    }
+
+    private void EnsureTopRowVisibleWhenNoSelection()
+    {
+        if (_currentTab is null || _currentTab.Items.Count == 0)
+            return;
+
+        if (!string.IsNullOrWhiteSpace(_pendingSelectPathAfterGoUp))
+            return;
+
+        if (FileListView_Inner.SelectedItem is not null)
+            return;
+
+        var first = _currentTab.Items[0];
+        FileListView_Inner.ScrollIntoView(first, ScrollIntoViewAlignment.Leading);
+    }
+
+    private async void EnsurePendingSelectionAfterGoUpAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_pendingSelectPathAfterGoUp))
+            return;
+
+        for (int attempt = 0; attempt < 12; attempt++)
+        {
+            await Task.Delay(35);
+            if (TryApplyPendingSelectionAfterGoUp())
+                return;
+        }
+    }
+
+    private static string NormalizePathForCompare(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            return string.Empty;
+
+        var normalized = path;
+        if (normalized.StartsWith(@"\\?\UNC\", StringComparison.OrdinalIgnoreCase))
+            normalized = @"\\" + normalized[8..];
+        else if (normalized.StartsWith(@"\\?\", StringComparison.OrdinalIgnoreCase))
+            normalized = normalized[4..];
+
+        try
+        {
+            normalized = Path.GetFullPath(normalized);
+        }
+        catch
+        {
+            // Keep original path if full-path normalization fails.
+        }
+
+        return normalized.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
     }
 
     #endregion
@@ -756,7 +1000,23 @@ public sealed partial class FileListView : UserControl
                     ? matches.IndexOf(sel) : -1;
                 var nextIndex = (currentIndex + 1) % matches.Count;
                 var match = matches[nextIndex];
-                FileListView_Inner.SelectedItem = match;
+
+                var matchIndexInAllItems = _currentTab.Items.IndexOf(match);
+                if (IsShiftSelectionActive() && matchIndexInAllItems >= 0)
+                {
+                    if (_selectionAnchorIndex < 0)
+                        _selectionAnchorIndex = FileListView_Inner.SelectedItem is FileItemViewModel selected
+                            ? _currentTab.Items.IndexOf(selected)
+                            : matchIndexInAllItems;
+
+                    ApplyRangeSelection(_selectionAnchorIndex, matchIndexInAllItems);
+                }
+                else
+                {
+                    _selectionAnchorIndex = matchIndexInAllItems;
+                    FileListView_Inner.SelectedItem = match;
+                }
+
                 FileListView_Inner.ScrollIntoView(match, ScrollIntoViewAlignment.Leading);
             }
 
@@ -782,7 +1042,22 @@ public sealed partial class FileListView : UserControl
 
             if (match is not null)
             {
-                FileListView_Inner.SelectedItem = match;
+                var matchIndexInAllItems = _currentTab.Items.IndexOf(match);
+                if (IsShiftSelectionActive() && matchIndexInAllItems >= 0)
+                {
+                    if (_selectionAnchorIndex < 0)
+                        _selectionAnchorIndex = FileListView_Inner.SelectedItem is FileItemViewModel selected
+                            ? _currentTab.Items.IndexOf(selected)
+                            : matchIndexInAllItems;
+
+                    ApplyRangeSelection(_selectionAnchorIndex, matchIndexInAllItems);
+                }
+                else
+                {
+                    _selectionAnchorIndex = matchIndexInAllItems;
+                    FileListView_Inner.SelectedItem = match;
+                }
+
                 FileListView_Inner.ScrollIntoView(match, ScrollIntoViewAlignment.Leading);
             }
         }
@@ -858,6 +1133,7 @@ public sealed partial class FileListView : UserControl
             var container = FileListView_Inner.ContainerFromIndex(i) as ListViewItem;
             if (container is null) continue;
             ApplyColumnWidths(container);
+            ApplySelectionFrame(container);
         }
     }
 
@@ -872,6 +1148,48 @@ public sealed partial class FileListView : UserControl
     {
         if (args.ItemContainer is not ListViewItem item) return;
         ApplyColumnWidths(item);
+        ApplySelectionFrame(item);
+    }
+
+    private void ApplySelectionFrames()
+    {
+        for (int i = 0; i < FileListView_Inner.Items.Count; i++)
+        {
+            if (FileListView_Inner.ContainerFromIndex(i) is ListViewItem container)
+            {
+                ApplySelectionFrame(container);
+            }
+        }
+    }
+
+    private static void ApplySelectionFrame(ListViewItem container)
+    {
+        var border = FindSelectionFrameBorder(container);
+        if (border is null)
+            return;
+
+        border.BorderThickness = container.IsSelected ? new Thickness(1) : new Thickness(0);
+    }
+
+    private static Border? FindSelectionFrameBorder(DependencyObject parent)
+    {
+        var count = VisualTreeHelper.GetChildrenCount(parent);
+        for (int i = 0; i < count; i++)
+        {
+            var child = VisualTreeHelper.GetChild(parent, i);
+            if (child is Border border &&
+                border.Tag is string tag &&
+                string.Equals(tag, "SelectionFrameBorder", StringComparison.Ordinal))
+            {
+                return border;
+            }
+
+            var found = FindSelectionFrameBorder(child);
+            if (found is not null)
+                return found;
+        }
+
+        return null;
     }
 
     private void ApplyColumnWidths(ListViewItem container)

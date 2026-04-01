@@ -8,7 +8,7 @@
     xmlns:converters="using:FileExplorer.App.Converters"
     xmlns:corevm="using:FileExplorer.Core.ViewModels">
 
-    <Grid x:Name="RootGrid" PointerPressed="RootGrid_PointerPressed">
+    <Grid x:Name="RootGrid" PointerPressed="RootGrid_PointerPressed" KeyboardAcceleratorPlacementMode="Hidden">
         <Grid.Resources>
             <SolidColorBrush x:Key="TreeViewItemBackgroundPointerOver" Color="Transparent" />
             <SolidColorBrush x:Key="TreeViewItemBackgroundPressed" Color="Transparent" />
@@ -44,10 +44,8 @@
         <TabView
             x:Name="TabViewControl"
             Grid.Row="0"
+            KeyboardAcceleratorPlacementMode="Hidden"
             IsAddTabButtonVisible="True"
-            AddTabButtonClick="TabView_AddTabButtonClick"
-            TabCloseRequested="TabView_TabCloseRequested"
-            SelectionChanged="TabView_SelectionChanged"
             CanDragTabs="True"
             CanReorderTabs="True"
             TabWidthMode="Equal"
@@ -71,19 +69,19 @@
             <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
                 <Button x:Name="BackButton" Style="{StaticResource SubtleButtonStyle}"
                         ToolTipService.ToolTip="Back (Alt+Left)" Click="BackButton_Click"
-                        IsEnabled="{x:Bind ViewModel.CanGoBack, Mode=OneWay}"
+                    IsEnabled="{Binding CanGoBack, Mode=OneWay}"
                         Width="32" Height="32" Padding="0">
                     <FontIcon FontFamily="{StaticResource SymbolThemeFontFamily}" Glyph="&#xE72B;" FontSize="14" />
                 </Button>
                 <Button x:Name="ForwardButton" Style="{StaticResource SubtleButtonStyle}"
                         ToolTipService.ToolTip="Forward (Alt+Right)" Click="ForwardButton_Click"
-                        IsEnabled="{x:Bind ViewModel.CanGoForward, Mode=OneWay}"
+                    IsEnabled="{Binding CanGoForward, Mode=OneWay}"
                         Width="32" Height="32" Padding="0">
                     <FontIcon FontFamily="{StaticResource SymbolThemeFontFamily}" Glyph="&#xE72A;" FontSize="14" />
                 </Button>
                 <Button x:Name="UpButton" Style="{StaticResource SubtleButtonStyle}"
                         ToolTipService.ToolTip="Up (Backspace)" Click="UpButton_Click"
-                        IsEnabled="{x:Bind ViewModel.CanGoUp, Mode=OneWay}"
+                    IsEnabled="{Binding CanGoUp, Mode=OneWay}"
                         Width="32" Height="32" Padding="0">
                     <FontIcon FontFamily="{StaticResource SymbolThemeFontFamily}" Glyph="&#xE74A;" FontSize="14" />
                 </Button>

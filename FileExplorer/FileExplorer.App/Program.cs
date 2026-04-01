@@ -8,6 +8,12 @@ public static class Program
     [STAThread]
     static void Main(string[] args)
     {
+        var processDirectory = Path.GetDirectoryName(Environment.ProcessPath ?? string.Empty);
+        if (!string.IsNullOrWhiteSpace(processDirectory) && Directory.Exists(processDirectory))
+        {
+            Environment.CurrentDirectory = processDirectory;
+        }
+
         App.StartupPath = args.Length > 0 ? args[0] : null;
 
         global::WinRT.ComWrappersSupport.InitializeComWrappers();

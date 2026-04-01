@@ -477,8 +477,8 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
                 ? items.OrderByDescending(i => i.Entry.IsDirectory).ThenBy(i => i.Entry.Name, StringComparer.OrdinalIgnoreCase)
                 : items.OrderByDescending(i => i.Entry.IsDirectory).ThenByDescending(i => i.Entry.Name, StringComparer.OrdinalIgnoreCase),
             "DateModified" => SortAscending
-                ? items.OrderByDescending(i => i.Entry.IsDirectory).ThenBy(i => i.Entry.DateModified)
-                : items.OrderByDescending(i => i.Entry.IsDirectory).ThenByDescending(i => i.Entry.DateModified),
+                ? items.OrderBy(i => i.Entry.DateModified).ThenBy(i => i.Entry.Name, StringComparer.OrdinalIgnoreCase)
+                : items.OrderByDescending(i => i.Entry.DateModified).ThenBy(i => i.Entry.Name, StringComparer.OrdinalIgnoreCase),
             "Type" => SortAscending
                 ? items.OrderByDescending(i => i.Entry.IsDirectory).ThenBy(i => i.Entry.TypeDescription, StringComparer.OrdinalIgnoreCase)
                 : items.OrderByDescending(i => i.Entry.IsDirectory).ThenByDescending(i => i.Entry.TypeDescription, StringComparer.OrdinalIgnoreCase),

@@ -16,6 +16,53 @@ namespace FileExplorer.Tests;
 public class TabContentViewModelTests
 {
     [Fact]
+    public void SetSort_DateModifiedAscending_MixesFoldersAndFilesByTimestamp()
+    {
+        using var viewModel = new TabContentViewModel(
+            Mock.Of<IFileSystemService>(),
+            Mock.Of<IShellIntegrationService>(),
+            Mock.Of<ICloudStatusService>(),
+            Mock.Of<IPreviewService>(),
+            NullLogger<TabContentViewModel>.Instance);
+
+        var oldestFile = CreateItem("oldest.txt", isDirectory: false, new DateTimeOffset(2026, 1, 1, 8, 0, 0, TimeSpan.Zero));
+        var middleFolder = CreateItem("MiddleFolder", isDirectory: true, new DateTimeOffset(2026, 1, 2, 8, 0, 0, TimeSpan.Zero));
+        var newestFolder = CreateItem("NewestFolder", isDirectory: true, new DateTimeOffset(2026, 1, 3, 8, 0, 0, TimeSpan.Zero));
+
+        viewModel.Items.Add(newestFolder);
+        viewModel.Items.Add(oldestFile);
+        viewModel.Items.Add(middleFolder);
+
+        viewModel.SetSort("DateModified");
+
+        viewModel.Items.Select(i => i.Name).Should().Equal("oldest.txt", "MiddleFolder", "NewestFolder");
+    }
+
+    [Fact]
+    public void SetSort_DateModifiedDescending_MixesFoldersAndFilesByTimestamp()
+    {
+        using var viewModel = new TabContentViewModel(
+            Mock.Of<IFileSystemService>(),
+            Mock.Of<IShellIntegrationService>(),
+            Mock.Of<ICloudStatusService>(),
+            Mock.Of<IPreviewService>(),
+            NullLogger<TabContentViewModel>.Instance);
+
+        var oldestFolder = CreateItem("OldFolder", isDirectory: true, new DateTimeOffset(2026, 1, 1, 8, 0, 0, TimeSpan.Zero));
+        var middleFile = CreateItem("middle.txt", isDirectory: false, new DateTimeOffset(2026, 1, 2, 8, 0, 0, TimeSpan.Zero));
+        var newestFile = CreateItem("newest.txt", isDirectory: false, new DateTimeOffset(2026, 1, 3, 8, 0, 0, TimeSpan.Zero));
+
+        viewModel.Items.Add(oldestFolder);
+        viewModel.Items.Add(newestFile);
+        viewModel.Items.Add(middleFile);
+
+        viewModel.SetSort("DateModified");
+        viewModel.SetSort("DateModified");
+
+        viewModel.Items.Select(i => i.Name).Should().Equal("newest.txt", "middle.txt", "OldFolder");
+    }
+
+    [Fact]
     public async Task NavigateAsync_BareDriveLetter_NormalizesToDriveRoot()
     {
         var driveRoot = Path.GetPathRoot(Environment.SystemDirectory)!;
@@ -141,5 +188,20 @@ public class TabContentViewModelTests
     {
         await Task.CompletedTask;
         yield break;
+    }
+
+    private static FileItemViewModel CreateItem(string name, bool isDirectory, DateTimeOffset modified)
+    {
+        var fullPath = isDirectory ? $@"C:\Temp\{name}" : $@"C:\Temp\{name}";
+        return new FileItemViewModel(new FileSystemEntry
+        {
+            FullPath = fullPath,
+            Name = name,
+            IsDirectory = isDirectory,
+            DateModified = modified,
+            Attributes = isDirectory ? FileAttributes.Directory : FileAttributes.Normal,
+            Extension = isDirectory ? string.Empty : Path.GetExtension(name),
+            TypeDescription = isDirectory ? "File folder" : "Text Document"
+        });
     }
 }

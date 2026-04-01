@@ -26,12 +26,24 @@ public sealed partial class MainWindow : Window
 {
     private const int IDC_ARROW = 32512;
     private const int IDC_SIZEWE = 32644;
+    private const int IMAGE_ICON = 1;
+    private const uint LR_LOADFROMFILE = 0x00000010;
+    private const uint LR_DEFAULTSIZE = 0x00000040;
+    private const uint WM_SETICON = 0x0080;
+    private static readonly nint ICON_SMALL = new(0);
+    private static readonly nint ICON_BIG = new(1);
 
     [DllImport("user32.dll", SetLastError = true)]
     private static extern nint LoadCursor(nint hInstance, int lpCursorName);
 
     [DllImport("user32.dll")]
     private static extern nint SetCursor(nint hCursor);
+
+    [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    private static extern nint LoadImage(nint hInst, string name, uint type, int cx, int cy, uint fuLoad);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern nint SendMessage(nint hWnd, uint msg, nint wParam, nint lParam);
 
     private readonly DispatcherQueue _dispatcherQueue;
     private readonly IFileSystemService _fileSystemService;
@@ -85,6 +97,10 @@ public sealed partial class MainWindow : Window
     {
         InitializeComponent();
 
+        TabViewControl.AddTabButtonClick += TabView_AddTabButtonClick;
+        TabViewControl.TabCloseRequested += TabView_TabCloseRequested;
+        TabViewControl.SelectionChanged += TabView_SelectionChanged;
+
         Title = "File Explorer";
         SystemBackdrop = new MicaBackdrop();
 
@@ -92,11 +108,13 @@ public sealed partial class MainWindow : Window
         _dispatcherQueue = DispatcherQueue.GetForCurrentThread();
         _fileSystemService = App.Services.GetRequiredService<IFileSystemService>();
         ViewModel = App.Services.GetRequiredService<MainViewModel>();
+        RootGrid.DataContext = ViewModel;
         _shortcutsFolderPath = ResolveShortcutsFolderPath();
         _fileSystemService.OperationError += FileSystemService_OperationError;
 
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(TabViewControl);
+        ApplyWindowIcon();
 
         RegisterKeyboardAccelerators();
         Closed += MainWindow_Closed;
@@ -105,6 +123,29 @@ public sealed partial class MainWindow : Window
         StartShortcutCachePreload();
 
         _ = InitializeAsync();
+    }
+
+    private void ApplyWindowIcon()
+    {
+        try
+        {
+            var iconPath = Path.Combine(AppContext.BaseDirectory, "Assets", "LSApp.ico");
+            if (!File.Exists(iconPath))
+                return;
+
+            AppWindow.SetIcon(iconPath);
+
+            var hIcon = LoadImage(nint.Zero, iconPath, IMAGE_ICON, 0, 0, LR_LOADFROMFILE | LR_DEFAULTSIZE);
+            if (hIcon != nint.Zero)
+            {
+                SendMessage(Hwnd, WM_SETICON, ICON_SMALL, hIcon);
+                SendMessage(Hwnd, WM_SETICON, ICON_BIG, hIcon);
+            }
+        }
+        catch
+        {
+            // Icon setup should never block app startup.
+        }
     }
 
     private async Task InitializeAsync()
@@ -181,6 +222,7 @@ public sealed partial class MainWindow : Window
             UpdateStatusBar();
             UpdateSearchPlaceholder(tab.CurrentPath);
             _ = SyncNavigationTreeAsync(tab.CurrentPath);
+            ActivateRightPaneForKeyboardNavigation();
         }
     }
 
@@ -215,14 +257,103 @@ public sealed partial class MainWindow : Window
                 _ = ViewModel.GoForwardAsync();
 
             e.Handled = true;
+            return;
         }
+
+        var source = e.OriginalSource as DependencyObject;
+        if (source is null)
+            return;
+
+        if (IsWithinNavigationPane(source))
+            return;
+
+        if (IsWithinTextInput(source))
+            return;
+
+        if (IsWithinFileListArea(source))
+        {
+            ActivateRightPaneForKeyboardNavigation();
+        }
+    }
+
+    private void ActivateRightPaneForKeyboardNavigation()
+    {
+        _dispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low, () =>
+        {
+            FileList.FocusForKeyboardNavigation();
+        });
+    }
+
+    private void CloseShortcutLauncherFlyoutAndFocusRightPane()
+    {
+        _shortcutLauncherFlyout?.Hide();
+        ActivateRightPaneForKeyboardNavigation();
+    }
+
+    private bool IsWithinNavigationPane(DependencyObject source)
+    {
+        var current = source;
+        while (current is not null)
+        {
+            if (ReferenceEquals(current, NavigationTree) || current is TreeView or TreeViewItem)
+                return true;
+
+            current = VisualTreeHelper.GetParent(current);
+        }
+
+        return false;
+    }
+
+    private static bool IsWithinTextInput(DependencyObject source)
+    {
+        var current = source;
+        while (current is not null)
+        {
+            if (current is TextBox or AutoSuggestBox or PasswordBox or RichEditBox)
+                return true;
+
+            current = VisualTreeHelper.GetParent(current);
+        }
+
+        return false;
+    }
+
+    private bool IsWithinFileListArea(DependencyObject source)
+    {
+        var current = source;
+        while (current is not null)
+        {
+            if (ReferenceEquals(current, FileList))
+                return true;
+
+            current = VisualTreeHelper.GetParent(current);
+        }
+
+        return false;
     }
 
     private TabContentViewModel? _subscribedTab;
 
     private void BackButton_Click(object sender, RoutedEventArgs e) => _ = ViewModel.GoBackAsync();
+
+    private void OpenFolderFromShortcutFlyout(string path)
+    {
+        CloseShortcutLauncherFlyoutAndFocusRightPane();
+        _dispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low, () =>
+        {
+            _ = OpenFolderInNewTabAsync(path);
+        });
+    }
     private void ForwardButton_Click(object sender, RoutedEventArgs e) => _ = ViewModel.GoForwardAsync();
-    private void UpButton_Click(object sender, RoutedEventArgs e) => _ = ViewModel.GoUpAsync();
+    private void UpButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (!string.IsNullOrWhiteSpace(ViewModel.ActiveTab?.CurrentPath))
+        {
+            FileList.PrepareSelectionAfterGoUp(ViewModel.ActiveTab.CurrentPath);
+        }
+
+        _ = ViewModel.GoUpAsync();
+    }
     private void RefreshButton_Click(object sender, RoutedEventArgs e) => _ = ViewModel.RefreshAsync();
 
     private void SubscribeToTabNavigation(TabContentViewModel? tab)
@@ -543,7 +674,10 @@ public sealed partial class MainWindow : Window
             Text = "Open shortcuts folder in new tab",
             Icon = new FontIcon { Glyph = "\uE8B7" }
         };
-        openShortcutsFolder.Click += (_, _) => _ = OpenFolderInNewTabAsync(_shortcutsFolderPath);
+        openShortcutsFolder.Click += (_, _) =>
+        {
+            OpenFolderFromShortcutFlyout(_shortcutsFolderPath);
+        };
         flyout.Items.Add(openShortcutsFolder);
 
         return flyout;
@@ -771,8 +905,7 @@ public sealed partial class MainWindow : Window
         if (!ReferenceEquals(owner, folderItem))
             return;
 
-        _ = OpenFolderInNewTabAsync(context.FolderPath);
-        ShortcutLauncherButton.Flyout?.Hide();
+        OpenFolderFromShortcutFlyout(context.FolderPath);
 
         args.Handled = true;
     }
@@ -945,12 +1078,13 @@ public sealed partial class MainWindow : Window
         {
             if (Directory.Exists(path))
             {
-                _ = OpenFolderInNewTabAsync(path);
+                OpenFolderFromShortcutFlyout(path);
                 return;
             }
 
             var shellService = App.Services.GetRequiredService<IShellIntegrationService>();
             shellService.OpenFile(path);
+            CloseShortcutLauncherFlyoutAndFocusRightPane();
         }
         catch (Exception ex)
         {
@@ -1274,6 +1408,8 @@ public sealed partial class MainWindow : Window
         {
             TabViewControl.SelectedItem = ViewModel.ActiveTab;
         }
+
+        ActivateRightPaneForKeyboardNavigation();
     }
 
     public void OpenFolderInNewWindow(string path)
@@ -1621,6 +1757,11 @@ public sealed partial class MainWindow : Window
         {
             if (IsTextInputFocused())
                 return;
+
+            if (!string.IsNullOrWhiteSpace(ViewModel.ActiveTab?.CurrentPath))
+            {
+                FileList.PrepareSelectionAfterGoUp(ViewModel.ActiveTab.CurrentPath);
+            }
 
             _ = ViewModel.GoUpAsync();
         }));

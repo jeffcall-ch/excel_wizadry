@@ -8,6 +8,7 @@
     <RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
     <RootNamespace>FileExplorer.App</RootNamespace>
     <AssemblyName>FileExplorer</AssemblyName>
+    <ApplicationIcon>Assets\LSApp.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <UseWinUI>true</UseWinUI>
     <WindowsPackageType>None</WindowsPackageType>
@@ -44,11 +45,27 @@
     </Content>
   </ItemGroup>
 
+  <!-- DisableXbfGeneration requires loose XAML files to be present at runtime. -->
+  <ItemGroup>
+    <Page Update="App.xaml">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Page>
+    <Page Update="MainWindow.xaml">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Page>
+    <Page Update="Views\**\*.xaml">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Page>
+  </ItemGroup>
+
   <!-- Copy WinUI PRI resource files from self-contained MSIX extraction to output.
        AppxGeneratePriEnabled=false disables PRI build tasks (need VS Build Tools)
        but WinUI requires these PRI files at runtime. -->
-  <Target Name="CopyWinUIPriFiles" AfterTargets="Build"
-          Condition="'$(WindowsAppSDKSelfContained)'=='true'">
+    <Target Name="CopyWinUIPriFiles" AfterTargets="Build"
+      Condition="'$(WindowsAppSDKSelfContained)'=='true' and '$(PublishSingleFile)'!='true' and '$(EnableMsixTooling)'!='true'">
     <PropertyGroup>
       <_MsixContentDir>$(IntermediateOutputPath)MsixContent\</_MsixContentDir>
       <_MakePriExe>$(NuGetPackageRoot)microsoft.windows.sdk.buildtools\10.0.26100.7705\bin\10.0.26100.0\x64\makepri.exe</_MakePriExe>
@@ -78,6 +95,33 @@
     <Exec Command="&quot;$(_MakePriExe)&quot; new /pr &quot;$(_MsixContentDir).&quot; /cf &quot;$(IntermediateOutputPath)priconfig.xml&quot; /of &quot;$(OutputPath)resources.pri&quot; /in FileExplorer /o" />
     <Move SourceFiles="$(_DupPngBak)" DestinationFiles="$(_DupPng)"
           Condition="Exists('$(_DupPngBak)')" />
+  </Target>
+
+  <!-- Portable-folder publish requires PRI files next to the executable.
+       Copy these from build output to publish output to keep launch behavior reliable. -->
+  <Target Name="EnsurePortablePublishPriFiles" AfterTargets="Publish"
+          Condition="'$(PortableFolderPublish)'=='true'">
+    <ItemGroup>
+      <_PortablePriFiles Include="$(OutputPath)resources.pri" Condition="Exists('$(OutputPath)resources.pri')" />
+      <_PortablePriFiles Include="$(OutputPath)Microsoft.UI.pri" Condition="Exists('$(OutputPath)Microsoft.UI.pri')" />
+      <_PortablePriFiles Include="$(OutputPath)Microsoft.UI.Xaml.pri" Condition="Exists('$(OutputPath)Microsoft.UI.Xaml.pri')" />
+      <_PortablePriFiles Include="$(OutputPath)Microsoft.UI.Xaml.Controls.pri" Condition="Exists('$(OutputPath)Microsoft.UI.Xaml.Controls.pri')" />
+      <_PortableRootXaml Include="$(ProjectDir)App.xaml" Condition="Exists('$(ProjectDir)App.xaml')" />
+      <_PortableRootXaml Include="$(ProjectDir)MainWindow.xaml" Condition="Exists('$(ProjectDir)MainWindow.xaml')" />
+      <_PortableViewXaml Include="$(ProjectDir)Views\**\*.xaml" Condition="Exists('$(ProjectDir)Views')" />
+    </ItemGroup>
+
+    <Copy SourceFiles="@(_PortablePriFiles)"
+          DestinationFolder="$(PublishDir)"
+          SkipUnchangedFiles="true" />
+
+        <Copy SourceFiles="@(_PortableRootXaml)"
+          DestinationFiles="@(_PortableRootXaml->'$(PublishDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true" />
+
+        <Copy SourceFiles="@(_PortableViewXaml)"
+          DestinationFiles="@(_PortableViewXaml->'$(PublishDir)Views\%(RecursiveDir)%(Filename)%(Extension)')"
+        SkipUnchangedFiles="true" />
   </Target>
 
 </Project>
