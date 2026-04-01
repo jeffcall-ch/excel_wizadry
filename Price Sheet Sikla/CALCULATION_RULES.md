@@ -67,7 +67,7 @@ Cut-length items with `"threaded rod"` in description. Uses **First Fit Decreasi
 - Kerf: `3 mm` per cut
 - `Qty` = `ceil(net_cut_mm / physical_mm)` — naive minimum bars
 - FFD packs pieces into effective bars; result = minimum bar count
-- `Order_Qty` = `ceil(ffd_bar_count × physical_mm × 1.10 / physical_mm)` — 10% buffer, rounded up to whole bars
+- `Order_Qty` = `ceil(ffd_bar_count × physical_mm × 1.05 / physical_mm)` — 5% buffer, rounded up to whole bars
 - `Spare` = `Order_Qty − Qty`
 - `Order_Weight_kg` = `Total_Weight_kg × (Total_Order_Length_m / Net_Cut_Length_m)`
 
@@ -90,7 +90,7 @@ Items with `"beam section ms"` or `"beam section tp"` in description and a cut l
 - Physical bar: `6000 mm`; effective bar: `6000 mm` (no end-loss scrap)
 - Kerf: `3 mm` per cut
 - `Qty` = `ceil(net_cut_mm / 6000)` — naive minimum bars
-- `Order_Qty` = `ceil(ffd_bar_count × 1.10)` — 10% buffer, rounded up to whole bars
+- `Order_Qty` = `ceil(ffd_bar_count × 1.05)` — 5% buffer, rounded up to whole bars
 - `Spare` = `Order_Qty − Qty`
 - `Order_Weight_kg` = `Total_Weight_kg × (Total_Order_Length_m / Net_Cut_Length_m)`
 
@@ -98,7 +98,7 @@ Items with `"beam section ms"` or `"beam section tp"` in description and a cut l
 
 Items where `"channel"` appears in the description (no cut-length optimiser).
 
-**Spare: 10%** — `Spare = ceil(Qty × 0.10)`, `Order_Qty = Qty + Spare`
+**Spare: 5%** — `Spare = ceil(Qty × 0.05)`, `Order_Qty = Qty + Spare`
 
 ### 05 Installation Material — Glass Fabric Tape
 
@@ -138,7 +138,7 @@ Order_Weight_kg = Total_Weight_kg × (Order_Qty / Qty)
 | Constant | Value | Purpose |
 |----------|-------|---------|
 | `_KERF_MM` | `3` | Saw-cut kerf per cut |
-| `_ORDER_BUFFER` | `1.10` | 10% workshop safety buffer for FFD items |
+| `_ORDER_BUFFER` | `1.05` | 5% workshop safety buffer for FFD items |
 | `_BEAM_PHYSICAL_MM` | `6000` | Beam bar physical length (mm) |
 | `_BEAM_BAR_MM` | `6000` | Beam effective cut length (mm) — no end-loss |
 | `_TAPE_ROLL_M` | `10` | Tape roll length (m) |
@@ -148,7 +148,7 @@ Order_Weight_kg = Total_Weight_kg × (Order_Qty / Qty)
 | `_SPARE_PCT["03 Bolts Screws Nuts"]` | `0.15` | 15% |
 | `_SPARE_PCT["05 Installation Material"]` | `0.15` | 15% for end caps etc. |
 | C5 variants (06/07/08/10) | same as base | identical spare rules apply |
-| Channel rows in 04/09 | `0.10` | 10% spare (hardcoded, not in `_SPARE_PCT`) |
+| Channel rows in 04/09 | `0.05` | 5% spare (hardcoded, not in `_SPARE_PCT`) |
 
 ---
 

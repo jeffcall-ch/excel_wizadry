@@ -49,7 +49,7 @@ MATERIAL_TYPE_RULES: list[dict] = [
 #  CUT OPTIMIZER — generic constants and FFD helpers
 # ---------------------------------------------------------------------------
 _KERF_MM: int = 3            # saw-cut allowance per cut
-_ORDER_BUFFER: float = 1.1   # 10% workshop safety buffer
+_ORDER_BUFFER: float = 1.05  # 5% workshop safety buffer
 
 # Beam sections: 6000mm physical, no end-loss scrap
 _BEAM_PHYSICAL_MM: int = 6000
@@ -89,7 +89,7 @@ def _ffd_bars(pieces: list[int], effective_bar_mm: int) -> int:
 
 
 def _calc_ordered_bars(num_bars: int, physical_bar_mm: int) -> int:
-    """Apply 10% buffer then round up to whole bars."""
+    """Apply 5% buffer then round up to whole bars."""
     return math.ceil(num_bars * physical_bar_mm * _ORDER_BUFFER / physical_bar_mm)
 
 
@@ -471,7 +471,7 @@ def populate_aggregated_table(db_path: Path, revision: str = "REV0") -> int:
             agg_remarks = " | ".join(parts) if parts else None
             mat_type = group[0]["Material_Type"]
             if mat_type == "04 Beam Sections" and "channel" in (description or "").lower():
-                _sp = 0.10
+                _sp = 0.05
             else:
                 _sp = _SPARE_PCT.get(mat_type, 0.0)
             spare_n = _spare_for_pct(total_qty, _sp)
@@ -562,7 +562,7 @@ def populate_aggregated_table(db_path: Path, revision: str = "REV0") -> int:
                 "Utilisation_pct": round(net_cut_m / total_order_m * 100, 1) if total_order_m else None,
                 "Spare_Calculation_Rule": (
                     f"FFD: min {naive_qty} bars (ceil({net_cut_m}m / 6m)); "
-                    f"FFD\u2192{num_bars} bars; \u00d71.10\u2192{ordered} ordered; spare={ordered - naive_qty}"
+                    f"FFD\u2192{num_bars} bars; \u00d71.05\u2192{ordered} ordered; spare={ordered - naive_qty}"
                 ),
             })
 
@@ -601,7 +601,7 @@ def populate_aggregated_table(db_path: Path, revision: str = "REV0") -> int:
                 "Utilisation_pct": round(net_cut_m / total_order_m * 100, 1) if total_order_m else None,
                 "Spare_Calculation_Rule": (
                     f"FFD: min {naive_qty} bars (ceil({net_cut_m}m / {phys_mm / 1000:.1f}m)); "
-                    f"FFD\u2192{num_bars} bars; \u00d71.10\u2192{ordered} ordered; spare={ordered - naive_qty}"
+                    f"FFD\u2192{num_bars} bars; \u00d71.05\u2192{ordered} ordered; spare={ordered - naive_qty}"
                 ),
             })
 
@@ -681,7 +681,7 @@ def populate_aggregated_table(db_path: Path, revision: str = "REV0") -> int:
             spare_calc_rule = row_dict.get("Spare_Calculation_Rule")
             if order_qty is None:  # individual item — compute spare from _SPARE_PCT
                 if material_type in ("04 Beam Sections", "09 Beam Sections C5") and "channel" in (row_dict["Description"] or "").lower():
-                    _sp = 0.10
+                    _sp = 0.05
                 else:
                     _sp = _SPARE_PCT.get(material_type, 0.0)
                 _base_qty = row_dict["Qty"] or 0
@@ -1435,7 +1435,7 @@ def _write_agg_sheet(ws, columns: list[str], rows: list[tuple]) -> None:
     _add_note(ws.max_row + 1,
         "Spare rules applied:  "
         "Primary Supports \u2014 5%;  "
-        "Beam Sections, Threaded Rods \u2014 10%;  "
+        "Beam Sections, Threaded Rods \u2014 5%;  "
         "Bolts / Screws / Nuts, Installation Material \u2014 15%;  "
         "Glass Fabric Tape \u2014 30%."
     )

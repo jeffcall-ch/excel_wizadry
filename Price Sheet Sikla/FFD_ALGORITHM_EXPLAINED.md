@@ -74,9 +74,9 @@ Each piece needs `piece + 3 mm` of remaining bar space. Place into the first bar
 
 **FFD result: 3 bars**
 
-**Step 5 — Apply 10% workshop buffer**
+**Step 5 — Apply 5% workshop buffer**
 
-`ceil(3 × 1.10) = ceil(3.30) = `**4 bars ordered**
+`ceil(3 × 1.05) = ceil(3.15) = `**4 bars ordered**
 
 **Step 6 — Final outputs**
 
@@ -97,7 +97,7 @@ Each piece needs `piece + 3 mm` of remaining bar space. Place into the first bar
 Physical bar  6 000 mm
   − 100 mm end-loss  →  Effective bar  5 900 mm
      each piece + 3 mm kerf  →  FFD bar count (minimum)
-        × 1.10, round up     →  ordered bars
+   × 1.05, round up     →  ordered bars
 ```
 
 ---

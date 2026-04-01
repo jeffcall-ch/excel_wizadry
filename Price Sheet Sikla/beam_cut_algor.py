@@ -24,7 +24,7 @@ from collections import defaultdict
 
 BAR_MM          = 5900    # effective packing length — conservative working assumption
 PHYSICAL_BAR_MM = 6000    # actual bar length ordered from supplier
-ORDER_BUFFER    = 1.1     # 10% workshop safety buffer
+ORDER_BUFFER    = 1.05    # 5% workshop safety buffer
 KERF_MM         = 3       # saw-cut allowance per cut in mm
 
 

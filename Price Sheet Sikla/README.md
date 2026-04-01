@@ -46,12 +46,31 @@ python price_sheet_db_tool.py <command> [options]
 python price_sheet_db_tool.py test-run --excel "CA100-KVI-50296373_0.0 - BoM General Hangers and support material.xlsm"
 ```
 
-Creates a timestamped `.sqlite` + `.xlsx` pair in `_test_runs\`. The xlsx contains three sheets:
+Creates a timestamped `.sqlite` + `.xlsx` pair in `_test_runs\`.
+
+If your source workbook does not use the default sheet name `Total Qty`, pass `--sheet` explicitly.
+
+Example for the FGT workbook:
+
+```
+python price_sheet_db_tool.py test-run --excel "CA100-KVI-50296374_0.0 - BoM List Hangers and Supports Material FGT pipes.xlsm" --sheet "Total Qty FGT"
+```
+
+From this folder, run both source workbooks (PowerShell):
+
+```
+$py = "..\.venv\Scripts\python.exe"
+& $py .\price_sheet_db_tool.py test-run --excel "CA100-KVI-50296373_0.0 - BoM General Hangers and support material.xlsm"
+& $py .\price_sheet_db_tool.py test-run --excel "CA100-KVI-50296374_0.0 - BoM List Hangers and Supports Material FGT pipes.xlsm" --sheet "Total Qty FGT"
+```
+
+The xlsx contains:
 
 | Sheet | Contents |
 |-------|----------|
 | `RAW_DATA_REV0` | All 1202 raw rows imported from the source Excel |
 | `AGGREGATED_DATA_REV0` | 384 aggregated rows with all calculated columns |
+| `PRICE_SHEET_REV0` | Supplier-facing summary with grouped totals and total price formulas |
 | `VALIDATION` | 29 validation checks, colour-coded PASS / FAIL / WARN / INFO |
 
 Optional: `--revision REV1` (default `REV0`) to tag the run.
@@ -117,10 +136,10 @@ Writes the raw + aggregated tables and the validation sheet to Excel.
 
 | Group | Label | Spare rule |
 |-------|-------|------------|
-| 01 | Primary Supports | 5% (non-rod); FFD + 10% buffer (threaded rods) |
+| 01 | Primary Supports | 5% (non-rod); FFD + 5% buffer (threaded rods) |
 | 02 | Brackets Consoles | 5% |
 | 03 | Bolts Screws Nuts | 15% |
-| 04 | Beam Sections | FFD + 10% buffer (beam section ms/tp); 10% (channel items) |
+| 04 | Beam Sections | FFD + 5% buffer (beam section ms/tp); 5% (channel items) |
 | 05 | Installation Material | 50% spare factor (glass fabric tape); 15% (end caps) |
 | 06–10 | C5 variants | Same rules as 01–05 |
 
