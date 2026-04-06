@@ -384,3 +384,340 @@ No open questions remain for the current scope.
 5. Physical dump area stages files to C:\temp\x_file_dump.
 6. Navigation hub supports hover cascade and click actions with no perceived lag.
 7. Tests pass and portable packaging script succeeds.
+
+---
+
+# Enhancement Series 2 Plan: UI Stability, SQLite Caching, and Deep Indexing
+
+Date: 2026-04-06
+Location: Wuerenlingen, Switzerland
+Engineering Target: Deterministic zero-flicker UI with self-cleaning SQLite cache and sub-100 ms folder hydration on warm cache.
+
+## S2-0. Scope
+
+This series implements:
+
+1. UI anti-flicker hardening for large folders.
+2. SQLite metadata cache layer and sync lifecycle.
+3. Recursive deep indexing for favorites using rq_search integration.
+4. Defensive handling for locks, long paths, and noise files.
+5. Developer reset and documentation utilities.
+
+Out of scope for this series:
+
+1. OCR extraction.
+2. Search ranking redesign.
+3. New visual theme redesign.
+
+## S2-1. Architecture delta
+
+New components:
+
+1. IIdentityCacheService and SqliteIdentityCacheService for read/write cache operations.
+2. FolderIdentitySyncCoordinator for Sync-on-Open reconciliation logic.
+3. DeepIndexBackgroundService for recursive favorites indexing.
+4. UiHydrationBuffer in tab/view model layer for debounced batch apply.
+5. FavoritesEngineResolver for rq_search binary path validation.
+
+Data flow after this series:
+
+1. Folder open -> disk snapshot and SQLite snapshot -> reconcile keys.
+2. Existing keys hydrate instantly from SQLite.
+3. Missing keys go to sniper extraction queue.
+4. Buffered metadata flush updates UI in controlled batches.
+5. FileSystemWatcher updates both UI and SQLite incrementally.
+
+## S2-2. UI Stability and anti-flicker plan
+
+### S2-2.1 Virtualization
+
+Tasks:
+
+1. Ensure Details View list uses virtualization-friendly host and item container settings.
+2. Confirm recycling behavior remains active under sorting and incremental updates.
+3. Validate container reuse during rapid scrolling with 10k+ rows.
+
+Acceptance:
+
+1. No full list re-layout on metadata flush.
+2. Scroll FPS remains stable while hydration runs.
+
+### S2-2.2 Sorting and selection lock
+
+Tasks:
+
+1. Introduce a hydration window lock that suppresses re-sort triggers caused by Project/Revision updates.
+2. Preserve current selected item and anchored top visible row during hydration.
+3. Re-enable sort only after flush cycle completion or on explicit header click.
+
+Acceptance:
+
+1. No jump in scroll position while metadata arrives.
+2. Multi-select set does not mutate during background updates.
+
+### S2-2.3 Batch UI updates (250 ms debounce, 50+ batch)
+
+Tasks:
+
+1. Buffer extraction results in memory and debounce apply by 250 ms.
+2. Flush in chunks of at least 50 items when available.
+3. Coalesce repeated updates for same file key before each flush.
+
+Acceptance:
+
+1. UI updates occur in discrete batches, not per-item flicker.
+2. CPU and Dispatcher utilization drop versus per-item apply.
+
+### S2-2.4 Multi-selection sidebar behavior
+
+Tasks:
+
+1. Detect selection count greater than 1 in inspector binding flow.
+2. Hide single-file Identity Card fields in multi-select mode.
+3. Show aggregate stats block:
+   - selected item count
+   - total size
+   - count by file extension/type
+
+Acceptance:
+
+1. Sidebar no longer cycles identity values during multi-select.
+2. Aggregate numbers remain stable while hydration continues.
+
+## S2-3. SQLite metadata cache layer
+
+### S2-3.1 Database location
+
+Target path:
+
+1. Repository/Development/identity_cache.db
+
+Tasks:
+
+1. Add configurable root for cache location with sane default above.
+2. Auto-create directory and DB on first run.
+
+### S2-3.2 Schema
+
+Table: FileIdentityCache
+
+Columns:
+
+1. FileKey (TEXT PRIMARY KEY)
+2. ProjectTitle (TEXT)
+3. Revision (TEXT)
+4. DocumentName (TEXT)
+5. LastWriteTime (INTEGER or TEXT UTC ticks/iso)
+6. FileSize (INTEGER)
+7. ParentPath (TEXT)
+
+Indexes:
+
+1. IX_FileIdentityCache_ParentPath on ParentPath
+2. Optional IX_FileIdentityCache_LastWriteTime for maintenance jobs
+
+### S2-3.3 Composite key
+
+Rule:
+
+1. FileKey = normalizedFullPath|fileSize|lastWriteTime
+2. normalizedFullPath = full path lowercased and normalized separators
+
+Tasks:
+
+1. Centralize key generation in one helper shared by sync and watcher code.
+2. Add tests for case-insensitive path variants and rename scenarios.
+
+### S2-3.4 SQLite performance pragmas
+
+On initialization:
+
+1. PRAGMA journal_mode = WAL;
+2. PRAGMA synchronous = NORMAL;
+
+Acceptance:
+
+1. Concurrent read/write stable under hydration and watcher events.
+2. No UI thread blocking on DB operations.
+
+## S2-4. Cache lifecycle and watcher sync
+
+### S2-4.1 Sync-on-Open (folder entry)
+
+Workflow per folder open:
+
+1. Query SQLite keys where ParentPath equals current folder.
+2. Scan disk to produce live key set.
+3. Delete orphans in batched delete statements.
+4. Queue new keys for sniper extraction.
+5. Upsert extraction results when done.
+
+Acceptance:
+
+1. Re-entering folder hydrates from cache in under 100 ms on warm cache target hardware.
+2. Orphans are removed deterministically.
+
+### S2-4.2 FileSystemWatcher integration
+
+Tasks:
+
+1. Watch current folder for create, rename, delete, and changed events.
+2. Reflect watcher events in UI list and SQLite cache without full refresh.
+3. Debounce duplicate watcher events and handle rename as atomic key move.
+
+Acceptance:
+
+1. External file edits appear in UI and cache automatically.
+2. No folder re-entry required for consistency.
+
+## S2-5. Deep indexing with rq_search (C++ integration)
+
+### S2-5.1 Discovery
+
+Tasks:
+
+1. Enumerate all top-level favorites from Navigation Hub.
+2. Use rq_search recursively to discover all files under each favorite root.
+3. Feed discovered paths into same key reconciliation pipeline.
+
+### S2-5.2 Engine config and validation
+
+Tasks:
+
+1. Resolve rq_search path from Config.json first, then environment variable fallback.
+2. Validate executable existence and version compatibility at startup.
+3. If missing, show non-blocking warning in inspector sidebar.
+
+### S2-5.3 Recursive background sync
+
+Tasks:
+
+1. Run deep sync in background with BelowNormal CPU priority.
+2. Throttle IO and DB batch sizes to avoid degrading foreground navigation.
+3. Expose progress summary in logs and optional sidebar status line.
+
+Acceptance:
+
+1. Favorite tree is indexed progressively without UI stall.
+2. Foreground folder navigation remains responsive during deep sync.
+
+## S2-6. Defensive engineering and edge cases
+
+### S2-6.1 File locking
+
+Tasks:
+
+1. Continue opening files with FileShare.ReadWrite where supported.
+2. On lock or parse failure, mark retryable and skip without crashing worker.
+3. Retry on next refresh cycle or watcher change.
+
+### S2-6.2 Long paths
+
+Tasks:
+
+1. Normalize all file IO and cache key generation for long-path-safe handling.
+2. Validate SQLite key generation and watcher behavior for paths beyond 260 chars.
+
+### S2-6.3 Noise filtering
+
+Tasks:
+
+1. Exclude hidden/system files from indexing scope.
+2. Exclude temporary Office artifacts with prefix ~$.
+3. Exclude known transient lock/cache suffix patterns where appropriate.
+
+Acceptance:
+
+1. Cache contains only relevant files.
+2. Temp or system noise does not cause churn.
+
+## S2-7. Developer utilities
+
+### S2-7.1 ResetCache script
+
+Deliverable:
+
+1. scripts/ResetCache.ps1
+
+Behavior:
+
+1. Stop app process if needed.
+2. Delete identity_cache.db, identity_cache.db-shm, identity_cache.db-wal.
+3. Print clear before/after status.
+
+### S2-7.2 SQLite README
+
+Deliverable:
+
+1. Development/SQLite_README.md
+
+Must document:
+
+1. Schema and indexes.
+2. Composite key formula.
+3. Sync-on-Open reconciliation flow.
+4. Watcher update flow.
+5. Troubleshooting and reset steps.
+
+## S2-8. Delivery sequencing
+
+Phase A: UI stability foundation
+
+1. Virtualization verification and sorting lock.
+2. Debounced batch flush pipeline.
+3. Multi-selection aggregate sidebar mode.
+
+Phase B: SQLite cache core
+
+1. DB bootstrap, pragmas, schema, and repository location.
+2. Cache read path for folder open.
+3. Key builder and upsert pipeline.
+
+Phase C: Sync lifecycle
+
+1. Sync-on-Open reconcile algorithm.
+2. Orphan delete and new-key extraction queue.
+3. Watcher-driven incremental cache updates.
+
+Phase D: Deep indexing
+
+1. rq_search engine resolver and warnings.
+2. Recursive favorites scan and background sync scheduler.
+3. BelowNormal priority and throttling tuning.
+
+Phase E: Defensive hardening and utilities
+
+1. Lock handling and retry policy.
+2. Long-path and noise-filter tests.
+3. Reset script and SQLite README finalization.
+
+## S2-9. Test and validation plan
+
+Unit tests:
+
+1. FileKey generation normalization and collisions.
+2. SQLite upsert, delete orphan batch, and ParentPath query performance.
+3. Debounce buffer behavior and batch size guarantees.
+4. Noise filtering rules and long-path handling.
+
+Integration tests:
+
+1. Open folder warm cache hydration latency target.
+2. External add/rename/delete reflected in UI and DB.
+3. Multi-select inspector aggregate mode stability.
+4. Deep indexing run while interacting with UI.
+
+Performance gates:
+
+1. Warm-cache folder hydration median below 100 ms for representative folders.
+2. No perceptible list jump during metadata hydration.
+3. CPU budget stable during deep indexing background run.
+
+## S2-10. Definition of done
+
+1. Details list remains stable with no hydration-induced flicker or scroll jump.
+2. SQLite cache is authoritative, self-cleaning, and consistent with disk state.
+3. Sync-on-Open and FileSystemWatcher keep UI and cache aligned automatically.
+4. Deep indexing covers all favorites using rq_search with robust engine validation.
+5. Lock, long-path, and noise scenarios are handled without crashes.
+6. Reset script and SQLite README are available for developers.

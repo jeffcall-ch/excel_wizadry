@@ -23,6 +23,8 @@ public class TabContentViewModelTests
             Mock.Of<IShellIntegrationService>(),
             Mock.Of<ICloudStatusService>(),
             Mock.Of<IPreviewService>(),
+            Mock.Of<IIdentityExtractionService>(),
+            Mock.Of<IIdentityCacheService>(),
             NullLogger<TabContentViewModel>.Instance);
 
         var oldestFile = CreateItem("oldest.txt", isDirectory: false, new DateTimeOffset(2026, 1, 1, 8, 0, 0, TimeSpan.Zero));
@@ -46,6 +48,8 @@ public class TabContentViewModelTests
             Mock.Of<IShellIntegrationService>(),
             Mock.Of<ICloudStatusService>(),
             Mock.Of<IPreviewService>(),
+            Mock.Of<IIdentityExtractionService>(),
+            Mock.Of<IIdentityCacheService>(),
             NullLogger<TabContentViewModel>.Instance);
 
         var oldestFolder = CreateItem("OldFolder", isDirectory: true, new DateTimeOffset(2026, 1, 1, 8, 0, 0, TimeSpan.Zero));
@@ -85,6 +89,8 @@ public class TabContentViewModelTests
             shell.Object,
             cloudStatus.Object,
             Mock.Of<IPreviewService>(),
+            Mock.Of<IIdentityExtractionService>(),
+            Mock.Of<IIdentityCacheService>(),
             NullLogger<TabContentViewModel>.Instance);
 
         await viewModel.NavigateAsync(bareDrive);
@@ -118,6 +124,8 @@ public class TabContentViewModelTests
             shell.Object,
             cloudStatus.Object,
             Mock.Of<IPreviewService>(),
+            Mock.Of<IIdentityExtractionService>(),
+            Mock.Of<IIdentityCacheService>(),
             NullLogger<TabContentViewModel>.Instance);
 
         await viewModel.NavigateAsync(longPath);
@@ -144,6 +152,8 @@ public class TabContentViewModelTests
             shell.Object,
             cloudStatus.Object,
             Mock.Of<IPreviewService>(),
+            Mock.Of<IIdentityExtractionService>(),
+            Mock.Of<IIdentityCacheService>(),
             NullLogger<TabContentViewModel>.Instance);
 
         var renamedItem = new FileItemViewModel(new FileSystemEntry

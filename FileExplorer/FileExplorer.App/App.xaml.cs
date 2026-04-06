@@ -96,6 +96,8 @@ public partial class App : Application
                 sp.GetRequiredService<IShellIntegrationService>(),
                 sp.GetRequiredService<ICloudStatusService>(),
                 sp.GetRequiredService<IPreviewService>(),
+                sp.GetRequiredService<IIdentityExtractionService>(),
+                sp.GetRequiredService<IIdentityCacheService>(),
                 sp.GetRequiredService<ILogger<TabContentViewModel>>(),
                 tabState);
             return vm;

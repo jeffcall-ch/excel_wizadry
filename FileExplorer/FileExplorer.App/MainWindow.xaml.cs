@@ -1,6 +1,7 @@
 // Copyright (c) FileExplorer contributors. All rights reserved.
 
 using System.Diagnostics;
+using System.Collections.Concurrent;
 using System.Linq;
 using System.Runtime.InteropServices;
 using FileExplorer.Core.ViewModels;
@@ -8,6 +9,7 @@ using FileExplorer.Core.Models;
 using FileExplorer.Core.Interfaces;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.UI.Dispatching;
+using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
@@ -54,11 +56,20 @@ public sealed partial class MainWindow : Window
     private readonly object _shortcutCacheLock = new();
     private readonly Dictionary<string, ShortcutFolderCacheData> _shortcutFolderCache = new(StringComparer.OrdinalIgnoreCase);
     private List<ShortcutRootEntryData> _shortcutRootCache = [];
+    private readonly ConcurrentDictionary<string, IReadOnlyList<string>> _breadcrumbSiblingCache = new(StringComparer.OrdinalIgnoreCase);
     private MenuFlyout? _shortcutLauncherFlyout;
+    private CancellationTokenSource? _breadcrumbSiblingCts;
+    private int _breadcrumbSiblingRequestId;
     private bool _shortcutPreloadStarted;
+    private bool _isShortcutOpenInProgress;
+    private bool _startupWindowStateApplied;
     private const int ShortcutMenuMaxItems = 50;
     private const int ShortcutMenuMaxSubfolders = 50;
     private const int ShortcutMenuMaxDepth = 64;
+    private const double FlyoutDetailsFontSize = 12;
+    private const double FlyoutDetailsMinHeight = 22;
+
+    public sealed record ShortcutHubRootItem(string DisplayName, string? FolderPath, string? ShortcutPath, bool IsFolder);
 
     private sealed record ShortcutRootEntryData(string DisplayName, string? FolderPath, string? ShortcutPath);
 
@@ -84,6 +95,39 @@ public sealed partial class MainWindow : Window
         public int Depth { get; }
 
         public bool IsLoaded { get; set; }
+    }
+
+    private static MenuFlyoutItem CreateDetailsViewFlyoutItem(string text, string? iconGlyph = null, bool isEnabled = true)
+    {
+        var item = new MenuFlyoutItem
+        {
+            Text = text,
+            IsEnabled = isEnabled
+        };
+
+        if (!string.IsNullOrWhiteSpace(iconGlyph))
+        {
+            item.Icon = new FontIcon { Glyph = iconGlyph };
+        }
+
+        ApplyDetailsViewFlyoutItemStyle(item);
+        return item;
+    }
+
+    private static void ApplyDetailsViewFlyoutItemStyle(MenuFlyoutItem item)
+    {
+        item.FontSize = FlyoutDetailsFontSize;
+        item.MinHeight = FlyoutDetailsMinHeight;
+        item.Padding = new Thickness(8, 0, 8, 0);
+        item.VerticalContentAlignment = VerticalAlignment.Center;
+    }
+
+    private static void ApplyDetailsViewFlyoutSubItemStyle(MenuFlyoutSubItem item)
+    {
+        item.FontSize = FlyoutDetailsFontSize;
+        item.MinHeight = FlyoutDetailsMinHeight;
+        item.Padding = new Thickness(8, 0, 8, 0);
+        item.VerticalContentAlignment = VerticalAlignment.Center;
     }
 
     /// <summary>Gets the main view model.</summary>
@@ -115,6 +159,7 @@ public sealed partial class MainWindow : Window
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(TabViewControl);
         ApplyWindowIcon();
+        Activated += MainWindow_Activated;
 
         RegisterKeyboardAccelerators();
         Closed += MainWindow_Closed;
@@ -123,6 +168,42 @@ public sealed partial class MainWindow : Window
         StartShortcutCachePreload();
 
         _ = InitializeAsync();
+    }
+
+    private void MainWindow_Activated(object sender, WindowActivatedEventArgs args)
+    {
+        if (args.WindowActivationState == WindowActivationState.Deactivated)
+            return;
+
+        EnsureStartupMaximized();
+        Activated -= MainWindow_Activated;
+    }
+
+    private void EnsureStartupMaximized()
+    {
+        if (_startupWindowStateApplied)
+            return;
+
+        _startupWindowStateApplied = true;
+
+        try
+        {
+            if (AppWindow.Presenter is OverlappedPresenter overlappedPresenter)
+            {
+                if (overlappedPresenter.State != OverlappedPresenterState.Maximized)
+                    overlappedPresenter.Maximize();
+
+                return;
+            }
+
+            AppWindow.SetPresenter(AppWindowPresenterKind.Overlapped);
+            if (AppWindow.Presenter is OverlappedPresenter presenter)
+                presenter.Maximize();
+        }
+        catch
+        {
+            // Window state setup should not block startup.
+        }
     }
 
     private void ApplyWindowIcon()
@@ -154,36 +235,19 @@ public sealed partial class MainWindow : Window
         {
             await ViewModel.InitializeAsync(App.StartupPath);
 
-            TreeNodeViewModel? initialSelectedTreeNode = null;
-            if (ViewModel.ActiveTab is not null)
-            {
-                initialSelectedTreeNode = await ViewModel.TreeView.SyncWithPathAsync(ViewModel.ActiveTab.CurrentPath);
-                _lastSyncedTreePath = NormalizeTreeSyncPath(ViewModel.ActiveTab.CurrentPath);
-            }
-
             UpdateTabBindings();
             UpdateStatusBar();
 
-            TreeColumn.Width = new GridLength(ViewModel.NavigationPaneWidth > 0 ? ViewModel.NavigationPaneWidth : 315);
-
-            // Populate tree — add TreeViewNode objects directly to RootNodes
-            PopulateTreeView();
+            TreeColumn.Width = new GridLength(0);
+            PreviewColumn.Width = new GridLength(ViewModel.PreviewPaneWidth > 0 ? ViewModel.PreviewPaneWidth : 320);
 
             if (ViewModel.ActiveTab is not null)
             {
                 SubscribeToTabNavigation(ViewModel.ActiveTab);
                 FileList.BindToTab(ViewModel.ActiveTab);
+                InspectorSidebar.BindToTab(ViewModel.ActiveTab);
                 UpdateAddressBar(ViewModel.ActiveTab.CurrentPath);
                 UpdateSearchPlaceholder(ViewModel.ActiveTab.CurrentPath);
-
-                if (_navigationTreeLoaded)
-                {
-                    ApplyTreeSelection(initialSelectedTreeNode);
-                }
-                else
-                {
-                    _pendingSelectedTreeNode = initialSelectedTreeNode;
-                }
             }
 
             StartShortcutCachePreload();
@@ -215,13 +279,7 @@ public sealed partial class MainWindow : Window
     {
         if (TabViewControl.SelectedItem is TabContentViewModel tab)
         {
-            ViewModel.ActiveTab = tab;
-            SubscribeToTabNavigation(tab);
-            FileList.BindToTab(tab);
-            UpdateAddressBar(tab.CurrentPath);
-            UpdateStatusBar();
-            UpdateSearchPlaceholder(tab.CurrentPath);
-            _ = SyncNavigationTreeAsync(tab.CurrentPath);
+            ActivateTab(tab, syncTabViewSelection: false);
             ActivateRightPaneForKeyboardNavigation();
         }
     }
@@ -230,6 +288,26 @@ public sealed partial class MainWindow : Window
     {
         TabViewControl.TabItemsSource = ViewModel.Tabs;
         TabViewControl.SelectedItem = ViewModel.ActiveTab;
+    }
+
+    private void ActivateTab(TabContentViewModel tab, bool syncTabViewSelection)
+    {
+        if (syncTabViewSelection && !ReferenceEquals(TabViewControl.SelectedItem, tab))
+        {
+            TabViewControl.SelectedItem = tab;
+        }
+
+        if (!ReferenceEquals(ViewModel.ActiveTab, tab))
+        {
+            ViewModel.ActiveTab = tab;
+        }
+
+        SubscribeToTabNavigation(tab);
+        FileList.BindToTab(tab);
+        InspectorSidebar.BindToTab(tab);
+        UpdateAddressBar(tab.CurrentPath);
+        UpdateStatusBar();
+        UpdateSearchPlaceholder(tab.CurrentPath);
     }
 
     #endregion
@@ -336,13 +414,22 @@ public sealed partial class MainWindow : Window
 
     private void BackButton_Click(object sender, RoutedEventArgs e) => _ = ViewModel.GoBackAsync();
 
-    private void OpenFolderFromShortcutFlyout(string path)
+    private async Task OpenFolderFromShortcutFlyoutAsync(string path)
     {
+        if (_isShortcutOpenInProgress)
+            return;
+
+        _isShortcutOpenInProgress = true;
+
         CloseShortcutLauncherFlyoutAndFocusRightPane();
-        _dispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low, () =>
+        try
         {
-            _ = OpenFolderInNewTabAsync(path);
-        });
+            await OpenFolderInNewTabAsync(path);
+        }
+        finally
+        {
+            _isShortcutOpenInProgress = false;
+        }
     }
     private void ForwardButton_Click(object sender, RoutedEventArgs e) => _ = ViewModel.GoForwardAsync();
     private void UpButton_Click(object sender, RoutedEventArgs e)
@@ -376,7 +463,6 @@ public sealed partial class MainWindow : Window
             UpdateAddressBar(path);
             UpdateStatusBar();
             UpdateSearchPlaceholder(path);
-            _ = SyncNavigationTreeAsync(path);
         });
     }
 
@@ -532,16 +618,7 @@ public sealed partial class MainWindow : Window
             // Add chevron separator before each segment (except first)
             if (i > 0)
             {
-                var chevron = new FontIcon
-                {
-                    FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Segoe Fluent Icons"),
-                    Glyph = "\uE76C",
-                    FontSize = 10,
-                    Opacity = 0.6
-                };
-                chevron.VerticalAlignment = VerticalAlignment.Center;
-                chevron.Margin = new Thickness(0);
-                BreadcrumbPanel.Children.Add(chevron);
+                BreadcrumbPanel.Children.Add(CreateBreadcrumbSeparatorButton(fullPath));
             }
 
             // Segment button
@@ -562,6 +639,9 @@ public sealed partial class MainWindow : Window
             BreadcrumbPanel.Children.Add(btn);
         }
 
+        // Keep trailing chevron visible (Folder > Subfolder > Current >)
+        BreadcrumbPanel.Children.Add(CreateBreadcrumbSeparatorButton(segments[^1].FullPath));
+
         // Scroll to rightmost segment
         _dispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
         {
@@ -575,6 +655,156 @@ public sealed partial class MainWindow : Window
         {
             _ = ViewModel.NavigateToAddressAsync(fullPath);
         }
+    }
+
+    private Button CreateBreadcrumbSeparatorButton(string segmentPath)
+    {
+        var separatorButton = new Button
+        {
+            Tag = segmentPath,
+            Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
+            BorderThickness = new Thickness(0),
+            Padding = new Thickness(2, 0, 2, 0),
+            MinHeight = 24,
+            MinWidth = 18,
+            VerticalAlignment = VerticalAlignment.Center,
+            CornerRadius = new CornerRadius(4),
+            Content = new FontIcon
+            {
+                FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Segoe Fluent Icons"),
+                Glyph = "\uE76C",
+                FontSize = 10,
+                Opacity = 0.6,
+                VerticalAlignment = VerticalAlignment.Center
+            }
+        };
+
+        separatorButton.Click += BreadcrumbSeparator_Click;
+        return separatorButton;
+    }
+
+    private async void BreadcrumbSeparator_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement anchor || anchor.Tag is not string segmentPath)
+            return;
+
+        var requestId = Interlocked.Increment(ref _breadcrumbSiblingRequestId);
+
+        _breadcrumbSiblingCts?.Cancel();
+        _breadcrumbSiblingCts?.Dispose();
+        _breadcrumbSiblingCts = new CancellationTokenSource();
+
+        var ct = _breadcrumbSiblingCts.Token;
+        var flyout = new MenuFlyout();
+        flyout.Items.Add(CreateDetailsViewFlyoutItem("Loading siblings...", isEnabled: false));
+        flyout.ShowAt(anchor);
+
+        var stopwatch = Stopwatch.StartNew();
+
+        try
+        {
+            var siblings = await GetSiblingDirectoriesAsync(segmentPath, ct);
+
+            if (requestId != _breadcrumbSiblingRequestId)
+                return;
+
+            flyout.Items.Clear();
+
+            if (siblings.Count == 0)
+            {
+                flyout.Items.Add(CreateDetailsViewFlyoutItem("No sibling folders", isEnabled: false));
+                return;
+            }
+
+            foreach (var siblingPath in siblings)
+            {
+                var item = CreateDetailsViewFlyoutItem(GetPathLeafLabel(siblingPath));
+
+                ToolTipService.SetToolTip(item, siblingPath);
+
+                item.Click += (_, _) =>
+                {
+                    _ = ViewModel.NavigateToAddressAsync(siblingPath);
+                };
+
+                flyout.Items.Add(item);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Superseded by a newer separator click.
+        }
+        catch (Exception ex)
+        {
+            flyout.Items.Clear();
+            flyout.Items.Add(CreateDetailsViewFlyoutItem($"Failed: {ex.Message}", isEnabled: false));
+        }
+        finally
+        {
+            stopwatch.Stop();
+            Debug.WriteLine($"Breadcrumb sibling load elapsed: {stopwatch.ElapsedMilliseconds} ms for {segmentPath}");
+        }
+    }
+
+    private async Task<IReadOnlyList<string>> GetSiblingDirectoriesAsync(string segmentPath, CancellationToken ct)
+    {
+        var normalizedSegmentPath = NormalizePathForLookup(segmentPath);
+        if (_breadcrumbSiblingCache.TryGetValue(normalizedSegmentPath, out var cached))
+            return cached;
+
+        var siblings = await Task.Run(() => EnumerateSiblingDirectories(normalizedSegmentPath), ct);
+        _breadcrumbSiblingCache[normalizedSegmentPath] = siblings;
+        return siblings;
+    }
+
+    private static IReadOnlyList<string> EnumerateSiblingDirectories(string segmentPath)
+    {
+        var root = Path.GetPathRoot(segmentPath);
+        if (!string.IsNullOrEmpty(root) && string.Equals(root, segmentPath, StringComparison.OrdinalIgnoreCase))
+        {
+            return DriveInfo
+                .GetDrives()
+                .Select(drive => drive.Name)
+                .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+
+        var trimmed = segmentPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var parent = Path.GetDirectoryName(trimmed);
+
+        if (string.IsNullOrWhiteSpace(parent) || !Directory.Exists(parent))
+            return [];
+
+        try
+        {
+            return Directory
+                .EnumerateDirectories(parent)
+                .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+        catch
+        {
+            return [];
+        }
+    }
+
+    private static string NormalizePathForLookup(string path)
+    {
+        try
+        {
+            return TabContentViewModel.NormalizeNavigationPath(path);
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return path.Trim();
+        }
+    }
+
+    private static string GetPathLeafLabel(string path)
+    {
+        var trimmed = path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var leaf = Path.GetFileName(trimmed);
+        return string.IsNullOrWhiteSpace(leaf) ? path : leaf;
     }
 
     private void UpdateSearchPlaceholder(string path)
@@ -614,17 +844,54 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private void ShortcutLauncherButton_Click(object sender, RoutedEventArgs e)
+    public void ShowShortcutLauncherFlyout(FrameworkElement anchor)
     {
         try
         {
             StartShortcutCachePreload();
             var flyout = GetOrCreateShortcutLauncherFlyout();
-            flyout.ShowAt(ShortcutLauncherButton);
+            flyout.ShowAt(anchor);
         }
         catch (Exception ex)
         {
             ShowError($"Failed to open shortcuts launcher: {ex.Message}");
+        }
+    }
+
+    public IReadOnlyList<ShortcutHubRootItem> GetShortcutHubRootItems()
+    {
+        StartShortcutCachePreload();
+        var entries = GetShortcutRootEntriesForFlyout();
+        return entries
+            .Select(entry => new ShortcutHubRootItem(
+                entry.DisplayName,
+                entry.FolderPath,
+                entry.ShortcutPath,
+                !string.IsNullOrWhiteSpace(entry.FolderPath)))
+            .ToList();
+    }
+
+    public void ShowShortcutHubChildrenFlyout(ShortcutHubRootItem root, FrameworkElement anchor)
+    {
+        try
+        {
+            StartShortcutCachePreload();
+
+            if (root.IsFolder && !string.IsNullOrWhiteSpace(root.FolderPath))
+            {
+                var flyout = BuildShortcutHubChildrenFlyout(root.DisplayName, root.FolderPath);
+                flyout.ShowAt(anchor);
+                return;
+            }
+
+            if (!string.IsNullOrWhiteSpace(root.ShortcutPath))
+            {
+                OpenShortcutTarget(root.ShortcutPath);
+            }
+        }
+        catch (Exception ex)
+        {
+            ShowError($"Failed to open favorites entry: {ex.Message}");
         }
     }
 
@@ -642,22 +909,14 @@ public sealed partial class MainWindow : Window
 
         if (!Directory.Exists(_shortcutsFolderPath))
         {
-            flyout.Items.Add(new MenuFlyoutItem
-            {
-                Text = "Shortcuts folder not found",
-                IsEnabled = false
-            });
+            flyout.Items.Add(CreateDetailsViewFlyoutItem("Shortcuts folder not found", isEnabled: false));
             return flyout;
         }
 
         var entries = GetShortcutRootEntriesForFlyout();
         if (entries.Count == 0)
         {
-            flyout.Items.Add(new MenuFlyoutItem
-            {
-                Text = "No shortcuts found",
-                IsEnabled = false
-            });
+            flyout.Items.Add(CreateDetailsViewFlyoutItem("No shortcuts found", isEnabled: false));
         }
         else
         {
@@ -669,14 +928,10 @@ public sealed partial class MainWindow : Window
 
         flyout.Items.Add(new MenuFlyoutSeparator());
 
-        var openShortcutsFolder = new MenuFlyoutItem
-        {
-            Text = "Open shortcuts folder in new tab",
-            Icon = new FontIcon { Glyph = "\uE8B7" }
-        };
+        var openShortcutsFolder = CreateDetailsViewFlyoutItem("Open shortcuts folder in new tab", "\uE8B7");
         openShortcutsFolder.Click += (_, _) =>
         {
-            OpenFolderFromShortcutFlyout(_shortcutsFolderPath);
+            _ = OpenFolderFromShortcutFlyoutAsync(_shortcutsFolderPath);
         };
         flyout.Items.Add(openShortcutsFolder);
 
@@ -698,11 +953,13 @@ public sealed partial class MainWindow : Window
 
     private async Task PreloadShortcutCacheAsync()
     {
+        var totalStopwatch = Stopwatch.StartNew();
         try
         {
             var rootEntries = LoadShortcutRootEntries();
 
             // Phase 1: quickly cache root folders' immediate children so all first-layer submenus are ready.
+            var phase1Stopwatch = Stopwatch.StartNew();
             var shallowEntries = new Dictionary<string, ShortcutFolderCacheData>(StringComparer.OrdinalIgnoreCase);
             foreach (var root in rootEntries)
             {
@@ -720,6 +977,9 @@ public sealed partial class MainWindow : Window
                     _shortcutFolderCache[path] = data;
                 }
             }
+            phase1Stopwatch.Stop();
+
+            Debug.WriteLine($"Shortcut cache preload phase1 elapsed: {phase1Stopwatch.ElapsedMilliseconds} ms, roots={rootEntries.Count}");
 
             _dispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low, () =>
             {
@@ -729,6 +989,7 @@ public sealed partial class MainWindow : Window
             await Task.Yield();
 
             // Phase 2: silently pre-populate every reachable layer in the background.
+            var phase2Stopwatch = Stopwatch.StartNew();
             var deepEntries = new Dictionary<string, ShortcutFolderCacheData>(StringComparer.OrdinalIgnoreCase);
             foreach (var root in rootEntries)
             {
@@ -745,10 +1006,18 @@ public sealed partial class MainWindow : Window
                     _shortcutFolderCache[path] = data;
                 }
             }
+
+            phase2Stopwatch.Stop();
+            Debug.WriteLine($"Shortcut cache preload phase2 elapsed: {phase2Stopwatch.ElapsedMilliseconds} ms, cached={deepEntries.Count}");
         }
         catch (Exception ex)
         {
             Debug.WriteLine($"Shortcut cache preload failed: {ex.Message}");
+        }
+        finally
+        {
+            totalStopwatch.Stop();
+            Debug.WriteLine($"Shortcut cache preload total elapsed: {totalStopwatch.ElapsedMilliseconds} ms");
         }
     }
 
@@ -833,16 +1102,50 @@ public sealed partial class MainWindow : Window
 
         if (!string.IsNullOrWhiteSpace(entry.ShortcutPath))
         {
-            var item = new MenuFlyoutItem { Text = entry.DisplayName };
+            var item = CreateDetailsViewFlyoutItem(entry.DisplayName);
             ToolTipService.SetToolTip(item, entry.ShortcutPath);
             item.Click += (_, _) => OpenShortcutTarget(entry.ShortcutPath);
             flyout.Items.Add(item);
         }
     }
 
+    private MenuFlyout BuildShortcutHubChildrenFlyout(string displayName, string folderPath)
+    {
+        var flyout = new MenuFlyout();
+
+        var openCurrentFolder = CreateDetailsViewFlyoutItem($"Open {displayName}", "\uE8B7");
+        openCurrentFolder.Click += (_, _) =>
+        {
+            _ = OpenFolderFromShortcutFlyoutAsync(folderPath);
+        };
+        flyout.Items.Add(openCurrentFolder);
+        flyout.Items.Add(new MenuFlyoutSeparator());
+
+        ShortcutFolderCacheData folderData;
+        if (!TryGetShortcutFolderCache(folderPath, out folderData))
+        {
+            folderData = BuildFolderCacheData(folderPath, includeDescendants: false);
+            lock (_shortcutCacheLock)
+            {
+                _shortcutFolderCache[folderPath] = folderData;
+            }
+        }
+
+        AddFolderItemsToFlyout(flyout, folderData, 1);
+        StartFolderDescendantPrefetch(folderPath, 1);
+
+        if (flyout.Items.Count <= 2)
+        {
+            flyout.Items.Add(CreateDetailsViewFlyoutItem("No items", isEnabled: false));
+        }
+
+        return flyout;
+    }
+
     private MenuFlyoutSubItem CreateFolderSubMenu(string displayName, string folderPath, int depth)
     {
         var folderItem = new MenuFlyoutSubItem { Text = displayName };
+        ApplyDetailsViewFlyoutSubItemStyle(folderItem);
         ToolTipService.SetToolTip(folderItem, folderPath);
         var context = new ShortcutFolderMenuContext(folderPath, depth);
         folderItem.Tag = context;
@@ -857,9 +1160,8 @@ public sealed partial class MainWindow : Window
             if (!hasCachedChildren)
                 return folderItem;
 
-            if (depth == 0)
+            if (depth == 0 || cachedData.IsFullyLoaded)
             {
-                // Requirement: first layer is already populated when flyout opens.
                 AddFolderSubMenuItems(folderItem, cachedData, depth + 1);
                 context.IsLoaded = true;
             }
@@ -882,10 +1184,11 @@ public sealed partial class MainWindow : Window
 
     private void InitializeFolderLazyLoading(MenuFlyoutSubItem folderItem)
     {
-        folderItem.Items.Add(new MenuFlyoutItem { Text = string.Empty, IsEnabled = false });
-        folderItem.PointerEntered += (_, _) => EnsureFolderSubMenuLoaded(folderItem);
-        folderItem.GotFocus += (_, _) => EnsureFolderSubMenuLoaded(folderItem);
-        folderItem.KeyDown += (_, _) => EnsureFolderSubMenuLoaded(folderItem);
+        folderItem.Items.Clear();
+        folderItem.Items.Add(CreateDetailsViewFlyoutItem("Loading...", isEnabled: false));
+        folderItem.PointerEntered += (_, _) => _ = EnsureFolderSubMenuLoadedAsync(folderItem);
+        folderItem.GotFocus += (_, _) => _ = EnsureFolderSubMenuLoadedAsync(folderItem);
+        folderItem.KeyDown += (_, _) => _ = EnsureFolderSubMenuLoadedAsync(folderItem);
     }
 
     private void OnShortcutFolderItemPointerPressed(object sender, PointerRoutedEventArgs args)
@@ -905,7 +1208,7 @@ public sealed partial class MainWindow : Window
         if (!ReferenceEquals(owner, folderItem))
             return;
 
-        OpenFolderFromShortcutFlyout(context.FolderPath);
+        _ = OpenFolderFromShortcutFlyoutAsync(context.FolderPath);
 
         args.Handled = true;
     }
@@ -924,37 +1227,47 @@ public sealed partial class MainWindow : Window
         return null;
     }
 
-    private void EnsureFolderSubMenuLoaded(MenuFlyoutSubItem folderItem)
+    private async Task EnsureFolderSubMenuLoadedAsync(MenuFlyoutSubItem folderItem)
     {
         if (folderItem.Tag is not ShortcutFolderMenuContext context || context.IsLoaded)
             return;
 
+        var stopwatch = Stopwatch.StartNew();
+        var source = "unknown";
+
         context.IsLoaded = true;
-        folderItem.Items.Clear();
 
         if (context.Depth >= ShortcutMenuMaxDepth)
             return;
 
         if (TryGetShortcutFolderCache(context.FolderPath, out var cachedData))
         {
+            source = cachedData.IsFullyLoaded ? "cache:full" : "cache:shallow";
+            folderItem.Items.Clear();
             AddFolderSubMenuItems(folderItem, cachedData, context.Depth + 1);
+            stopwatch.Stop();
+            Debug.WriteLine($"Shortcut submenu load elapsed: {stopwatch.ElapsedMilliseconds} ms, depth={context.Depth}, source={source}, path={context.FolderPath}");
             return;
         }
 
-        var subfolders = GetSubfolders(context.FolderPath, ShortcutMenuMaxSubfolders);
-        var files = GetFiles(context.FolderPath, ShortcutMenuMaxSubfolders);
+        folderItem.Items.Clear();
+        folderItem.Items.Add(CreateDetailsViewFlyoutItem("Loading...", isEnabled: false));
 
-        var fallbackData = new ShortcutFolderCacheData(
-            [.. subfolders.Select(sub => new ShortcutSubfolderData(sub.Name, sub.FullName))],
-            [.. files.Select(file => new ShortcutFileData(file.Name, file.FullName))],
-            IsFullyLoaded: false);
+        var fallbackData = await Task.Run(() => BuildFolderCacheData(context.FolderPath, includeDescendants: false));
+        source = "filesystem:fallback";
+
+        StartFolderDescendantPrefetch(context.FolderPath, context.Depth + 1);
 
         lock (_shortcutCacheLock)
         {
             _shortcutFolderCache[context.FolderPath] = fallbackData;
         }
 
+        folderItem.Items.Clear();
         AddFolderSubMenuItems(folderItem, fallbackData, context.Depth + 1);
+
+        stopwatch.Stop();
+        Debug.WriteLine($"Shortcut submenu load elapsed: {stopwatch.ElapsedMilliseconds} ms, depth={context.Depth}, source={source}, path={context.FolderPath}");
     }
 
     private void AddFolderSubMenuItems(MenuFlyoutSubItem folderItem, ShortcutFolderCacheData data, int childDepth)
@@ -969,10 +1282,29 @@ public sealed partial class MainWindow : Window
 
         foreach (var file in data.Files)
         {
-            var fileItem = new MenuFlyoutItem { Text = file.Name };
+            var fileItem = CreateDetailsViewFlyoutItem(file.Name);
             ToolTipService.SetToolTip(fileItem, file.FullPath);
             fileItem.Click += (_, _) => OpenFileOrShortcut(file.FullPath);
             folderItem.Items.Add(fileItem);
+        }
+    }
+
+    private void AddFolderItemsToFlyout(MenuFlyout flyout, ShortcutFolderCacheData data, int childDepth)
+    {
+        foreach (var subfolder in data.Subfolders)
+        {
+            flyout.Items.Add(CreateFolderSubMenu(subfolder.DisplayName, subfolder.FolderPath, childDepth));
+        }
+
+        if (data.Subfolders.Count > 0 && data.Files.Count > 0)
+            flyout.Items.Add(new MenuFlyoutSeparator());
+
+        foreach (var file in data.Files)
+        {
+            var fileItem = CreateDetailsViewFlyoutItem(file.Name);
+            ToolTipService.SetToolTip(fileItem, file.FullPath);
+            fileItem.Click += (_, _) => OpenFileOrShortcut(file.FullPath);
+            flyout.Items.Add(fileItem);
         }
     }
 
@@ -1007,6 +1339,33 @@ public sealed partial class MainWindow : Window
         {
             PopulateFolderCacheRecursive(subfolder.FolderPath, depth + 1, cache);
         }
+    }
+
+    private void StartFolderDescendantPrefetch(string folderPath, int depth)
+    {
+        if (depth >= ShortcutMenuMaxDepth)
+            return;
+
+        _ = Task.Run(() =>
+        {
+            try
+            {
+                var deepEntries = new Dictionary<string, ShortcutFolderCacheData>(StringComparer.OrdinalIgnoreCase);
+                PopulateFolderCacheRecursive(folderPath, depth, deepEntries);
+
+                lock (_shortcutCacheLock)
+                {
+                    foreach (var (path, data) in deepEntries)
+                    {
+                        _shortcutFolderCache[path] = data;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Shortcut descendant prefetch failed: {ex.Message}");
+            }
+        });
     }
 
     private static List<DirectoryInfo> GetSubfolders(string folderPath, int maxCount)
@@ -1078,7 +1437,7 @@ public sealed partial class MainWindow : Window
         {
             if (Directory.Exists(path))
             {
-                OpenFolderFromShortcutFlyout(path);
+                _ = OpenFolderFromShortcutFlyoutAsync(path);
                 return;
             }
 
@@ -1275,11 +1634,11 @@ public sealed partial class MainWindow : Window
 
     private void TreeSplitter_ManipulationDelta(object sender, ManipulationDeltaRoutedEventArgs e)
     {
-        var newWidth = TreeColumn.Width.Value + e.Delta.Translation.X;
-        if (newWidth >= 120 && newWidth <= 600)
+        var newWidth = PreviewColumn.Width.Value - e.Delta.Translation.X;
+        if (newWidth >= 220 && newWidth <= 700)
         {
-            TreeColumn.Width = new GridLength(newWidth);
-            ViewModel.NavigationPaneWidth = newWidth;
+            PreviewColumn.Width = new GridLength(newWidth);
+            ViewModel.PreviewPaneWidth = newWidth;
         }
     }
 
@@ -1406,7 +1765,7 @@ public sealed partial class MainWindow : Window
 
         if (ViewModel.ActiveTab is not null)
         {
-            TabViewControl.SelectedItem = ViewModel.ActiveTab;
+            ActivateTab(ViewModel.ActiveTab, syncTabViewSelection: true);
         }
 
         ActivateRightPaneForKeyboardNavigation();
@@ -1433,19 +1792,19 @@ public sealed partial class MainWindow : Window
 
     private void AddFolderOpenItems(MenuFlyout flyout, string path)
     {
-        flyout.Items.Add(new MenuFlyoutItem { Text = "Open", Icon = new FontIcon { Glyph = "\uE8E5" } });
+        flyout.Items.Add(CreateDetailsViewFlyoutItem("Open", "\uE8E5"));
         ((MenuFlyoutItem)flyout.Items[^1]).Click += (_, _) =>
         {
             _ = ViewModel.NavigateToAddressAsync(path);
         };
 
-        flyout.Items.Add(new MenuFlyoutItem { Text = "Open in new tab", Icon = new FontIcon { Glyph = "\uE7C3" } });
+        flyout.Items.Add(CreateDetailsViewFlyoutItem("Open in new tab", "\uE7C3"));
         ((MenuFlyoutItem)flyout.Items[^1]).Click += (_, _) =>
         {
             _ = OpenFolderInNewTabAsync(path);
         };
 
-        flyout.Items.Add(new MenuFlyoutItem { Text = "Open in new window", Icon = new FontIcon { Glyph = "\uE8A7" } });
+        flyout.Items.Add(CreateDetailsViewFlyoutItem("Open in new window", "\uE8A7"));
         ((MenuFlyoutItem)flyout.Items[^1]).Click += (_, _) =>
         {
             OpenFolderInNewWindow(path);
@@ -1554,8 +1913,8 @@ public sealed partial class MainWindow : Window
 
     private void TogglePreviewPane_Click(object sender, RoutedEventArgs e)
     {
-        ViewModel.TogglePreviewPane();
-        PreviewColumn.Width = ViewModel.ShowPreviewPane ? new GridLength(ViewModel.PreviewPaneWidth) : new GridLength(0);
+        // Preview pane has been replaced by the inspector sidebar in this mode.
+        PreviewColumn.Width = new GridLength(ViewModel.PreviewPaneWidth > 0 ? ViewModel.PreviewPaneWidth : 320);
     }
 
     private void ToggleHiddenFiles_Click(object sender, RoutedEventArgs e) => ViewModel.ToggleHiddenFiles();
@@ -1767,7 +2126,10 @@ public sealed partial class MainWindow : Window
         }));
 
         Content.KeyboardAccelerators.Add(CreateAccelerator(Windows.System.VirtualKey.F2, Windows.System.VirtualKeyModifiers.None, (_, _) => ViewModel.ActiveTab?.StartRename()));
-        Content.KeyboardAccelerators.Add(CreateAccelerator(Windows.System.VirtualKey.F3, Windows.System.VirtualKeyModifiers.None, (_, _) => { ViewModel.TogglePreviewPane(); PreviewColumn.Width = ViewModel.ShowPreviewPane ? new GridLength(ViewModel.PreviewPaneWidth) : new GridLength(0); }));
+        Content.KeyboardAccelerators.Add(CreateAccelerator(Windows.System.VirtualKey.F3, Windows.System.VirtualKeyModifiers.None, (_, _) =>
+        {
+            PreviewColumn.Width = new GridLength(ViewModel.PreviewPaneWidth > 0 ? ViewModel.PreviewPaneWidth : 320);
+        }));
         Content.KeyboardAccelerators.Add(CreateAccelerator(Windows.System.VirtualKey.F5, Windows.System.VirtualKeyModifiers.None, (_, _) => _ = ViewModel.RefreshAsync()));
         Content.KeyboardAccelerators.Add(CreateAccelerator(Windows.System.VirtualKey.Delete, Windows.System.VirtualKeyModifiers.None, (_, _) =>
         {

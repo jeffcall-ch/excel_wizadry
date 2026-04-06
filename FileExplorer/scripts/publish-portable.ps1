@@ -19,11 +19,30 @@ $runtimeBuildDir = Join-Path $repoRoot "FileExplorer.App\bin\$Configuration\net8
 
 Get-Process FileExplorer -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 
-if (Test-Path $publishDir) {
-    Remove-Item -Path $publishDir -Recurse -Force
+function Reset-DirectoryContents {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    if (-not (Test-Path $Path)) {
+        New-Item -Path $Path -ItemType Directory -Force | Out-Null
+        return
+    }
+
+    try {
+        Remove-Item -Path $Path -Recurse -Force -ErrorAction Stop
+        New-Item -Path $Path -ItemType Directory -Force | Out-Null
+        return
+    }
+    catch {
+        # Keep the root directory and clear child items if the root is locked (for example, as a current working directory).
+    }
+
+    Get-ChildItem -Path $Path -Force -ErrorAction SilentlyContinue |
+        ForEach-Object {
+            Remove-Item -Path $_.FullName -Recurse -Force -ErrorAction SilentlyContinue
+        }
 }
 
-New-Item -Path $publishDir -ItemType Directory -Force | Out-Null
+Reset-DirectoryContents -Path $publishDir
 
 $publishArgs = @(
     "publish",
@@ -50,8 +69,7 @@ if (-not (Test-Path $runtimeBuildDir)) {
 
 # Publish layout has shown startup regressions for this WinUI app.
 # Assemble the portable package from the known-good runtime build output.
-Remove-Item -Path $publishDir -Recurse -Force -ErrorAction SilentlyContinue
-New-Item -Path $publishDir -ItemType Directory -Force | Out-Null
+Reset-DirectoryContents -Path $publishDir
 Copy-Item -Path (Join-Path $runtimeBuildDir "*") -Destination $publishDir -Recurse -Force
 
 $requiredFiles = @(

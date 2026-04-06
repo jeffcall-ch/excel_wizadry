@@ -96,8 +96,6 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         _logger = logger;
         _tabFactory = tabFactory;
         TreeView = treeViewModel;
-
-        TreeView.NavigationRequested += OnTreeNavigationRequested;
     }
 
     /// <summary>Initializes the application: loads settings, detects OneDrive, and opens the initial tab.</summary>
@@ -114,9 +112,6 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         // Detect OneDrive sync roots
         await _cloudStatusService.DetectSyncRootsAsync();
         OnPropertyChanged(nameof(ShowOneDriveColumn));
-
-        // Load tree view
-        await TreeView.LoadAsync();
 
         var initialPath = ResolveInitialStartupPath(startupPath, settings.NewTabDefaultPath);
         await OpenTabAsync(initialPath, null);

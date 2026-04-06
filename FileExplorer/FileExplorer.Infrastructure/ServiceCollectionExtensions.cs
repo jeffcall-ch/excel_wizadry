@@ -19,6 +19,10 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ICloudStatusService, CloudStatusService>();
         services.AddSingleton<ISettingsService, SettingsService>();
         services.AddSingleton<IPreviewService, PreviewService>();
+        services.AddSingleton<IIdentityExtractionService, IdentityExtractionService>();
+        services.AddSingleton<IIdentityCacheService, SqliteIdentityCacheService>();
+        services.AddSingleton<IDeepIndexingService, DeepIndexingService>();
+        services.AddSingleton<IRqUtilityService, RqUtilityService>();
         services.AddSingleton<ISearchService, RqSearchService>();
         return services;
     }

@@ -34,6 +34,7 @@
         <converters:BoolToVisibilityConverter x:Key="InverseBoolToVis" IsInverted="True" />
         <converters:CloudStatusToIconConverter x:Key="CloudStatusIcon" />
         <converters:CloudStatusToToolTipConverter x:Key="CloudStatusToolTip" />
+        <converters:ExtensionToBrushConverter x:Key="ExtensionBrush" />
 
         <!-- Row hover style matching Explorer's accent color at 10% opacity -->
         <Style x:Key="FileRowStyle" TargetType="Grid">
@@ -62,9 +63,9 @@
                     <StackPanel Spacing="8" Padding="8">
                         <TextBlock Text="Columns" FontWeight="SemiBold" />
                         <CheckBox x:Name="ColNameCheck" Content="Name" IsChecked="True" IsEnabled="False" />
-                        <CheckBox x:Name="ColOneDriveCheck" Content="OneDrive Status" IsChecked="True" Click="ColumnVisibility_Changed" Tag="OneDrive" />
+                        <CheckBox x:Name="ColProjectCheck" Content="Extracted Project" IsChecked="True" Click="ColumnVisibility_Changed" Tag="ExtractedProject" />
+                        <CheckBox x:Name="ColRevisionCheck" Content="Extracted Revision" IsChecked="True" Click="ColumnVisibility_Changed" Tag="ExtractedRevision" />
                         <CheckBox x:Name="ColDateCheck" Content="Date modified" IsChecked="True" Click="ColumnVisibility_Changed" Tag="DateModified" />
-                        <CheckBox x:Name="ColTypeCheck" Content="Type" IsChecked="True" Click="ColumnVisibility_Changed" Tag="Type" />
                         <CheckBox x:Name="ColSizeCheck" Content="Size" IsChecked="True" Click="ColumnVisibility_Changed" Tag="Size" />
                     </StackPanel>
                 </Flyout>
@@ -72,10 +73,10 @@
 
             <Grid.ColumnDefinitions>
                 <ColumnDefinition x:Name="ColName" Width="*" MinWidth="100" />
-                <ColumnDefinition x:Name="ColOneDrive" Width="60" />
+                <ColumnDefinition x:Name="ColExtractedProject" Width="220" MinWidth="100" />
+                <ColumnDefinition x:Name="ColExtractedRevision" Width="130" MinWidth="80" />
                 <ColumnDefinition x:Name="ColDateModified" Width="160" MinWidth="80" />
-                <ColumnDefinition x:Name="ColType" Width="130" MinWidth="60" />
-                <ColumnDefinition x:Name="ColSize" Width="80" MinWidth="50" />
+                <ColumnDefinition x:Name="ColSize" Width="90" MinWidth="50" />
             </Grid.ColumnDefinitions>
 
             <Button
@@ -104,24 +105,56 @@
             </Border>
 
             <Button
-                x:Name="OneDriveHeader"
+                x:Name="ExtractedProjectHeader"
                 Grid.Column="1"
                 HorizontalAlignment="Stretch"
-                HorizontalContentAlignment="Center"
+                HorizontalContentAlignment="Left"
                 Style="{StaticResource SubtleButtonStyle}"
                 Click="ColumnHeader_Click"
-                Tag="OneDrive"
+                Tag="ExtractedProject"
                 RightTapped="ColumnHeader_RightTapped">
-                <FontIcon FontFamily="{StaticResource SymbolThemeFontFamily}" Glyph="&#xE753;" FontSize="12" />
+                <StackPanel Orientation="Horizontal" Spacing="4">
+                    <TextBlock Text="Extracted Project" FontWeight="SemiBold" FontSize="12" />
+                    <FontIcon
+                        x:Name="ProjectSortIcon"
+                        FontFamily="{StaticResource SymbolThemeFontFamily}"
+                        Glyph="&#xE70E;"
+                        FontSize="10"
+                        Visibility="Collapsed" />
+                </StackPanel>
             </Button>
             <Border Grid.Column="1" Width="6" HorizontalAlignment="Right" Background="Transparent" Padding="2,4"
-                    ManipulationMode="TranslateX" ManipulationDelta="ColGrip_OneDrive_ManipulationDelta"
+                    ManipulationMode="TranslateX" ManipulationDelta="ColGrip_ExtractedProject_ManipulationDelta"
                     PointerEntered="ColGrip_PointerEntered" PointerExited="ColGrip_PointerExited">
                 <Border Width="1" Background="{ThemeResource DividerStrokeColorDefaultBrush}" />
             </Border>
 
             <Button
                 Grid.Column="2"
+                HorizontalAlignment="Stretch"
+                HorizontalContentAlignment="Left"
+                Style="{StaticResource SubtleButtonStyle}"
+                Click="ColumnHeader_Click"
+                Tag="ExtractedRevision"
+                RightTapped="ColumnHeader_RightTapped">
+                <StackPanel Orientation="Horizontal" Spacing="4">
+                    <TextBlock Text="Extracted Revision" FontWeight="SemiBold" FontSize="12" />
+                    <FontIcon
+                        x:Name="RevisionSortIcon"
+                        FontFamily="{StaticResource SymbolThemeFontFamily}"
+                        Glyph="&#xE70E;"
+                        FontSize="10"
+                        Visibility="Collapsed" />
+                </StackPanel>
+            </Button>
+            <Border Grid.Column="2" Width="6" HorizontalAlignment="Right" Background="Transparent" Padding="2,4"
+                    ManipulationMode="TranslateX" ManipulationDelta="ColGrip_ExtractedRevision_ManipulationDelta"
+                    PointerEntered="ColGrip_PointerEntered" PointerExited="ColGrip_PointerExited">
+                <Border Width="1" Background="{ThemeResource DividerStrokeColorDefaultBrush}" />
+            </Border>
+
+            <Button
+                Grid.Column="3"
                 HorizontalAlignment="Stretch"
                 HorizontalContentAlignment="Left"
                 Style="{StaticResource SubtleButtonStyle}"
@@ -138,32 +171,8 @@
                         Visibility="Collapsed" />
                 </StackPanel>
             </Button>
-            <Border Grid.Column="2" Width="6" HorizontalAlignment="Right" Background="Transparent" Padding="2,4"
-                    ManipulationMode="TranslateX" ManipulationDelta="ColGrip_DateModified_ManipulationDelta"
-                    PointerEntered="ColGrip_PointerEntered" PointerExited="ColGrip_PointerExited">
-                <Border Width="1" Background="{ThemeResource DividerStrokeColorDefaultBrush}" />
-            </Border>
-
-            <Button
-                Grid.Column="3"
-                HorizontalAlignment="Stretch"
-                HorizontalContentAlignment="Left"
-                Style="{StaticResource SubtleButtonStyle}"
-                Click="ColumnHeader_Click"
-                Tag="Type"
-                RightTapped="ColumnHeader_RightTapped">
-                <StackPanel Orientation="Horizontal" Spacing="4">
-                    <TextBlock Text="Type" FontWeight="SemiBold" FontSize="12" />
-                    <FontIcon
-                        x:Name="TypeSortIcon"
-                        FontFamily="{StaticResource SymbolThemeFontFamily}"
-                        Glyph="&#xE70E;"
-                        FontSize="10"
-                        Visibility="Collapsed" />
-                </StackPanel>
-            </Button>
             <Border Grid.Column="3" Width="6" HorizontalAlignment="Right" Background="Transparent" Padding="2,4"
-                    ManipulationMode="TranslateX" ManipulationDelta="ColGrip_Type_ManipulationDelta"
+                    ManipulationMode="TranslateX" ManipulationDelta="ColGrip_DateModified_ManipulationDelta"
                     PointerEntered="ColGrip_PointerEntered" PointerExited="ColGrip_PointerExited">
                 <Border Width="1" Background="{ThemeResource DividerStrokeColorDefaultBrush}" />
             </Border>
@@ -211,6 +220,12 @@
             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
             ScrollViewer.IsVerticalRailEnabled="True">
 
+            <ListView.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <VirtualizingStackPanel />
+                </ItemsPanelTemplate>
+            </ListView.ItemsPanel>
+
             <ListView.ItemContainerStyle>
                 <Style TargetType="ListViewItem">
                     <Setter Property="HorizontalContentAlignment" Value="Stretch" />
@@ -240,10 +255,10 @@
 
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="60" />
-                            <ColumnDefinition Width="160" />
+                            <ColumnDefinition Width="220" />
                             <ColumnDefinition Width="130" />
-                            <ColumnDefinition Width="80" />
+                            <ColumnDefinition Width="160" />
+                            <ColumnDefinition Width="90" />
                         </Grid.ColumnDefinitions>
 
                         <!-- Name column -->
@@ -266,6 +281,7 @@
                                     Grid.Column="1"
                                     Text="{Binding Name}"
                                     FontSize="12"
+                                    Foreground="{Binding Extension, Converter={StaticResource ExtensionBrush}}"
                                     VerticalAlignment="Center"
                                     TextTrimming="CharacterEllipsis" />
                                 <!-- Error badge -->
@@ -291,33 +307,33 @@
                                 Loaded="RenameTextBox_Loaded" />
                         </Grid>
 
-                        <!-- OneDrive status column -->
-                        <FontIcon
+                        <!-- Extracted Project column -->
+                        <TextBlock
                             Grid.Column="1"
-                            FontFamily="{StaticResource SymbolThemeFontFamily}"
-                            Glyph="{Binding CloudStatusIcon}"
-                            FontSize="14"
-                            ToolTipService.ToolTip="{Binding CloudStatus, Converter={StaticResource CloudStatusToolTip}}"
-                            HorizontalAlignment="Center"
-                            VerticalAlignment="Center" />
+                            Text="{Binding ExtractedProject}"
+                            VerticalAlignment="Center"
+                            FontSize="12"
+                            Opacity="0.85"
+                            TextTrimming="CharacterEllipsis"
+                            Padding="8,0,0,0" />
+
+                        <!-- Extracted Revision column -->
+                        <TextBlock
+                            Grid.Column="2"
+                            Text="{Binding ExtractedRevision}"
+                            VerticalAlignment="Center"
+                            FontSize="12"
+                            Opacity="0.85"
+                            TextTrimming="CharacterEllipsis"
+                            Padding="8,0,0,0" />
 
                         <!-- Date modified column -->
                         <TextBlock
-                            Grid.Column="2"
+                            Grid.Column="3"
                             Text="{Binding DateModifiedText}"
                             VerticalAlignment="Center"
                             FontSize="12"
                             Opacity="0.8"
-                            Padding="8,0,0,0" />
-
-                        <!-- Type column -->
-                        <TextBlock
-                            Grid.Column="3"
-                            Text="{Binding TypeDescription}"
-                            VerticalAlignment="Center"
-                            FontSize="12"
-                            Opacity="0.8"
-                            TextTrimming="CharacterEllipsis"
                             Padding="8,0,0,0" />
 
                         <!-- Size column (right-aligned) -->
@@ -364,6 +380,28 @@
             Width="40" Height="40"
             HorizontalAlignment="Center"
             VerticalAlignment="Center" />
+
+        <!-- Processing status (bottom-left) -->
+        <Border
+            x:Name="ProcessingBanner"
+            Grid.Row="1"
+            Visibility="Collapsed"
+            HorizontalAlignment="Left"
+            VerticalAlignment="Bottom"
+            Margin="8"
+            Padding="8,4"
+            CornerRadius="4"
+            Background="{ThemeResource LayerOnMicaBaseAltFillColorSecondaryBrush}"
+            BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
+            BorderThickness="1">
+            <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                <ProgressRing Width="12" Height="12" IsActive="True" />
+                <TextBlock Text="Processing folder... list locked to top row"
+                           FontSize="11"
+                           Opacity="0.9"
+                           VerticalAlignment="Center" />
+            </StackPanel>
+        </Border>
 
     </Grid>
 </UserControl>

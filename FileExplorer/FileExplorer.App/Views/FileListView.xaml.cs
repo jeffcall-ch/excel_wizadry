@@ -30,6 +30,7 @@ public sealed partial class FileListView : UserControl
     private bool _isShiftPressed;
     private bool _restoreFocusAfterNavigation;
     private string? _pendingSelectPathAfterGoUp;
+    private bool _topLockScrollQueued;
 
     /// <summary>Initializes a new instance of the <see cref="FileListView"/> class.</summary>
     public FileListView()
@@ -63,12 +64,16 @@ public sealed partial class FileListView : UserControl
             _currentTab.RevealItemRequested -= CurrentTab_RevealItemRequested;
         }
 
+        // Force container recycle before switching tabs so old rows never blend with new tab content.
+        FileListView_Inner.ItemsSource = null;
+
         _currentTab = tab;
         FileListView_Inner.ItemsSource = tab.Items;
         ClearTransientSelection();
         UpdateEmptyState();
         UpdateSortIndicators();
-        UpdateOneDriveColumnVisibility();
+
+        ApplyLoadingVisualState(tab.IsLoading);
 
         tab.Items.CollectionChanged += CurrentTab_ItemsCollectionChanged;
         tab.PropertyChanged += CurrentTab_PropertyChanged;
@@ -80,6 +85,11 @@ public sealed partial class FileListView : UserControl
         DispatcherQueue.TryEnqueue(() =>
         {
             UpdateEmptyState();
+
+            if (_currentTab?.IsLoading == true)
+            {
+                QueueEnsureTopRowWhileLoading();
+            }
 
             TryApplyPendingSelectionAfterGoUp();
 
@@ -106,10 +116,10 @@ public sealed partial class FileListView : UserControl
                 if (_currentTab.IsLoading)
                 {
                     ClearTransientSelection();
+                    QueueEnsureTopRowWhileLoading();
                 }
 
-                LoadingRing.Visibility = _currentTab.IsLoading ? Visibility.Visible : Visibility.Collapsed;
-                LoadingRing.IsActive = _currentTab.IsLoading;
+                ApplyLoadingVisualState(_currentTab.IsLoading);
 
                 if (!_currentTab.IsLoading && _restoreFocusAfterNavigation)
                 {
@@ -163,17 +173,17 @@ public sealed partial class FileListView : UserControl
             bool visible = cb.IsChecked == true;
             switch (column)
             {
-                case "OneDrive":
-                    ColOneDrive.Width = visible ? new GridLength(60) : new GridLength(0);
+                case "ExtractedProject":
+                    ColExtractedProject.Width = visible ? new GridLength(220) : new GridLength(0);
+                    break;
+                case "ExtractedRevision":
+                    ColExtractedRevision.Width = visible ? new GridLength(130) : new GridLength(0);
                     break;
                 case "DateModified":
                     ColDateModified.Width = visible ? new GridLength(160) : new GridLength(0);
                     break;
-                case "Type":
-                    ColType.Width = visible ? new GridLength(130) : new GridLength(0);
-                    break;
                 case "Size":
-                    ColSize.Width = visible ? new GridLength(80) : new GridLength(0);
+                    ColSize.Width = visible ? new GridLength(90) : new GridLength(0);
                     break;
             }
         }
@@ -184,8 +194,9 @@ public sealed partial class FileListView : UserControl
         if (_currentTab is null) return;
 
         NameSortIcon.Visibility = Visibility.Collapsed;
+        ProjectSortIcon.Visibility = Visibility.Collapsed;
+        RevisionSortIcon.Visibility = Visibility.Collapsed;
         DateSortIcon.Visibility = Visibility.Collapsed;
-        TypeSortIcon.Visibility = Visibility.Collapsed;
         SizeSortIcon.Visibility = Visibility.Collapsed;
 
         var upGlyph = "\uE70E";   // ChevronUp
@@ -198,34 +209,23 @@ public sealed partial class FileListView : UserControl
                 NameSortIcon.Glyph = glyph;
                 NameSortIcon.Visibility = Visibility.Visible;
                 break;
+            case "ExtractedProject":
+                ProjectSortIcon.Glyph = glyph;
+                ProjectSortIcon.Visibility = Visibility.Visible;
+                break;
+            case "ExtractedRevision":
+                RevisionSortIcon.Glyph = glyph;
+                RevisionSortIcon.Visibility = Visibility.Visible;
+                break;
             case "DateModified":
                 DateSortIcon.Glyph = glyph;
                 DateSortIcon.Visibility = Visibility.Visible;
-                break;
-            case "Type":
-                TypeSortIcon.Glyph = glyph;
-                TypeSortIcon.Visibility = Visibility.Visible;
                 break;
             case "Size":
                 SizeSortIcon.Glyph = glyph;
                 SizeSortIcon.Visibility = Visibility.Visible;
                 break;
         }
-    }
-
-    private void UpdateOneDriveColumnVisibility()
-    {
-        var mainVm = App.Services.GetRequiredService<MainViewModel>();
-        if (!mainVm.ShowOneDriveColumn)
-        {
-            ColOneDrive.Width = new GridLength(0);
-            OneDriveHeader.Visibility = Visibility.Collapsed;
-            return;
-        }
-
-        ColOneDrive.Width = new GridLength(60);
-        OneDriveHeader.Visibility = Visibility.Visible;
-        ColOneDriveCheck.IsChecked = true;
     }
 
     #endregion
@@ -361,6 +361,31 @@ public sealed partial class FileListView : UserControl
         }
 
         ApplySelectionFrames();
+    }
+
+    private void ApplyLoadingVisualState(bool isLoading)
+    {
+        LoadingRing.Visibility = isLoading ? Visibility.Visible : Visibility.Collapsed;
+        LoadingRing.IsActive = isLoading;
+        ProcessingBanner.Visibility = isLoading ? Visibility.Visible : Visibility.Collapsed;
+        FileListView_Inner.IsHitTestVisible = !isLoading;
+    }
+
+    private void QueueEnsureTopRowWhileLoading()
+    {
+        if (_topLockScrollQueued)
+            return;
+
+        _topLockScrollQueued = true;
+        DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
+        {
+            _topLockScrollQueued = false;
+
+            if (_currentTab?.IsLoading != true)
+                return;
+
+            EnsureTopRowVisibleWhenNoSelection(force: true);
+        });
     }
 
     /// <summary>Sets whether the list is showing search results.</summary>
@@ -824,15 +849,15 @@ public sealed partial class FileListView : UserControl
         return true;
     }
 
-    private void EnsureTopRowVisibleWhenNoSelection()
+    private void EnsureTopRowVisibleWhenNoSelection(bool force = false)
     {
         if (_currentTab is null || _currentTab.Items.Count == 0)
             return;
 
-        if (!string.IsNullOrWhiteSpace(_pendingSelectPathAfterGoUp))
+        if (!force && !string.IsNullOrWhiteSpace(_pendingSelectPathAfterGoUp))
             return;
 
-        if (FileListView_Inner.SelectedItem is not null)
+        if (!force && FileListView_Inner.SelectedItem is not null)
             return;
 
         var first = _currentTab.Items[0];
@@ -1106,14 +1131,14 @@ public sealed partial class FileListView : UserControl
         ResizeColumn(ColName, e.Delta.Translation.X, 100);
     }
 
-    private void ColGrip_OneDrive_ManipulationDelta(object sender, ManipulationDeltaRoutedEventArgs e)
-        => ResizeColumn(ColOneDrive, e.Delta.Translation.X, 30);
+    private void ColGrip_ExtractedProject_ManipulationDelta(object sender, ManipulationDeltaRoutedEventArgs e)
+        => ResizeColumn(ColExtractedProject, e.Delta.Translation.X, 100);
+
+    private void ColGrip_ExtractedRevision_ManipulationDelta(object sender, ManipulationDeltaRoutedEventArgs e)
+        => ResizeColumn(ColExtractedRevision, e.Delta.Translation.X, 80);
 
     private void ColGrip_DateModified_ManipulationDelta(object sender, ManipulationDeltaRoutedEventArgs e)
         => ResizeColumn(ColDateModified, e.Delta.Translation.X, 80);
-
-    private void ColGrip_Type_ManipulationDelta(object sender, ManipulationDeltaRoutedEventArgs e)
-        => ResizeColumn(ColType, e.Delta.Translation.X, 60);
 
     private void ResizeColumn(ColumnDefinition col, double delta, double minWidth)
     {
@@ -1199,9 +1224,9 @@ public sealed partial class FileListView : UserControl
 
         // Mirror the header column widths exactly
         grid.ColumnDefinitions[0].Width = ColName.Width;
-        grid.ColumnDefinitions[1].Width = new GridLength(ColOneDrive.Width.Value);
-        grid.ColumnDefinitions[2].Width = new GridLength(ColDateModified.Width.Value);
-        grid.ColumnDefinitions[3].Width = new GridLength(ColType.Width.Value);
+        grid.ColumnDefinitions[1].Width = new GridLength(ColExtractedProject.Width.Value);
+        grid.ColumnDefinitions[2].Width = new GridLength(ColExtractedRevision.Width.Value);
+        grid.ColumnDefinitions[3].Width = new GridLength(ColDateModified.Width.Value);
         grid.ColumnDefinitions[4].Width = new GridLength(ColSize.Width.Value);
     }
 

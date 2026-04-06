@@ -62,7 +62,6 @@
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="220" />
             </Grid.ColumnDefinitions>
 
@@ -123,19 +122,7 @@
                                 KeyDown="AddressBar_KeyDown" />
             </Grid>
 
-            <Button x:Name="ShortcutLauncherButton"
-                    Grid.Column="2"
-                    Style="{StaticResource SubtleButtonStyle}"
-                    Width="32"
-                    Height="32"
-                    Padding="0"
-                    VerticalAlignment="Center"
-                    ToolTipService.ToolTip="Shortcuts launcher"
-                    Click="ShortcutLauncherButton_Click">
-                <FontIcon FontFamily="{StaticResource SymbolThemeFontFamily}" Glyph="&#xE8B7;" FontSize="14" />
-            </Button>
-
-            <AutoSuggestBox x:Name="SearchBox" Grid.Column="3"
+            <AutoSuggestBox x:Name="SearchBox" Grid.Column="2"
                             QueryIcon="Find" PlaceholderText="Search..."
                             VerticalAlignment="Center"
                             QuerySubmitted="SearchBox_QuerySubmitted" />
@@ -144,10 +131,10 @@
         <!-- ROW 3: Main Content -->
         <Grid Grid.Row="3">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition x:Name="TreeColumn" Width="315" MinWidth="120" />
-                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition x:Name="TreeColumn" Width="0" MinWidth="0" />
                 <ColumnDefinition Width="*" />
-                <ColumnDefinition x:Name="PreviewColumn" Width="0" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition x:Name="PreviewColumn" Width="320" MinWidth="220" />
             </Grid.ColumnDefinitions>
 
             <!-- Left Pane: Navigation Tree using ItemsSource -->
@@ -163,6 +150,7 @@
                 ScrollViewer.HorizontalScrollBarVisibility="Visible"
                 ScrollViewer.HorizontalScrollMode="Enabled"
                 ScrollViewer.VerticalScrollBarVisibility="Auto"
+                Visibility="Collapsed"
                 Padding="8,4,4,4">
                 <TreeView.ItemTemplate>
                     <DataTemplate>
@@ -175,7 +163,7 @@
             </TreeView>
 
             <!-- Splitter -->
-                <Grid x:Name="TreeSplitter" Grid.Column="1" Width="8" Background="Transparent"
+                                <Grid x:Name="TreeSplitter" Grid.Column="2" Width="8" Background="Transparent"
                   ManipulationMode="TranslateX"
                   PointerEntered="TreeSplitter_PointerEntered"
                     PointerMoved="TreeSplitter_PointerMoved"
@@ -193,25 +181,9 @@
                 </Grid>
 
             <!-- Right Pane: File List -->
-            <views:FileListView x:Name="FileList" Grid.Column="2" />
+            <views:FileListView x:Name="FileList" Grid.Column="1" />
 
-            <!-- Preview Pane -->
-            <Grid x:Name="PreviewPaneGrid" Grid.Column="3" Padding="12"
-                  BorderThickness="1,0,0,0"
-                  BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}">
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <StackPanel Spacing="12">
-                        <Image x:Name="PreviewImage" MaxHeight="400" Stretch="Uniform" Visibility="Collapsed" />
-                        <ScrollViewer x:Name="PreviewTextScroller" MaxHeight="600" Visibility="Collapsed">
-                            <TextBlock x:Name="PreviewText" FontFamily="Consolas" FontSize="12"
-                                       TextWrapping="Wrap" IsTextSelectionEnabled="True" />
-                        </ScrollViewer>
-                        <TextBlock x:Name="NoPreviewText" Text="Select a file to preview"
-                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                   HorizontalAlignment="Center" VerticalAlignment="Center" />
-                    </StackPanel>
-                </ScrollViewer>
-            </Grid>
+            <views:InspectorSidebarView x:Name="InspectorSidebar" Grid.Column="3" />
         </Grid>
 
         <!-- ROW 4: Status Bar -->

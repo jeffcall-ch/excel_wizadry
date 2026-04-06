@@ -40,6 +40,15 @@ public sealed class FileSystemEntry
     /// <summary>OneDrive cloud status for this file.</summary>
     public CloudFileStatus CloudStatus { get; set; } = CloudFileStatus.NotApplicable;
 
+    /// <summary>Extracted project title from file content anchors.</summary>
+    public string ExtractedProject { get; set; } = string.Empty;
+
+    /// <summary>Extracted revision from file content anchors.</summary>
+    public string ExtractedRevision { get; set; } = string.Empty;
+
+    /// <summary>Extracted document name from file content anchors.</summary>
+    public string ExtractedDocumentName { get; set; } = string.Empty;
+
     /// <summary>Whether the entry is hidden.</summary>
     public bool IsHidden => (Attributes & FileAttributes.Hidden) != 0;
 

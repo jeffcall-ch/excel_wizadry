@@ -1,6 +1,8 @@
 // Copyright (c) FileExplorer contributors. All rights reserved.
 
 using System.Collections.ObjectModel;
+using System.Diagnostics;
+using System.Text.RegularExpressions;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using FileExplorer.Core.Interfaces;
@@ -15,10 +17,19 @@ namespace FileExplorer.Core.ViewModels;
 /// </summary>
 public sealed partial class TabContentViewModel : ObservableObject, IDisposable
 {
+    private const int IdentityApplyBatchSize = 50;
+    private static readonly TimeSpan IdentityApplyDebounce = TimeSpan.FromMilliseconds(250);
+
+    private static readonly Regex RevisionFromFileNameRegex = new(
+        @"(?<!\d)(?<rev>\d+\.\d+)(?!\d)",
+        RegexOptions.Compiled);
+
     private readonly IFileSystemService _fileSystemService;
     private readonly IShellIntegrationService _shellService;
     private readonly ICloudStatusService _cloudStatusService;
     private readonly IPreviewService _previewService;
+    private readonly IIdentityExtractionService _identityExtractionService;
+    private readonly IIdentityCacheService _identityCacheService;
     private readonly ILogger<TabContentViewModel> _logger;
     private IDisposable? _watcherHandle;
     private CancellationTokenSource? _loadCts;
@@ -71,6 +82,9 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private bool _isAutoRefreshPaused;
 
+    [ObservableProperty]
+    private bool _isIdentityHydrationActive;
+
     /// <summary>Raised when navigation occurs (for tree sync).</summary>
     public event EventHandler<string>? Navigated;
 
@@ -83,6 +97,8 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
         IShellIntegrationService shellService,
         ICloudStatusService cloudStatusService,
         IPreviewService previewService,
+        IIdentityExtractionService identityExtractionService,
+        IIdentityCacheService identityCacheService,
         ILogger<TabContentViewModel> logger,
         TabState? existingState = null)
     {
@@ -90,6 +106,8 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
         _shellService = shellService;
         _cloudStatusService = cloudStatusService;
         _previewService = previewService;
+        _identityExtractionService = identityExtractionService;
+        _identityCacheService = identityCacheService;
         _logger = logger;
         TabState = existingState ?? new TabState();
     }
@@ -165,6 +183,8 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
             {
                 Items.Add(item);
             }
+
+            _ = HydrateIdentityColumnsAsync(ct);
 
             IsEmpty = Items.Count == 0;
             UpdateStatusText();
@@ -482,6 +502,20 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
             "Type" => SortAscending
                 ? items.OrderByDescending(i => i.Entry.IsDirectory).ThenBy(i => i.Entry.TypeDescription, StringComparer.OrdinalIgnoreCase)
                 : items.OrderByDescending(i => i.Entry.IsDirectory).ThenByDescending(i => i.Entry.TypeDescription, StringComparer.OrdinalIgnoreCase),
+            "ExtractedProject" => SortAscending
+                ? items.OrderByDescending(i => i.Entry.IsDirectory)
+                    .ThenBy(i => i.ExtractedProject, StringComparer.OrdinalIgnoreCase)
+                    .ThenBy(i => i.Entry.Name, StringComparer.OrdinalIgnoreCase)
+                : items.OrderByDescending(i => i.Entry.IsDirectory)
+                    .ThenByDescending(i => i.ExtractedProject, StringComparer.OrdinalIgnoreCase)
+                    .ThenBy(i => i.Entry.Name, StringComparer.OrdinalIgnoreCase),
+            "ExtractedRevision" => SortAscending
+                ? items.OrderByDescending(i => i.Entry.IsDirectory)
+                    .ThenBy(i => i.ExtractedRevision, StringComparer.OrdinalIgnoreCase)
+                    .ThenBy(i => i.Entry.Name, StringComparer.OrdinalIgnoreCase)
+                : items.OrderByDescending(i => i.Entry.IsDirectory)
+                    .ThenByDescending(i => i.ExtractedRevision, StringComparer.OrdinalIgnoreCase)
+                    .ThenBy(i => i.Entry.Name, StringComparer.OrdinalIgnoreCase),
             "Size" => SortAscending
                 ? items.OrderByDescending(i => i.Entry.IsDirectory).ThenBy(i => i.Entry.Size)
                 : items.OrderByDescending(i => i.Entry.IsDirectory).ThenByDescending(i => i.Entry.Size),
@@ -583,6 +617,10 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
                     {
                         var info = new FileInfo(change.FullPath);
                         var isDir = Directory.Exists(change.FullPath);
+                        var attributes = File.Exists(change.FullPath) || isDir
+                            ? File.GetAttributes(change.FullPath)
+                            : FileAttributes.Normal;
+
                         var entry = new FileSystemEntry
                         {
                             FullPath = change.FullPath,
@@ -590,7 +628,8 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
                             IsDirectory = isDir,
                             Size = isDir ? 0 : (info.Exists ? info.Length : 0),
                             DateModified = info.Exists ? info.LastWriteTime : DateTimeOffset.Now,
-                            Attributes = info.Exists ? info.Attributes : FileAttributes.Normal
+                            Attributes = attributes,
+                            Extension = isDir ? string.Empty : Path.GetExtension(change.FullPath)
                         };
                         entry.TypeDescription = _shellService.GetTypeDescription(change.FullPath);
                         var vm = new FileItemViewModel(entry) { IsNewItem = true };
@@ -599,6 +638,13 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
                         if (_cloudStatusService.IsSyncRootDetected)
                         {
                             _ = RefreshSingleCloudStatusAsync(vm);
+                        }
+
+                        if (!isDir &&
+                            _identityExtractionService.SupportsExtension(entry.Extension) &&
+                            !ShouldSkipIndexing(entry))
+                        {
+                            _ = RefreshIdentityForSingleFileAsync(vm);
                         }
 
                         UpdateStatusText();
@@ -613,6 +659,14 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
                 {
                     _ = RefreshSingleCloudStatusAsync(changed);
                 }
+
+                if (changed is not null &&
+                    !changed.Entry.IsDirectory &&
+                    _identityExtractionService.SupportsExtension(changed.Entry.Extension) &&
+                    !ShouldSkipIndexing(changed.Entry))
+                {
+                    _ = RefreshIdentityForSingleFileAsync(changed);
+                }
                 break;
 
             case WatcherChangeTypes.Deleted:
@@ -622,6 +676,8 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
                     Items.Remove(toRemove);
                     UpdateStatusText();
                 }
+
+                _ = _identityCacheService.DeleteByNormalizedPathAsync(change.FullPath);
                 break;
 
             case WatcherChangeTypes.Renamed:
@@ -630,8 +686,23 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
                     i.Entry.FullPath.Equals(change.OldFullPath, StringComparison.OrdinalIgnoreCase));
                 if (renamed is not null)
                 {
+                    var previousPath = renamed.Entry.FullPath;
                     renamed.Entry.Name = change.Name;
+                    renamed.Entry.FullPath = change.FullPath;
+                    renamed.Entry.Extension = Path.GetExtension(change.FullPath);
+                    renamed.Entry.TypeDescription = _shellService.GetTypeDescription(change.FullPath);
                     renamed.NotifyNameChanged();
+                    renamed.NotifyRenamed();
+
+                    _ = _identityCacheService.DeleteByNormalizedPathAsync(previousPath);
+                    _ = _identityCacheService.DeleteByNormalizedPathAsync(change.FullPath);
+
+                    if (!renamed.Entry.IsDirectory &&
+                        _identityExtractionService.SupportsExtension(renamed.Entry.Extension) &&
+                        !ShouldSkipIndexing(renamed.Entry))
+                    {
+                        _ = RefreshIdentityForSingleFileAsync(renamed);
+                    }
                 }
                 break;
         }
@@ -656,6 +727,298 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
         {
             _logger.LogDebug(ex, "Failed to resolve cloud statuses");
         }
+    }
+
+    private async Task HydrateIdentityColumnsAsync(CancellationToken ct)
+    {
+        try
+        {
+            IsIdentityHydrationActive = true;
+
+            var candidates = Items
+                .Where(item =>
+                    !item.Entry.IsDirectory &&
+                    _identityExtractionService.SupportsExtension(item.Entry.Extension) &&
+                    !ShouldSkipIndexing(item.Entry))
+                .ToList();
+
+            if (candidates.Count == 0)
+                return;
+
+            var parentPath = _identityCacheService.NormalizePath(CurrentPath);
+            var cacheEntries = await _identityCacheService
+                .GetEntriesByParentPathAsync(parentPath, ct);
+
+            var liveEntries = new List<(FileItemViewModel Item, string FileKey, long Size, long LastWriteTicksUtc)>(candidates.Count);
+            var liveKeySet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var candidate in candidates)
+            {
+                var fileKey = _identityCacheService.BuildFileKey(
+                    candidate.Entry.FullPath,
+                    candidate.Entry.Size,
+                    candidate.Entry.DateModified);
+
+                liveEntries.Add((
+                    candidate,
+                    fileKey,
+                    candidate.Entry.Size,
+                    candidate.Entry.DateModified.UtcTicks));
+
+                liveKeySet.Add(fileKey);
+            }
+
+            var orphanKeys = cacheEntries.Keys
+                .Where(key => !liveKeySet.Contains(key))
+                .ToList();
+
+            if (orphanKeys.Count > 0)
+            {
+                await _identityCacheService.DeleteByFileKeysAsync(orphanKeys, ct);
+            }
+
+            var cacheApplyQueue = new List<(FileItemViewModel Item, DocumentIdentity Identity)>(liveEntries.Count);
+            var extractionQueue = new List<(FileItemViewModel Item, string FileKey, long Size, long LastWriteTicksUtc)>(liveEntries.Count);
+
+            foreach (var liveEntry in liveEntries)
+            {
+                var revisionFromFileName = ExtractRevisionFromFileName(liveEntry.Item.Entry.Name);
+                var isPdf = string.Equals(liveEntry.Item.Entry.Extension, ".pdf", StringComparison.OrdinalIgnoreCase);
+
+                if (cacheEntries.TryGetValue(liveEntry.FileKey, out var cached))
+                {
+                    var identity = cached.ToDocumentIdentity();
+
+                    if (!string.IsNullOrWhiteSpace(revisionFromFileName) &&
+                        (!isPdf || string.IsNullOrWhiteSpace(identity.Revision)))
+                    {
+                        identity = identity with { Revision = revisionFromFileName };
+                    }
+
+                    if (identity.HasAnyValue && NeedsIdentityUpdate(liveEntry.Item, identity))
+                    {
+                        cacheApplyQueue.Add((liveEntry.Item, identity));
+                    }
+
+                    continue;
+                }
+
+                extractionQueue.Add(liveEntry);
+            }
+
+            if (cacheApplyQueue.Count > 0)
+            {
+                await ApplyIdentityUpdatesBufferedAsync(cacheApplyQueue, ct);
+            }
+
+            if (extractionQueue.Count == 0)
+            {
+                return;
+            }
+
+            var filePaths = extractionQueue
+                .Select(entry => entry.Item.Entry.FullPath)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            var stopwatch = Stopwatch.StartNew();
+            var identities = await _identityExtractionService.ExtractIdentityBatchAsync(filePaths, ct);
+            stopwatch.Stop();
+
+            var applyQueue = new List<(FileItemViewModel Item, DocumentIdentity Identity)>(extractionQueue.Count);
+            var upsertQueue = new List<FileIdentityCacheRecord>(extractionQueue.Count);
+
+            foreach (var extractionEntry in extractionQueue)
+            {
+                var item = extractionEntry.Item;
+                var revisionFromFileName = ExtractRevisionFromFileName(item.Entry.Name);
+                var isPdf = string.Equals(item.Entry.Extension, ".pdf", StringComparison.OrdinalIgnoreCase);
+
+                DocumentIdentity identity = DocumentIdentity.Empty;
+                if (identities.TryGetValue(item.Entry.FullPath, out var extractedIdentity))
+                {
+                    identity = extractedIdentity;
+                }
+
+                if (!string.IsNullOrWhiteSpace(revisionFromFileName) &&
+                    (!isPdf || string.IsNullOrWhiteSpace(identity.Revision)))
+                {
+                    identity = identity with { Revision = revisionFromFileName };
+                }
+
+                if (!identity.HasAnyValue)
+                    continue;
+
+                if (NeedsIdentityUpdate(item, identity))
+                {
+                    applyQueue.Add((item, identity));
+                }
+
+                upsertQueue.Add(new FileIdentityCacheRecord
+                {
+                    FileKey = extractionEntry.FileKey,
+                    ParentPath = parentPath,
+                    ProjectTitle = identity.ProjectTitle,
+                    Revision = identity.Revision,
+                    DocumentName = identity.DocumentName,
+                    LastWriteTime = extractionEntry.LastWriteTicksUtc,
+                    FileSize = extractionEntry.Size
+                });
+            }
+
+            if (applyQueue.Count > 0)
+            {
+                await ApplyIdentityUpdatesBufferedAsync(applyQueue, ct);
+            }
+
+            if (upsertQueue.Count > 0)
+            {
+                await _identityCacheService.UpsertEntriesAsync(upsertQueue, ct);
+            }
+
+            _logger.LogInformation(
+                "Identity hydration elapsed: {ElapsedMs} ms for {Count} candidate files in {Path}",
+                stopwatch.ElapsedMilliseconds,
+                candidates.Count,
+                CurrentPath);
+        }
+        catch (OperationCanceledException)
+        {
+            // Navigation changed; ignore stale identity work.
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Identity hydration failed for {Path}", CurrentPath);
+        }
+        finally
+        {
+            IsIdentityHydrationActive = false;
+        }
+    }
+
+    private async Task ApplyIdentityUpdatesBufferedAsync(
+        IReadOnlyList<(FileItemViewModel Item, DocumentIdentity Identity)> updates,
+        CancellationToken ct)
+    {
+        for (var index = 0; index < updates.Count; index += IdentityApplyBatchSize)
+        {
+            ct.ThrowIfCancellationRequested();
+            await Task.Delay(IdentityApplyDebounce, ct);
+
+            var count = Math.Min(IdentityApplyBatchSize, updates.Count - index);
+            for (var offset = 0; offset < count; offset++)
+            {
+                var update = updates[index + offset];
+                update.Item.ApplyIdentity(update.Identity);
+            }
+        }
+    }
+
+    private async Task RefreshIdentityForSingleFileAsync(FileItemViewModel item)
+    {
+        if (item.Entry.IsDirectory || ShouldSkipIndexing(item.Entry))
+            return;
+
+        try
+        {
+            var fileInfo = new FileInfo(item.Entry.FullPath);
+            if (!fileInfo.Exists)
+                return;
+
+            var fileKey = _identityCacheService.BuildFileKey(
+                item.Entry.FullPath,
+                fileInfo.Length,
+                fileInfo.LastWriteTimeUtc);
+
+            var cached = await _identityCacheService.GetEntryByFileKeyAsync(fileKey);
+            if (cached is not null)
+            {
+                var cachedIdentity = cached.ToDocumentIdentity();
+                if (cachedIdentity.HasAnyValue && NeedsIdentityUpdate(item, cachedIdentity))
+                {
+                    item.ApplyIdentity(cachedIdentity);
+                }
+
+                return;
+            }
+
+            var identity = await _identityExtractionService.ExtractIdentityAsync(item.Entry.FullPath);
+            var revisionFromFileName = ExtractRevisionFromFileName(item.Entry.Name);
+            var isPdf = string.Equals(item.Entry.Extension, ".pdf", StringComparison.OrdinalIgnoreCase);
+
+            if (!string.IsNullOrWhiteSpace(revisionFromFileName) &&
+                (!isPdf || string.IsNullOrWhiteSpace(identity.Revision)))
+            {
+                identity = identity with { Revision = revisionFromFileName };
+            }
+
+            if (!identity.HasAnyValue)
+            {
+                await _identityCacheService.DeleteByNormalizedPathAsync(item.Entry.FullPath);
+                return;
+            }
+
+            if (NeedsIdentityUpdate(item, identity))
+            {
+                item.ApplyIdentity(identity);
+            }
+
+            await _identityCacheService.UpsertEntriesAsync(
+                [
+                    new FileIdentityCacheRecord
+                    {
+                        FileKey = fileKey,
+                        ParentPath = _identityCacheService.NormalizePath(Path.GetDirectoryName(item.Entry.FullPath) ?? string.Empty),
+                        ProjectTitle = identity.ProjectTitle,
+                        Revision = identity.Revision,
+                        DocumentName = identity.DocumentName,
+                        LastWriteTime = fileInfo.LastWriteTimeUtc.Ticks,
+                        FileSize = fileInfo.Length
+                    }
+                ]);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Single-file identity refresh failed for {Path}", item.Entry.FullPath);
+        }
+    }
+
+    private static bool NeedsIdentityUpdate(FileItemViewModel item, DocumentIdentity identity)
+    {
+        return !string.Equals(item.ExtractedProject, identity.ProjectTitle, StringComparison.Ordinal) ||
+            !string.Equals(item.ExtractedRevision, identity.Revision, StringComparison.Ordinal) ||
+            !string.Equals(item.ExtractedDocumentName, identity.DocumentName, StringComparison.Ordinal);
+    }
+
+    private static bool ShouldSkipIndexing(FileSystemEntry entry)
+    {
+        if (entry.IsDirectory)
+            return true;
+
+        if (entry.Name.StartsWith("~$", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        if (entry.IsHidden || entry.IsSystem)
+            return true;
+
+        return false;
+    }
+
+    private static string ExtractRevisionFromFileName(string fileName)
+    {
+        if (string.IsNullOrWhiteSpace(fileName))
+            return string.Empty;
+
+        var nameWithoutExtension = Path.GetFileNameWithoutExtension(fileName);
+        if (string.IsNullOrWhiteSpace(nameWithoutExtension))
+            return string.Empty;
+
+        var matches = RevisionFromFileNameRegex.Matches(nameWithoutExtension);
+        if (matches.Count == 0)
+            return string.Empty;
+
+        var value = matches[^1].Groups["rev"].Value;
+        return string.IsNullOrWhiteSpace(value) ? string.Empty : value;
     }
 
     private async Task RefreshSingleCloudStatusAsync(FileItemViewModel item)
@@ -750,6 +1113,18 @@ public sealed partial class FileItemViewModel : ObservableObject
     /// <summary>Shell type description.</summary>
     public string TypeDescription => Entry.TypeDescription;
 
+    /// <summary>File extension including leading dot.</summary>
+    public string Extension => Entry.Extension;
+
+    /// <summary>Extracted project title from document anchors.</summary>
+    public string ExtractedProject => Entry.ExtractedProject;
+
+    /// <summary>Extracted revision from document anchors.</summary>
+    public string ExtractedRevision => Entry.ExtractedRevision;
+
+    /// <summary>Extracted document name from document anchors.</summary>
+    public string ExtractedDocumentName => Entry.ExtractedDocumentName;
+
     /// <summary>Full path for tooltips.</summary>
     public string FullPath => Entry.FullPath;
 
@@ -812,8 +1187,21 @@ public sealed partial class FileItemViewModel : ObservableObject
     {
         OnPropertyChanged(nameof(Name));
         OnPropertyChanged(nameof(FullPath));
+        OnPropertyChanged(nameof(Extension));
         OnPropertyChanged(nameof(TypeDescription));
         OnPropertyChanged(nameof(IconGlyph));
+    }
+
+    /// <summary>Applies extracted identity values and raises binding updates.</summary>
+    public void ApplyIdentity(DocumentIdentity identity)
+    {
+        Entry.ExtractedProject = identity.ProjectTitle;
+        Entry.ExtractedRevision = identity.Revision;
+        Entry.ExtractedDocumentName = identity.DocumentName;
+
+        OnPropertyChanged(nameof(ExtractedProject));
+        OnPropertyChanged(nameof(ExtractedRevision));
+        OnPropertyChanged(nameof(ExtractedDocumentName));
     }
 
     partial void OnCloudStatusChanged(CloudFileStatus value)
