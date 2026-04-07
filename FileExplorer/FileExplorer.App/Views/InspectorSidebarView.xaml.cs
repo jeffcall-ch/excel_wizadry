@@ -26,6 +26,7 @@ public sealed partial class InspectorSidebarView : UserControl
     }
 
     private readonly ObservableCollection<NavigationHubRootListItem> _navigationHubRoots = [];
+    private TabContentViewModel? _currentTab;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="InspectorSidebarView"/> class.
@@ -42,7 +43,10 @@ public sealed partial class InspectorSidebarView : UserControl
     /// </summary>
     public void BindToTab(TabContentViewModel tab)
     {
-        _ = tab;
+        if (ReferenceEquals(_currentTab, tab))
+            return;
+
+        _currentTab = tab;
         ReloadNavigationHubRoots();
     }
 

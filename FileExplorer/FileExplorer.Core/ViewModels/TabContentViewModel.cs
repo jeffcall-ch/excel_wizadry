@@ -346,7 +346,14 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
     public async Task RefreshAsync()
     {
         if (!string.IsNullOrEmpty(CurrentPath))
-            await NavigateAsync(CurrentPath);
+            await RefreshIncrementalAsync(CurrentPath);
+    }
+
+    /// <summary>Performs a full reload of the current directory.</summary>
+    public async Task ForceReloadAsync()
+    {
+        if (!string.IsNullOrEmpty(CurrentPath))
+            await NavigateCoreAsync(CurrentPath, skipHistory: true);
     }
 
     /// <summary>Opens the selected item (navigate into folder or launch file).</summary>
@@ -592,6 +599,218 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
 
     #region Private Helpers
 
+    private async Task RefreshIncrementalAsync(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path) || IsLoading)
+            return;
+
+        if (Items.Any(item => item.IsRenaming))
+            return;
+
+        try
+        {
+            var latestEntries = new List<FileSystemEntry>();
+
+            await foreach (var entry in _fileSystemService.EnumerateDirectoryAsync(path, CancellationToken.None))
+            {
+                latestEntries.Add(entry);
+
+                if (latestEntries.Count % 250 == 0)
+                    await Task.Yield();
+            }
+
+            _identityProcessingEnabledForCurrentPath = ShouldEnableIdentityProcessing(path, latestEntries.Count);
+
+            var comparer = StringComparer.OrdinalIgnoreCase;
+            var latestByPath = new Dictionary<string, FileSystemEntry>(comparer);
+            foreach (var entry in latestEntries)
+            {
+                if (!latestByPath.ContainsKey(entry.FullPath))
+                {
+                    latestByPath[entry.FullPath] = entry;
+                }
+            }
+
+            if (!HasMaterialChanges(latestByPath))
+            {
+                if (_watcherHandle is null || IsAutoRefreshPaused)
+                {
+                    _watcherHandle?.Dispose();
+                    StartWatcher(path);
+                }
+
+                return;
+            }
+
+            var existingByPath = new Dictionary<string, FileItemViewModel>(comparer);
+            foreach (var item in Items)
+            {
+                if (!existingByPath.ContainsKey(item.Entry.FullPath))
+                {
+                    existingByPath[item.Entry.FullPath] = item;
+                }
+            }
+
+            var selectedPaths = SelectedItems
+                .Select(item => item.Entry.FullPath)
+                .Where(pathValue => !string.IsNullOrWhiteSpace(pathValue))
+                .ToHashSet(comparer);
+
+            var hasChanges = false;
+            var affectedItems = new List<FileItemViewModel>();
+
+            foreach (var item in Items.ToList())
+            {
+                if (!latestByPath.ContainsKey(item.Entry.FullPath))
+                {
+                    Items.Remove(item);
+                    _ = _identityCacheService.DeleteByNormalizedPathAsync(item.Entry.FullPath);
+                    hasChanges = true;
+                }
+            }
+
+            foreach (var (fullPath, latestEntry) in latestByPath)
+            {
+                if (existingByPath.TryGetValue(fullPath, out var existingItem))
+                {
+                    if (!AreEntriesEquivalent(existingItem.Entry, latestEntry))
+                    {
+                        PreserveComputedFields(existingItem.Entry, latestEntry);
+                        existingItem.ApplyEntrySnapshot(latestEntry);
+                        affectedItems.Add(existingItem);
+                        hasChanges = true;
+                    }
+
+                    continue;
+                }
+
+                latestEntry.TypeDescription = GetTypeDescriptionFast(latestEntry);
+                latestEntry.IconIndex = 0;
+                var newItem = new FileItemViewModel(latestEntry);
+                Items.Add(newItem);
+                affectedItems.Add(newItem);
+                hasChanges = true;
+            }
+
+            var sortedItems = ApplySort(Items.ToList());
+            for (var index = 0; index < sortedItems.Count; index++)
+            {
+                var expectedItem = sortedItems[index];
+                if (ReferenceEquals(Items[index], expectedItem))
+                    continue;
+
+                var currentIndex = Items.IndexOf(expectedItem);
+                if (currentIndex >= 0)
+                {
+                    Items.Move(currentIndex, index);
+                    hasChanges = true;
+                }
+            }
+
+            if (hasChanges && selectedPaths.Count > 0)
+            {
+                SelectedItems.Clear();
+                foreach (var item in Items)
+                {
+                    if (selectedPaths.Contains(item.Entry.FullPath))
+                    {
+                        SelectedItems.Add(item);
+                    }
+                }
+            }
+
+            IsEmpty = Items.Count == 0;
+            UpdateStatusText();
+            UpdateFreeSpace();
+
+            if (_watcherHandle is null || IsAutoRefreshPaused)
+            {
+                _watcherHandle?.Dispose();
+                StartWatcher(path);
+            }
+
+            if (affectedItems.Count > 0)
+            {
+                if (_cloudStatusService.IsSyncRootDetected)
+                {
+                    foreach (var item in affectedItems)
+                    {
+                        _ = RefreshSingleCloudStatusAsync(item);
+                    }
+                }
+
+                if (_identityProcessingEnabledForCurrentPath)
+                {
+                    foreach (var item in affectedItems)
+                    {
+                        if (!item.Entry.IsDirectory &&
+                            _identityExtractionService.SupportsExtension(item.Entry.Extension) &&
+                            !ShouldSkipIndexing(item.Entry))
+                        {
+                            _ = RefreshIdentityForSingleFileAsync(item);
+                        }
+                    }
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Refresh superseded.
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to refresh directory incrementally: {Path}", path);
+        }
+    }
+
+    private static bool AreEntriesEquivalent(FileSystemEntry existing, FileSystemEntry latest)
+    {
+        return existing.IsDirectory == latest.IsDirectory &&
+               existing.Size == latest.Size &&
+               existing.DateModified.UtcTicks == latest.DateModified.UtcTicks &&
+               existing.Attributes == latest.Attributes &&
+               existing.ReparseTag == latest.ReparseTag;
+    }
+
+    private static void PreserveComputedFields(FileSystemEntry source, FileSystemEntry target)
+    {
+        target.CloudStatus = source.CloudStatus;
+        target.ExtractedProject = source.ExtractedProject;
+        target.ExtractedRevision = source.ExtractedRevision;
+        target.ExtractedDocumentName = source.ExtractedDocumentName;
+        target.TypeDescription = source.TypeDescription;
+        target.IconIndex = source.IconIndex;
+    }
+
+    private bool HasMaterialChanges(IReadOnlyDictionary<string, FileSystemEntry> latestByPath)
+    {
+        if (Items.Count != latestByPath.Count)
+            return true;
+
+        foreach (var item in Items)
+        {
+            if (!latestByPath.TryGetValue(item.Entry.FullPath, out var latest))
+                return true;
+
+            if (item.Entry.IsDirectory != latest.IsDirectory)
+                return true;
+
+            if (item.Entry.DateModified.UtcTicks != latest.DateModified.UtcTicks)
+                return true;
+
+            if (!item.Entry.IsDirectory && item.Entry.Size != latest.Size)
+                return true;
+
+            if (item.Entry.Attributes != latest.Attributes)
+                return true;
+
+            if (item.Entry.ReparseTag != latest.ReparseTag)
+                return true;
+        }
+
+        return false;
+    }
+
     private List<FileItemViewModel> ApplySort(List<FileItemViewModel> items)
     {
         // Folders always first
@@ -738,6 +957,8 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
             {
                 DispatchFileSystemChange(change);
             });
+
+            IsAutoRefreshPaused = false;
         }
         catch (Exception ex)
         {
@@ -1709,6 +1930,30 @@ public sealed partial class FileItemViewModel : ObservableObject
         OnPropertyChanged(nameof(ExtractedProject));
         OnPropertyChanged(nameof(ExtractedRevision));
         OnPropertyChanged(nameof(ExtractedDocumentName));
+    }
+
+    /// <summary>Applies the latest file system snapshot and raises dependent property updates.</summary>
+    public void ApplyEntrySnapshot(FileSystemEntry latest)
+    {
+        Entry.Name = latest.Name;
+        Entry.FullPath = latest.FullPath;
+        Entry.IsDirectory = latest.IsDirectory;
+        Entry.Size = latest.Size;
+        Entry.DateModified = latest.DateModified;
+        Entry.TypeDescription = latest.TypeDescription;
+        Entry.Extension = latest.Extension;
+        Entry.Attributes = latest.Attributes;
+        Entry.ReparseTag = latest.ReparseTag;
+        Entry.IconIndex = latest.IconIndex;
+
+        OnPropertyChanged(nameof(Name));
+        OnPropertyChanged(nameof(FullPath));
+        OnPropertyChanged(nameof(IsDirectory));
+        OnPropertyChanged(nameof(SizeText));
+        OnPropertyChanged(nameof(DateModifiedText));
+        OnPropertyChanged(nameof(TypeDescription));
+        OnPropertyChanged(nameof(Extension));
+        OnPropertyChanged(nameof(IconGlyph));
     }
 
     partial void OnCloudStatusChanged(CloudFileStatus value)

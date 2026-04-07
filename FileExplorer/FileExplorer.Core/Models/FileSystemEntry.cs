@@ -14,13 +14,13 @@ public sealed class FileSystemEntry
     public required string Name { get; set; }
 
     /// <summary>Whether this entry represents a directory.</summary>
-    public required bool IsDirectory { get; init; }
+    public required bool IsDirectory { get; set; }
 
     /// <summary>File size in bytes. Zero for directories.</summary>
-    public long Size { get; init; }
+    public long Size { get; set; }
 
     /// <summary>Last modification timestamp.</summary>
-    public DateTimeOffset DateModified { get; init; }
+    public DateTimeOffset DateModified { get; set; }
 
     /// <summary>Shell-provided type description (e.g., "Text Document").</summary>
     public string TypeDescription { get; set; } = string.Empty;
@@ -29,10 +29,10 @@ public sealed class FileSystemEntry
     public string Extension { get; set; } = string.Empty;
 
     /// <summary>File attributes from the file system.</summary>
-    public FileAttributes Attributes { get; init; }
+    public FileAttributes Attributes { get; set; }
 
     /// <summary>NTFS reparse tag, when <see cref="Attributes"/> includes a reparse point.</summary>
-    public uint ReparseTag { get; init; }
+    public uint ReparseTag { get; set; }
 
     /// <summary>Index of the shell icon for this entry (from SHGetFileInfo).</summary>
     public int IconIndex { get; set; }

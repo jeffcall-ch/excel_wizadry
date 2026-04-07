@@ -10,10 +10,10 @@
         <StaticResource x:Key="ListViewItemBackground" ResourceKey="SubtleFillColorTransparentBrush" />
         <StaticResource x:Key="ListViewItemBackgroundPointerOver" ResourceKey="SubtleFillColorTransparentBrush" />
         <StaticResource x:Key="ListViewItemBackgroundPressed" ResourceKey="SubtleFillColorTransparentBrush" />
-        <StaticResource x:Key="ListViewItemBackgroundSelected" ResourceKey="SubtleFillColorSecondaryBrush" />
-        <StaticResource x:Key="ListViewItemBackgroundSelectedPointerOver" ResourceKey="SubtleFillColorSecondaryBrush" />
-        <StaticResource x:Key="ListViewItemBackgroundSelectedPressed" ResourceKey="SubtleFillColorSecondaryBrush" />
-        <StaticResource x:Key="ListViewItemBackgroundSelectedDisabled" ResourceKey="SubtleFillColorSecondaryBrush" />
+        <SolidColorBrush x:Key="ListViewItemBackgroundSelected" Color="Transparent" />
+        <SolidColorBrush x:Key="ListViewItemBackgroundSelectedPointerOver" Color="Transparent" />
+        <SolidColorBrush x:Key="ListViewItemBackgroundSelectedPressed" Color="Transparent" />
+        <SolidColorBrush x:Key="ListViewItemBackgroundSelectedDisabled" Color="Transparent" />
         <StaticResource x:Key="ListViewItemBorderBackground" ResourceKey="SubtleFillColorTransparentBrush" />
         <SolidColorBrush x:Key="ListViewItemRevealBackground" Color="Transparent" />
         <SolidColorBrush x:Key="ListViewItemRevealBackgroundPointerOver" Color="Transparent" />
@@ -60,13 +60,16 @@
         <DataTemplate x:Key="FileRowTemplate">
             <Border
                 Tag="SelectionFrameBorder"
-                BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"
+                BorderBrush="Transparent"
                 BorderThickness="0"
                 CornerRadius="4"
+                Background="Transparent"
+                Height="22"
                 Padding="0">
 
                 <Grid
                     Padding="8,0"
+                    Height="22"
                     MinHeight="22"
                     ColumnSpacing="0"
                     Background="Transparent">
@@ -365,6 +368,8 @@
                     <Setter Property="VerticalContentAlignment" Value="Center" />
                     <Setter Property="Padding" Value="0" />
                     <Setter Property="Margin" Value="0" />
+                    <Setter Property="Background" Value="Transparent" />
+                    <Setter Property="Height" Value="22" />
                     <Setter Property="MinHeight" Value="22" />
                     <Setter Property="BorderThickness" Value="0" />
                     <Setter Property="UseSystemFocusVisuals" Value="False" />

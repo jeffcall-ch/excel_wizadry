@@ -23,6 +23,9 @@ namespace FileExplorer.App.Views;
 /// </summary>
 public sealed partial class FileListView : UserControl
 {
+    private static readonly SolidColorBrush TransparentSelectionBrush = new(Colors.Transparent);
+    private static readonly SolidColorBrush SelectedRowOverlayBrush = new(Windows.UI.Color.FromArgb(40, 120, 120, 120));
+
     private sealed class DateDividerGroup : ObservableCollection<FileItemViewModel>
     {
         public DateDividerGroup(string header)
@@ -73,6 +76,14 @@ public sealed partial class FileListView : UserControl
     /// <summary>Binds this view to a tab's content ViewModel.</summary>
     public void BindToTab(TabContentViewModel tab)
     {
+        if (ReferenceEquals(_currentTab, tab))
+        {
+            ApplyLoadingVisualState(tab.IsLoading);
+            UpdateEmptyState();
+            UpdateSortIndicators();
+            return;
+        }
+
         if (_currentTab is not null)
         {
             _currentTab.Items.CollectionChanged -= CurrentTab_ItemsCollectionChanged;
@@ -1373,7 +1384,9 @@ public sealed partial class FileListView : UserControl
         if (border is null)
             return;
 
-        border.BorderThickness = container.IsSelected ? new Thickness(1) : new Thickness(0);
+        border.BorderThickness = new Thickness(0);
+        border.BorderBrush = TransparentSelectionBrush;
+        border.Background = container.IsSelected ? SelectedRowOverlayBrush : TransparentSelectionBrush;
     }
 
     private static Border? FindSelectionFrameBorder(DependencyObject parent)

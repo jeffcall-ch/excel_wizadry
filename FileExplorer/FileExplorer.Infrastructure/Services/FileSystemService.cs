@@ -624,7 +624,7 @@ public sealed class FileSystemService : IFileSystemService
     {
         var watcher = new FileSystemWatcher(path)
         {
-            NotifyFilter = NotifyFilters.FileName | NotifyFilters.DirectoryName | NotifyFilters.LastWrite | NotifyFilters.Size,
+            NotifyFilter = NotifyFilters.FileName | NotifyFilters.DirectoryName,
             IncludeSubdirectories = false,
             EnableRaisingEvents = true
         };
@@ -634,7 +634,7 @@ public sealed class FileSystemService : IFileSystemService
         watcher.Created += (_, e) => debouncer.Enqueue(new FileSystemChangeEvent { ChangeType = WatcherChangeTypes.Created, FullPath = e.FullPath, Name = e.Name ?? Path.GetFileName(e.FullPath) });
         watcher.Deleted += (_, e) => debouncer.Enqueue(new FileSystemChangeEvent { ChangeType = WatcherChangeTypes.Deleted, FullPath = e.FullPath, Name = e.Name ?? Path.GetFileName(e.FullPath) });
         watcher.Renamed += (_, e) => debouncer.Enqueue(new FileSystemChangeEvent { ChangeType = WatcherChangeTypes.Renamed, FullPath = e.FullPath, OldFullPath = e.OldFullPath, Name = e.Name ?? Path.GetFileName(e.FullPath) });
-        watcher.Changed += (_, e) => debouncer.Enqueue(new FileSystemChangeEvent { ChangeType = WatcherChangeTypes.Changed, FullPath = e.FullPath, Name = e.Name ?? Path.GetFileName(e.FullPath) });
+        // Changed notifications are intentionally ignored to avoid bursty UI churn from metadata-only updates.
 
         watcher.Error += (_, e) =>
         {

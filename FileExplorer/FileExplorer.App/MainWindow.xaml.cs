@@ -54,9 +54,6 @@ public sealed partial class MainWindow : Window
     private readonly IFileSystemService _fileSystemService;
     private readonly HashSet<TabContentViewModel> _tabPropertySubscriptions = [];
     private readonly Dictionary<Guid, TabViewItem> _tabItemsById = [];
-    private readonly HashSet<Guid> _tabActivationRefreshInFlight = [];
-    private readonly Dictionary<Guid, DateTime> _lastObservedDirectoryWriteUtc = [];
-    private readonly object _tabActivationRefreshLock = new();
     private bool _suppressTabSelectionChanged;
     private bool _windowWasDeactivated;
     private TreeNodeViewModel? _pendingSelectedTreeNode;
@@ -199,11 +196,6 @@ public sealed partial class MainWindow : Window
         if (_windowWasDeactivated)
         {
             _windowWasDeactivated = false;
-
-            if (ViewModel.ActiveTab is not null)
-            {
-                _ = RequestTabRefreshAsync(ViewModel.ActiveTab);
-            }
         }
     }
 
@@ -312,7 +304,7 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private async void TabView_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    private void TabView_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (_suppressTabSelectionChanged)
             return;
@@ -321,7 +313,7 @@ public sealed partial class MainWindow : Window
         {
             ActivateTab(tab, syncTabViewSelection: false);
             ActivateRightPaneForKeyboardNavigation();
-            await RequestTabRefreshAsync(tab);
+
             return;
         }
 
@@ -329,7 +321,6 @@ public sealed partial class MainWindow : Window
         {
             ActivateTab(fallbackTab, syncTabViewSelection: false);
             ActivateRightPaneForKeyboardNavigation();
-            await RequestTabRefreshAsync(fallbackTab);
         }
     }
 
@@ -405,8 +396,6 @@ public sealed partial class MainWindow : Window
             foreach (var item in e.OldItems.OfType<TabContentViewModel>())
             {
                 RemoveTabPropertySubscription(item);
-                EndTabActivationRefresh(item.TabState.Id);
-                _lastObservedDirectoryWriteUtc.Remove(item.TabState.Id);
             }
         }
 
@@ -480,122 +469,6 @@ public sealed partial class MainWindow : Window
         UpdateAddressBar(tab.CurrentPath);
         UpdateStatusBar();
         UpdateSearchPlaceholder(tab.CurrentPath);
-    }
-
-    private Task RequestTabRefreshAsync(TabContentViewModel tab)
-    {
-        if (string.IsNullOrWhiteSpace(tab.CurrentPath))
-            return Task.CompletedTask;
-
-        if (!TryBeginTabActivationRefresh(tab.TabState.Id))
-            return Task.CompletedTask;
-
-        return RefreshTabAfterActivationAsync(tab);
-    }
-
-    private async Task RefreshTabAfterActivationAsync(TabContentViewModel tab)
-    {
-        try
-        {
-            var waitCycles = 0;
-            while (tab.IsLoading && waitCycles < 30)
-            {
-                await Task.Delay(100);
-                waitCycles++;
-
-                if (!ReferenceEquals(ViewModel.ActiveTab, tab))
-                    return;
-            }
-
-            if (!ReferenceEquals(ViewModel.ActiveTab, tab) || string.IsNullOrWhiteSpace(tab.CurrentPath))
-                return;
-
-            if (!ShouldRefreshTab(tab))
-                return;
-
-            await tab.RefreshAsync();
-
-            if (!ReferenceEquals(ViewModel.ActiveTab, tab))
-                return;
-
-            RecordDirectoryWriteTime(tab);
-
-            RefreshTabHeader(tab);
-            UpdateStatusBar();
-            UpdateAddressBar(tab.CurrentPath);
-            UpdateSearchPlaceholder(tab.CurrentPath);
-        }
-        catch (Exception ex)
-        {
-            Debug.WriteLine($"Tab activation refresh failed for '{tab.CurrentPath}': {ex.Message}");
-        }
-        finally
-        {
-            EndTabActivationRefresh(tab.TabState.Id);
-        }
-    }
-
-    private bool ShouldRefreshTab(TabContentViewModel tab)
-    {
-        if (tab.IsAutoRefreshPaused)
-            return true;
-
-        if (!TryGetDirectoryWriteTimeUtc(tab.CurrentPath, out var currentWriteUtc))
-            return false;
-
-        if (!_lastObservedDirectoryWriteUtc.TryGetValue(tab.TabState.Id, out var previousWriteUtc))
-        {
-            _lastObservedDirectoryWriteUtc[tab.TabState.Id] = currentWriteUtc;
-            return false;
-        }
-
-        return currentWriteUtc > previousWriteUtc;
-    }
-
-    private void RecordDirectoryWriteTime(TabContentViewModel tab)
-    {
-        if (TryGetDirectoryWriteTimeUtc(tab.CurrentPath, out var writeUtc))
-        {
-            _lastObservedDirectoryWriteUtc[tab.TabState.Id] = writeUtc;
-        }
-        else
-        {
-            _lastObservedDirectoryWriteUtc.Remove(tab.TabState.Id);
-        }
-    }
-
-    private static bool TryGetDirectoryWriteTimeUtc(string path, out DateTime writeUtc)
-    {
-        writeUtc = DateTime.MinValue;
-
-        if (string.IsNullOrWhiteSpace(path) || !Directory.Exists(path))
-            return false;
-
-        try
-        {
-            writeUtc = Directory.GetLastWriteTimeUtc(path);
-            return writeUtc > DateTime.MinValue;
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
-    private bool TryBeginTabActivationRefresh(Guid tabId)
-    {
-        lock (_tabActivationRefreshLock)
-        {
-            return _tabActivationRefreshInFlight.Add(tabId);
-        }
-    }
-
-    private void EndTabActivationRefresh(Guid tabId)
-    {
-        lock (_tabActivationRefreshLock)
-        {
-            _tabActivationRefreshInFlight.Remove(tabId);
-        }
     }
 
     #endregion
@@ -770,7 +643,6 @@ public sealed partial class MainWindow : Window
         {
             _dispatcherQueue.TryEnqueue(() =>
             {
-                RecordDirectoryWriteTime(tab);
                 RefreshTabHeader(tab);
 
                 if (ReferenceEquals(ViewModel.ActiveTab, tab))
@@ -795,7 +667,6 @@ public sealed partial class MainWindow : Window
         {
             if (ViewModel.ActiveTab is not null)
             {
-                RecordDirectoryWriteTime(ViewModel.ActiveTab);
                 UpdateWindowTitle(ViewModel.ActiveTab);
                 RefreshTabHeader(ViewModel.ActiveTab);
             }
@@ -2805,11 +2676,6 @@ public sealed partial class MainWindow : Window
 
         _tabPropertySubscriptions.Clear();
         _tabItemsById.Clear();
-        _lastObservedDirectoryWriteUtc.Clear();
-        lock (_tabActivationRefreshLock)
-        {
-            _tabActivationRefreshInFlight.Clear();
-        }
 
         if (_subscribedTab is not null)
         {
