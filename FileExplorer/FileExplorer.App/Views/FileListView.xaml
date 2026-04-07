@@ -76,8 +76,8 @@
 
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="220" />
-                        <ColumnDefinition Width="130" />
+                        <ColumnDefinition Width="180" />
+                        <ColumnDefinition Width="80" />
                         <ColumnDefinition Width="160" />
                         <ColumnDefinition Width="90" />
                     </Grid.ColumnDefinitions>
@@ -191,8 +191,8 @@
                     <StackPanel Spacing="8" Padding="8">
                         <TextBlock Text="Columns" FontWeight="SemiBold" />
                         <CheckBox x:Name="ColNameCheck" Content="Name" IsChecked="True" IsEnabled="False" />
-                        <CheckBox x:Name="ColProjectCheck" Content="Extracted Project" IsChecked="True" Click="ColumnVisibility_Changed" Tag="ExtractedProject" />
-                        <CheckBox x:Name="ColRevisionCheck" Content="Extracted Revision" IsChecked="True" Click="ColumnVisibility_Changed" Tag="ExtractedRevision" />
+                        <CheckBox x:Name="ColProjectCheck" Content="Project" IsChecked="True" Click="ColumnVisibility_Changed" Tag="ExtractedProject" />
+                        <CheckBox x:Name="ColRevisionCheck" Content="Revision" IsChecked="True" Click="ColumnVisibility_Changed" Tag="ExtractedRevision" />
                         <CheckBox x:Name="ColDateCheck" Content="Date modified" IsChecked="True" Click="ColumnVisibility_Changed" Tag="DateModified" />
                         <CheckBox x:Name="ColSizeCheck" Content="Size" IsChecked="True" Click="ColumnVisibility_Changed" Tag="Size" />
                     </StackPanel>
@@ -201,8 +201,8 @@
 
             <Grid.ColumnDefinitions>
                 <ColumnDefinition x:Name="ColName" Width="*" MinWidth="100" />
-                <ColumnDefinition x:Name="ColExtractedProject" Width="220" MinWidth="100" />
-                <ColumnDefinition x:Name="ColExtractedRevision" Width="130" MinWidth="80" />
+                <ColumnDefinition x:Name="ColExtractedProject" Width="180" MinWidth="120" />
+                <ColumnDefinition x:Name="ColExtractedRevision" Width="80" MinWidth="60" />
                 <ColumnDefinition x:Name="ColDateModified" Width="160" MinWidth="80" />
                 <ColumnDefinition x:Name="ColSize" Width="90" MinWidth="50" />
             </Grid.ColumnDefinitions>
@@ -242,7 +242,7 @@
                 Tag="ExtractedProject"
                 RightTapped="ColumnHeader_RightTapped">
                 <StackPanel Orientation="Horizontal" Spacing="4">
-                    <TextBlock Text="Extracted Project" FontWeight="SemiBold" FontSize="12" />
+                    <TextBlock Text="Project" FontWeight="SemiBold" FontSize="12" />
                     <FontIcon
                         x:Name="ProjectSortIcon"
                         FontFamily="{StaticResource SymbolThemeFontFamily}"
@@ -266,7 +266,7 @@
                 Tag="ExtractedRevision"
                 RightTapped="ColumnHeader_RightTapped">
                 <StackPanel Orientation="Horizontal" Spacing="4">
-                    <TextBlock Text="Extracted Revision" FontWeight="SemiBold" FontSize="12" />
+                    <TextBlock Text="Revision" FontWeight="SemiBold" FontSize="12" />
                     <FontIcon
                         x:Name="RevisionSortIcon"
                         FontFamily="{StaticResource SymbolThemeFontFamily}"

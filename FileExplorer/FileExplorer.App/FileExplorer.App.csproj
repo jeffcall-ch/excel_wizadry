@@ -99,16 +99,15 @@
 
   <!-- Portable-folder publish requires PRI files next to the executable.
        Copy these from build output to publish output to keep launch behavior reliable. -->
-  <Target Name="EnsurePortablePublishPriFiles" AfterTargets="Publish"
-          Condition="'$(PortableFolderPublish)'=='true'">
+    <Target Name="EnsurePortablePublishPriFiles" AfterTargets="Publish">
     <ItemGroup>
       <_PortablePriFiles Include="$(OutputPath)resources.pri" Condition="Exists('$(OutputPath)resources.pri')" />
       <_PortablePriFiles Include="$(OutputPath)Microsoft.UI.pri" Condition="Exists('$(OutputPath)Microsoft.UI.pri')" />
       <_PortablePriFiles Include="$(OutputPath)Microsoft.UI.Xaml.pri" Condition="Exists('$(OutputPath)Microsoft.UI.Xaml.pri')" />
       <_PortablePriFiles Include="$(OutputPath)Microsoft.UI.Xaml.Controls.pri" Condition="Exists('$(OutputPath)Microsoft.UI.Xaml.Controls.pri')" />
-      <_PortableRootXaml Include="$(ProjectDir)App.xaml" Condition="Exists('$(ProjectDir)App.xaml')" />
-      <_PortableRootXaml Include="$(ProjectDir)MainWindow.xaml" Condition="Exists('$(ProjectDir)MainWindow.xaml')" />
-      <_PortableViewXaml Include="$(ProjectDir)Views\**\*.xaml" Condition="Exists('$(ProjectDir)Views')" />
+        <_PortableRootXaml Include="$(OutputPath)App.xaml" Condition="Exists('$(OutputPath)App.xaml')" />
+        <_PortableRootXaml Include="$(OutputPath)MainWindow.xaml" Condition="Exists('$(OutputPath)MainWindow.xaml')" />
+        <_PortableViewXaml Include="$(OutputPath)Views\**\*.xaml" Condition="Exists('$(OutputPath)Views')" />
     </ItemGroup>
 
     <Copy SourceFiles="@(_PortablePriFiles)"

@@ -346,10 +346,10 @@ public sealed partial class FileListView : UserControl
             switch (column)
             {
                 case "ExtractedProject":
-                    ColExtractedProject.Width = visible ? new GridLength(220) : new GridLength(0);
+                    ColExtractedProject.Width = visible ? new GridLength(180) : new GridLength(0);
                     break;
                 case "ExtractedRevision":
-                    ColExtractedRevision.Width = visible ? new GridLength(130) : new GridLength(0);
+                    ColExtractedRevision.Width = visible ? new GridLength(80) : new GridLength(0);
                     break;
                 case "DateModified":
                     ColDateModified.Width = visible ? new GridLength(160) : new GridLength(0);
@@ -1304,10 +1304,10 @@ public sealed partial class FileListView : UserControl
     }
 
     private void ColGrip_ExtractedProject_ManipulationDelta(object sender, ManipulationDeltaRoutedEventArgs e)
-        => ResizeColumn(ColExtractedProject, e.Delta.Translation.X, 100);
+        => ResizeColumn(ColExtractedProject, e.Delta.Translation.X, 120);
 
     private void ColGrip_ExtractedRevision_ManipulationDelta(object sender, ManipulationDeltaRoutedEventArgs e)
-        => ResizeColumn(ColExtractedRevision, e.Delta.Translation.X, 80);
+        => ResizeColumn(ColExtractedRevision, e.Delta.Translation.X, 60);
 
     private void ColGrip_DateModified_ManipulationDelta(object sender, ManipulationDeltaRoutedEventArgs e)
         => ResizeColumn(ColDateModified, e.Delta.Translation.X, 80);

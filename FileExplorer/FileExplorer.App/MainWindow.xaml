@@ -110,7 +110,6 @@
                                 VerticalAlignment="Center"
                                 Visibility="Collapsed"
                                 QuerySubmitted="AddressBar_QuerySubmitted"
-                                SuggestionChosen="AddressBar_SuggestionChosen"
                                 TextChanged="AddressBar_TextChanged"
                                 LostFocus="AddressBar_LostFocus"
                                 KeyDown="AddressBar_KeyDown" />
