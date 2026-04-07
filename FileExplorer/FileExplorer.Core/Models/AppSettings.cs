@@ -37,7 +37,22 @@ public sealed class AppSettings
     public List<SavedTabState> SavedTabs { get; set; } = [];
 
     /// <summary>Persisted column widths per folder path. Key is folder path, value maps column name to width.</summary>
-    public Dictionary<string, Dictionary<string, double>> PerFolderColumnWidths { get; set; } = new();
+    public Dictionary<string, Dictionary<string, double>> PerFolderColumnWidths { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Persisted sort settings per folder path.</summary>
+    public Dictionary<string, FolderSortSettings> PerFolderSortSettings { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+}
+
+/// <summary>
+/// Sort settings persisted for one folder path.
+/// </summary>
+public sealed class FolderSortSettings
+{
+    /// <summary>Sort column name.</summary>
+    public string SortColumn { get; set; } = "Name";
+
+    /// <summary>Sort direction flag.</summary>
+    public bool SortAscending { get; set; } = true;
 }
 
 /// <summary>

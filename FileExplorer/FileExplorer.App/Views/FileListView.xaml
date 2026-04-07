@@ -41,6 +41,131 @@
             <Setter Property="Padding" Value="8,2" />
             <Setter Property="MinHeight" Value="28" />
         </Style>
+
+        <DataTemplate x:Key="DateDividerHeaderTemplate">
+            <Border
+                Margin="0"
+                Padding="8,8,8,4"
+                Background="Transparent"
+                IsHitTestVisible="False">
+                <TextBlock
+                    Text="{Binding Header}"
+                    FontSize="11"
+                    FontWeight="SemiBold"
+                    Opacity="0.75"
+                    CharacterSpacing="40" />
+            </Border>
+        </DataTemplate>
+
+        <DataTemplate x:Key="FileRowTemplate">
+            <Border
+                Tag="SelectionFrameBorder"
+                BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"
+                BorderThickness="0"
+                CornerRadius="4"
+                Padding="0">
+
+                <Grid
+                    Padding="8,0"
+                    MinHeight="22"
+                    ColumnSpacing="0"
+                    Background="Transparent">
+
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="220" />
+                        <ColumnDefinition Width="130" />
+                        <ColumnDefinition Width="160" />
+                        <ColumnDefinition Width="90" />
+                    </Grid.ColumnDefinitions>
+
+                    <!-- Name column -->
+                    <Grid Grid.Column="0">
+                        <Grid
+                            Visibility="{Binding IsRenaming, Converter={StaticResource InverseBoolToVis}}"
+                            ColumnSpacing="8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <FontIcon
+                                Grid.Column="0"
+                                FontFamily="{StaticResource SymbolThemeFontFamily}"
+                                Glyph="{Binding IconGlyph}"
+                                FontSize="16"
+                                Foreground="{ThemeResource TextFillColorPrimaryBrush}" />
+                            <TextBlock
+                                Grid.Column="1"
+                                Text="{Binding Name}"
+                                FontSize="12"
+                                Foreground="{Binding Extension, Converter={StaticResource ExtensionBrush}}"
+                                VerticalAlignment="Center"
+                                TextTrimming="CharacterEllipsis" />
+                            <!-- Error badge -->
+                            <FontIcon
+                                Grid.Column="2"
+                                FontFamily="{StaticResource SymbolThemeFontFamily}"
+                                Glyph="&#xE7BA;"
+                                FontSize="12"
+                                Foreground="{ThemeResource SystemFillColorCriticalBrush}"
+                                Visibility="{Binding HasError, Converter={StaticResource BoolToVis}}"
+                                ToolTipService.ToolTip="{Binding ErrorMessage}" />
+                        </Grid>
+
+                        <!-- Inline rename TextBox -->
+                        <TextBox
+                            Text="{Binding EditingName, Mode=TwoWay}"
+                            Visibility="{Binding IsRenaming, Converter={StaticResource BoolToVis}}"
+                            MinWidth="150"
+                            FontSize="12"
+                            VerticalAlignment="Center"
+                            KeyDown="RenameTextBox_KeyDown"
+                            LostFocus="RenameTextBox_LostFocus"
+                            Loaded="RenameTextBox_Loaded" />
+                    </Grid>
+
+                    <!-- Extracted Project column -->
+                    <TextBlock
+                        Grid.Column="1"
+                        Text="{Binding ExtractedProject}"
+                        VerticalAlignment="Center"
+                        FontSize="12"
+                        Opacity="0.85"
+                        TextTrimming="CharacterEllipsis"
+                        Padding="8,0,0,0" />
+
+                    <!-- Extracted Revision column -->
+                    <TextBlock
+                        Grid.Column="2"
+                        Text="{Binding ExtractedRevision}"
+                        VerticalAlignment="Center"
+                        FontSize="12"
+                        Opacity="0.85"
+                        TextTrimming="CharacterEllipsis"
+                        Padding="8,0,0,0" />
+
+                    <!-- Date modified column -->
+                    <TextBlock
+                        Grid.Column="3"
+                        Text="{Binding DateModifiedText}"
+                        VerticalAlignment="Center"
+                        FontSize="12"
+                        Opacity="0.8"
+                        Padding="8,0,0,0" />
+
+                    <!-- Size column (right-aligned) -->
+                    <TextBlock
+                        Grid.Column="4"
+                        Text="{Binding SizeText}"
+                        VerticalAlignment="Center"
+                        FontSize="12"
+                        Opacity="0.8"
+                        HorizontalTextAlignment="Right"
+                        Padding="0,0,8,0" />
+                </Grid>
+            </Border>
+        </DataTemplate>
     </UserControl.Resources>
 
     <Grid PointerPressed="RightPane_PointerPressed">
@@ -220,6 +345,14 @@
             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
             ScrollViewer.IsVerticalRailEnabled="True">
 
+            <ListView.GroupStyle>
+                <GroupStyle>
+                    <GroupStyle.HeaderTemplate>
+                        <StaticResource ResourceKey="DateDividerHeaderTemplate" />
+                    </GroupStyle.HeaderTemplate>
+                </GroupStyle>
+            </ListView.GroupStyle>
+
             <ListView.ItemsPanel>
                 <ItemsPanelTemplate>
                     <VirtualizingStackPanel />
@@ -239,115 +372,7 @@
             </ListView.ItemContainerStyle>
 
             <ListView.ItemTemplate>
-                <DataTemplate>
-                    <Border
-                        Tag="SelectionFrameBorder"
-                        BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"
-                        BorderThickness="0"
-                        CornerRadius="4"
-                        Padding="0">
-
-                        <Grid
-                            Padding="8,0"
-                            MinHeight="22"
-                            ColumnSpacing="0"
-                            Background="Transparent">
-
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="220" />
-                            <ColumnDefinition Width="130" />
-                            <ColumnDefinition Width="160" />
-                            <ColumnDefinition Width="90" />
-                        </Grid.ColumnDefinitions>
-
-                        <!-- Name column -->
-                        <Grid Grid.Column="0">
-                            <Grid
-                                Visibility="{Binding IsRenaming, Converter={StaticResource InverseBoolToVis}}"
-                                ColumnSpacing="8">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <FontIcon
-                                    Grid.Column="0"
-                                    FontFamily="{StaticResource SymbolThemeFontFamily}"
-                                    Glyph="{Binding IconGlyph}"
-                                    FontSize="16"
-                                    Foreground="{ThemeResource TextFillColorPrimaryBrush}" />
-                                <TextBlock
-                                    Grid.Column="1"
-                                    Text="{Binding Name}"
-                                    FontSize="12"
-                                    Foreground="{Binding Extension, Converter={StaticResource ExtensionBrush}}"
-                                    VerticalAlignment="Center"
-                                    TextTrimming="CharacterEllipsis" />
-                                <!-- Error badge -->
-                                <FontIcon
-                                    Grid.Column="2"
-                                    FontFamily="{StaticResource SymbolThemeFontFamily}"
-                                    Glyph="&#xE7BA;"
-                                    FontSize="12"
-                                    Foreground="{ThemeResource SystemFillColorCriticalBrush}"
-                                    Visibility="{Binding HasError, Converter={StaticResource BoolToVis}}"
-                                    ToolTipService.ToolTip="{Binding ErrorMessage}" />
-                            </Grid>
-
-                            <!-- Inline rename TextBox -->
-                            <TextBox
-                                Text="{Binding EditingName, Mode=TwoWay}"
-                                Visibility="{Binding IsRenaming, Converter={StaticResource BoolToVis}}"
-                                MinWidth="150"
-                                FontSize="12"
-                                VerticalAlignment="Center"
-                                KeyDown="RenameTextBox_KeyDown"
-                                LostFocus="RenameTextBox_LostFocus"
-                                Loaded="RenameTextBox_Loaded" />
-                        </Grid>
-
-                        <!-- Extracted Project column -->
-                        <TextBlock
-                            Grid.Column="1"
-                            Text="{Binding ExtractedProject}"
-                            VerticalAlignment="Center"
-                            FontSize="12"
-                            Opacity="0.85"
-                            TextTrimming="CharacterEllipsis"
-                            Padding="8,0,0,0" />
-
-                        <!-- Extracted Revision column -->
-                        <TextBlock
-                            Grid.Column="2"
-                            Text="{Binding ExtractedRevision}"
-                            VerticalAlignment="Center"
-                            FontSize="12"
-                            Opacity="0.85"
-                            TextTrimming="CharacterEllipsis"
-                            Padding="8,0,0,0" />
-
-                        <!-- Date modified column -->
-                        <TextBlock
-                            Grid.Column="3"
-                            Text="{Binding DateModifiedText}"
-                            VerticalAlignment="Center"
-                            FontSize="12"
-                            Opacity="0.8"
-                            Padding="8,0,0,0" />
-
-                        <!-- Size column (right-aligned) -->
-                        <TextBlock
-                            Grid.Column="4"
-                            Text="{Binding SizeText}"
-                            VerticalAlignment="Center"
-                            FontSize="12"
-                            Opacity="0.8"
-                            HorizontalTextAlignment="Right"
-                            Padding="0,0,8,0" />
-                        </Grid>
-                    </Border>
-                </DataTemplate>
+                <StaticResource ResourceKey="FileRowTemplate" />
             </ListView.ItemTemplate>
         </ListView>
 

@@ -116,4 +116,36 @@ public class SettingsServiceTests : IDisposable
         var result = _service.GetColumnWidths(@"C:\UnknownPath\That\DoesNot\Exist");
         result.Should().BeNull();
     }
+
+    [Fact]
+    public void SaveFolderSort_And_GetFolderSort_RoundTrips()
+    {
+        _service.SaveFolderSort(@"C:\Users\szil\Downloads", new FolderSortSettings
+        {
+            SortColumn = "DateModified",
+            SortAscending = false
+        });
+
+        var retrieved = _service.GetFolderSort(@"C:\Users\szil\Downloads");
+
+        retrieved.Should().NotBeNull();
+        retrieved!.SortColumn.Should().Be("DateModified");
+        retrieved.SortAscending.Should().BeFalse();
+    }
+
+    [Fact]
+    public void GetFolderSort_IsCaseInsensitive_AndPathNormalized()
+    {
+        _service.SaveFolderSort(@"C:\Users\szil\Downloads", new FolderSortSettings
+        {
+            SortColumn = "Size",
+            SortAscending = true
+        });
+
+        var retrieved = _service.GetFolderSort(@"c:\USERS\szil\Downloads\\");
+
+        retrieved.Should().NotBeNull();
+        retrieved!.SortColumn.Should().Be("Size");
+        retrieved.SortAscending.Should().BeTrue();
+    }
 }

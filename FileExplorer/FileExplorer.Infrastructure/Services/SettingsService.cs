@@ -52,6 +52,7 @@ public sealed class SettingsService : ISettingsService
             var loaded = JsonSerializer.Deserialize<AppSettings>(json, _jsonOptions);
             if (loaded is not null)
             {
+                NormalizePerFolderSettingsCollections(loaded);
                 Settings = loaded;
                 _logger.LogInformation("Settings loaded from {Path}", _settingsFilePath);
             }
@@ -127,12 +128,111 @@ public sealed class SettingsService : ISettingsService
     /// <inheritdoc/>
     public void SaveColumnWidths(string folderPath, Dictionary<string, double> widths)
     {
-        Settings.PerFolderColumnWidths[folderPath] = widths;
+        var normalizedKey = NormalizeFolderSettingsKey(folderPath);
+        if (string.IsNullOrWhiteSpace(normalizedKey))
+            return;
+
+        Settings.PerFolderColumnWidths[normalizedKey] = widths;
     }
 
     /// <inheritdoc/>
     public Dictionary<string, double>? GetColumnWidths(string folderPath)
     {
-        return Settings.PerFolderColumnWidths.TryGetValue(folderPath, out var widths) ? widths : null;
+        var normalizedKey = NormalizeFolderSettingsKey(folderPath);
+        if (string.IsNullOrWhiteSpace(normalizedKey))
+            return null;
+
+        if (Settings.PerFolderColumnWidths.TryGetValue(normalizedKey, out var widths))
+            return widths;
+
+        var fallback = Settings.PerFolderColumnWidths
+            .FirstOrDefault(pair => string.Equals(pair.Key, normalizedKey, StringComparison.OrdinalIgnoreCase));
+
+        return fallback.Key is null ? null : fallback.Value;
+    }
+
+    /// <inheritdoc/>
+    public void SaveFolderSort(string folderPath, FolderSortSettings sortSettings)
+    {
+        var normalizedKey = NormalizeFolderSettingsKey(folderPath);
+        if (string.IsNullOrWhiteSpace(normalizedKey))
+            return;
+
+        Settings.PerFolderSortSettings[normalizedKey] = new FolderSortSettings
+        {
+            SortColumn = string.IsNullOrWhiteSpace(sortSettings.SortColumn) ? "Name" : sortSettings.SortColumn,
+            SortAscending = sortSettings.SortAscending
+        };
+    }
+
+    /// <inheritdoc/>
+    public FolderSortSettings? GetFolderSort(string folderPath)
+    {
+        var normalizedKey = NormalizeFolderSettingsKey(folderPath);
+        if (string.IsNullOrWhiteSpace(normalizedKey))
+            return null;
+
+        if (Settings.PerFolderSortSettings.TryGetValue(normalizedKey, out var sortSettings))
+            return sortSettings;
+
+        var fallback = Settings.PerFolderSortSettings
+            .FirstOrDefault(pair => string.Equals(pair.Key, normalizedKey, StringComparison.OrdinalIgnoreCase));
+
+        return fallback.Key is null ? null : fallback.Value;
+    }
+
+    private static void NormalizePerFolderSettingsCollections(AppSettings settings)
+    {
+        settings.PerFolderColumnWidths = settings.PerFolderColumnWidths
+            .Where(pair => !string.IsNullOrWhiteSpace(pair.Key))
+            .ToDictionary(
+                pair => NormalizeFolderSettingsKey(pair.Key),
+                pair => pair.Value,
+                StringComparer.OrdinalIgnoreCase);
+
+        settings.PerFolderSortSettings = settings.PerFolderSortSettings
+            .Where(pair => !string.IsNullOrWhiteSpace(pair.Key))
+            .ToDictionary(
+                pair => NormalizeFolderSettingsKey(pair.Key),
+                pair => pair.Value,
+                StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static string NormalizeFolderSettingsKey(string folderPath)
+    {
+        if (string.IsNullOrWhiteSpace(folderPath))
+            return string.Empty;
+
+        var candidate = StripLongPathPrefix(folderPath.Trim().Trim('"'))
+            .Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar);
+
+        try
+        {
+            candidate = Path.GetFullPath(candidate);
+        }
+        catch
+        {
+            // Keep best-effort key when the path is transient or malformed.
+        }
+
+        var root = Path.GetPathRoot(candidate);
+        if (!string.IsNullOrWhiteSpace(root) &&
+            !candidate.Equals(root, StringComparison.OrdinalIgnoreCase))
+        {
+            candidate = candidate.TrimEnd(Path.DirectorySeparatorChar);
+        }
+
+        return candidate;
+    }
+
+    private static string StripLongPathPrefix(string path)
+    {
+        if (path.StartsWith(@"\\?\UNC\", StringComparison.OrdinalIgnoreCase))
+            return @"\\" + path[8..];
+
+        if (path.StartsWith(@"\\?\", StringComparison.OrdinalIgnoreCase))
+            return path[4..];
+
+        return path;
     }
 }

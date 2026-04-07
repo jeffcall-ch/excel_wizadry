@@ -25,6 +25,8 @@ public class TabContentViewModelTests
             Mock.Of<IPreviewService>(),
             Mock.Of<IIdentityExtractionService>(),
             Mock.Of<IIdentityCacheService>(),
+            Mock.Of<ITabPathStateService>(),
+            Mock.Of<ISettingsService>(),
             NullLogger<TabContentViewModel>.Instance);
 
         var oldestFile = CreateItem("oldest.txt", isDirectory: false, new DateTimeOffset(2026, 1, 1, 8, 0, 0, TimeSpan.Zero));
@@ -50,6 +52,8 @@ public class TabContentViewModelTests
             Mock.Of<IPreviewService>(),
             Mock.Of<IIdentityExtractionService>(),
             Mock.Of<IIdentityCacheService>(),
+            Mock.Of<ITabPathStateService>(),
+            Mock.Of<ISettingsService>(),
             NullLogger<TabContentViewModel>.Instance);
 
         var oldestFolder = CreateItem("OldFolder", isDirectory: true, new DateTimeOffset(2026, 1, 1, 8, 0, 0, TimeSpan.Zero));
@@ -91,6 +95,8 @@ public class TabContentViewModelTests
             Mock.Of<IPreviewService>(),
             Mock.Of<IIdentityExtractionService>(),
             Mock.Of<IIdentityCacheService>(),
+            Mock.Of<ITabPathStateService>(),
+            Mock.Of<ISettingsService>(),
             NullLogger<TabContentViewModel>.Instance);
 
         await viewModel.NavigateAsync(bareDrive);
@@ -126,6 +132,8 @@ public class TabContentViewModelTests
             Mock.Of<IPreviewService>(),
             Mock.Of<IIdentityExtractionService>(),
             Mock.Of<IIdentityCacheService>(),
+            Mock.Of<ITabPathStateService>(),
+            Mock.Of<ISettingsService>(),
             NullLogger<TabContentViewModel>.Instance);
 
         await viewModel.NavigateAsync(longPath);
@@ -154,6 +162,8 @@ public class TabContentViewModelTests
             Mock.Of<IPreviewService>(),
             Mock.Of<IIdentityExtractionService>(),
             Mock.Of<IIdentityCacheService>(),
+            Mock.Of<ITabPathStateService>(),
+            Mock.Of<ISettingsService>(),
             NullLogger<TabContentViewModel>.Instance);
 
         var renamedItem = new FileItemViewModel(new FileSystemEntry
@@ -192,6 +202,95 @@ public class TabContentViewModelTests
         renamedItem.Name.Should().Be("Alpha");
         viewModel.Items[0].Should().Be(renamedItem);
         revealItem.Should().Be(renamedItem);
+    }
+
+    [Fact]
+    public async Task SetSort_PersistsSortForCurrentFolder()
+    {
+        var systemDirectory = Environment.SystemDirectory;
+
+        var fileSystem = new Mock<IFileSystemService>(MockBehavior.Strict);
+        fileSystem
+            .Setup(service => service.EnumerateDirectoryAsync(systemDirectory, It.IsAny<CancellationToken>()))
+            .Returns(EmptyEntries());
+        fileSystem
+            .Setup(service => service.WatchDirectory(systemDirectory, It.IsAny<Action<FileSystemChangeEvent>>()))
+            .Returns(Mock.Of<IDisposable>());
+
+        var shell = new Mock<IShellIntegrationService>(MockBehavior.Strict);
+        var cloudStatus = new Mock<ICloudStatusService>(MockBehavior.Strict);
+        cloudStatus.SetupGet(service => service.IsSyncRootDetected).Returns(false);
+
+        var settings = new Mock<ISettingsService>(MockBehavior.Strict);
+        settings.SetupGet(service => service.Settings).Returns(new AppSettings());
+        settings.Setup(service => service.GetFolderSort(systemDirectory)).Returns((FolderSortSettings?)null);
+        settings.Setup(service => service.SaveFolderSort(systemDirectory, It.IsAny<FolderSortSettings>()));
+        settings.Setup(service => service.SaveAsync(It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+
+        using var viewModel = new TabContentViewModel(
+            fileSystem.Object,
+            shell.Object,
+            cloudStatus.Object,
+            Mock.Of<IPreviewService>(),
+            Mock.Of<IIdentityExtractionService>(),
+            Mock.Of<IIdentityCacheService>(),
+            Mock.Of<ITabPathStateService>(),
+            settings.Object,
+            NullLogger<TabContentViewModel>.Instance);
+
+        await viewModel.NavigateAsync(systemDirectory);
+        viewModel.SetSort("DateModified");
+
+        settings.Verify(
+            service => service.SaveFolderSort(
+                systemDirectory,
+                It.Is<FolderSortSettings>(value =>
+                    value.SortColumn == "DateModified" &&
+                    value.SortAscending)),
+            Times.Once);
+        settings.Verify(service => service.SaveAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task NavigateAsync_RestoresPersistedSortForFolder()
+    {
+        var systemDirectory = Environment.SystemDirectory;
+
+        var fileSystem = new Mock<IFileSystemService>(MockBehavior.Strict);
+        fileSystem
+            .Setup(service => service.EnumerateDirectoryAsync(systemDirectory, It.IsAny<CancellationToken>()))
+            .Returns(EmptyEntries());
+        fileSystem
+            .Setup(service => service.WatchDirectory(systemDirectory, It.IsAny<Action<FileSystemChangeEvent>>()))
+            .Returns(Mock.Of<IDisposable>());
+
+        var shell = new Mock<IShellIntegrationService>(MockBehavior.Strict);
+        var cloudStatus = new Mock<ICloudStatusService>(MockBehavior.Strict);
+        cloudStatus.SetupGet(service => service.IsSyncRootDetected).Returns(false);
+
+        var settings = new Mock<ISettingsService>(MockBehavior.Strict);
+        settings.SetupGet(service => service.Settings).Returns(new AppSettings());
+        settings.Setup(service => service.GetFolderSort(systemDirectory)).Returns(new FolderSortSettings
+        {
+            SortColumn = "DateModified",
+            SortAscending = false
+        });
+
+        using var viewModel = new TabContentViewModel(
+            fileSystem.Object,
+            shell.Object,
+            cloudStatus.Object,
+            Mock.Of<IPreviewService>(),
+            Mock.Of<IIdentityExtractionService>(),
+            Mock.Of<IIdentityCacheService>(),
+            Mock.Of<ITabPathStateService>(),
+            settings.Object,
+            NullLogger<TabContentViewModel>.Instance);
+
+        await viewModel.NavigateAsync(systemDirectory);
+
+        viewModel.SortColumn.Should().Be("DateModified");
+        viewModel.SortAscending.Should().BeFalse();
     }
 
     private static async IAsyncEnumerable<FileSystemEntry> EmptyEntries()

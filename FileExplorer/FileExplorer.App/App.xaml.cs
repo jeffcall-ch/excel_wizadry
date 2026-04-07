@@ -98,6 +98,8 @@ public partial class App : Application
                 sp.GetRequiredService<IPreviewService>(),
                 sp.GetRequiredService<IIdentityExtractionService>(),
                 sp.GetRequiredService<IIdentityCacheService>(),
+                sp.GetRequiredService<ITabPathStateService>(),
+                sp.GetRequiredService<ISettingsService>(),
                 sp.GetRequiredService<ILogger<TabContentViewModel>>(),
                 tabState);
             return vm;

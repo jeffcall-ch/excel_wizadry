@@ -127,6 +127,15 @@ public sealed class IdentityExtractionService : IIdentityExtractionService
                 }
             }
 
+            if (string.IsNullOrWhiteSpace(identity.DocumentName))
+            {
+                var documentNameFromFileName = ExtractDocumentNameFromFileName(filePath);
+                if (!string.IsNullOrWhiteSpace(documentNameFromFileName))
+                {
+                    identity = identity with { DocumentName = documentNameFromFileName };
+                }
+            }
+
             _cache[filePath] = new CachedIdentity(fileInfo.LastWriteTimeUtc.Ticks, fileInfo.Length, identity);
             return identity;
         }
@@ -996,9 +1005,29 @@ public sealed class IdentityExtractionService : IIdentityExtractionService
             return string.Empty;
 
         if (!cells.TryGetValue(rightCellReference, out var adjacentValue))
+            adjacentValue = string.Empty;
+
+        var normalizedAdjacent = NormalizeWhitespace(adjacentValue);
+
+        if (string.IsNullOrWhiteSpace(normalizedAdjacent))
+        {
+            var belowCellReference = TryGetAdjacentCellReference(cellReference, columnDelta: 0, rowDelta: 1);
+            if (belowCellReference is not null && cells.TryGetValue(belowCellReference, out var belowValue))
+            {
+                normalizedAdjacent = NormalizeWhitespace(belowValue);
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(normalizedAdjacent))
             return string.Empty;
 
-        return NormalizeWhitespace(adjacentValue);
+        if (anchorTokens.Any(token => token.Equals("project", StringComparison.OrdinalIgnoreCase)) &&
+            !IsValidProjectValueCandidate(normalizedAdjacent))
+        {
+            return string.Empty;
+        }
+
+        return normalizedAdjacent;
     }
 
     private static bool ContainsAnyToken(string value, params string[] tokens)
@@ -1499,6 +1528,16 @@ public sealed class IdentityExtractionService : IIdentityExtractionService
 
         var value = matches[^1].Groups["rev"].Value;
         return string.IsNullOrWhiteSpace(value) ? string.Empty : value;
+    }
+
+    private static string ExtractDocumentNameFromFileName(string filePath)
+    {
+        var name = Path.GetFileNameWithoutExtension(filePath);
+        if (string.IsNullOrWhiteSpace(name))
+            return string.Empty;
+
+        var normalized = NormalizeWhitespace(name.Replace('_', ' '));
+        return normalized.Length > 200 ? normalized[..200] : normalized;
     }
 
     private sealed record SheetCandidate(string Name, string? RelationshipId);

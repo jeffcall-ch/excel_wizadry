@@ -72,6 +72,17 @@ if (-not (Test-Path $runtimeBuildDir)) {
 Reset-DirectoryContents -Path $publishDir
 Copy-Item -Path (Join-Path $runtimeBuildDir "*") -Destination $publishDir -Recurse -Force
 
+$allowedProjectsCsv = Join-Path $repoRoot "Development\allowed_project_names.csv"
+if (Test-Path $allowedProjectsCsv) {
+    $publishDevDir = Join-Path $publishDir "Development"
+    if (-not (Test-Path $publishDevDir)) {
+        New-Item -Path $publishDevDir -ItemType Directory -Force | Out-Null
+    }
+
+    Copy-Item -Path $allowedProjectsCsv -Destination (Join-Path $publishDevDir "allowed_project_names.csv") -Force
+    Copy-Item -Path $allowedProjectsCsv -Destination (Join-Path $publishDir "allowed_project_names.csv") -Force
+}
+
 $requiredFiles = @(
     "FileExplorer.exe",
     "resources.pri",

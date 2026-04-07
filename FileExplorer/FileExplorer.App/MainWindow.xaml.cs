@@ -2,6 +2,8 @@
 
 using System.Diagnostics;
 using System.Collections.Concurrent;
+using System.Collections.Specialized;
+using System.ComponentModel;
 using System.Linq;
 using System.Runtime.InteropServices;
 using FileExplorer.Core.ViewModels;
@@ -26,6 +28,7 @@ namespace FileExplorer.App;
 /// </summary>
 public sealed partial class MainWindow : Window
 {
+    private const string BaseWindowTitle = "File Explorer";
     private const int IDC_ARROW = 32512;
     private const int IDC_SIZEWE = 32644;
     private const int IMAGE_ICON = 1;
@@ -49,18 +52,26 @@ public sealed partial class MainWindow : Window
 
     private readonly DispatcherQueue _dispatcherQueue;
     private readonly IFileSystemService _fileSystemService;
+    private readonly HashSet<TabContentViewModel> _tabPropertySubscriptions = [];
+    private readonly Dictionary<Guid, TabViewItem> _tabItemsById = [];
+    private readonly HashSet<Guid> _tabActivationRefreshInFlight = [];
+    private readonly object _tabActivationRefreshLock = new();
+    private bool _suppressTabSelectionChanged;
+    private bool _windowWasDeactivated;
     private TreeNodeViewModel? _pendingSelectedTreeNode;
     private string? _lastSyncedTreePath;
     private readonly string _shortcutsFolderPath;
     private bool _isFileInUseWarningOpen;
     private readonly object _shortcutCacheLock = new();
     private readonly Dictionary<string, ShortcutFolderCacheData> _shortcutFolderCache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _shortcutPrefetchInProgress = new(StringComparer.OrdinalIgnoreCase);
     private List<ShortcutRootEntryData> _shortcutRootCache = [];
     private readonly ConcurrentDictionary<string, IReadOnlyList<string>> _breadcrumbSiblingCache = new(StringComparer.OrdinalIgnoreCase);
     private MenuFlyout? _shortcutLauncherFlyout;
     private CancellationTokenSource? _breadcrumbSiblingCts;
     private int _breadcrumbSiblingRequestId;
     private bool _shortcutPreloadStarted;
+    private bool _shortcutDeepPreloadStarted;
     private bool _isShortcutOpenInProgress;
     private bool _startupWindowStateApplied;
     private const int ShortcutMenuMaxItems = 50;
@@ -95,6 +106,8 @@ public sealed partial class MainWindow : Window
         public int Depth { get; }
 
         public bool IsLoaded { get; set; }
+
+        public bool IsLoading { get; set; }
     }
 
     private static MenuFlyoutItem CreateDetailsViewFlyoutItem(string text, string? iconGlyph = null, bool isEnabled = true)
@@ -144,14 +157,16 @@ public sealed partial class MainWindow : Window
         TabViewControl.AddTabButtonClick += TabView_AddTabButtonClick;
         TabViewControl.TabCloseRequested += TabView_TabCloseRequested;
         TabViewControl.SelectionChanged += TabView_SelectionChanged;
+        TabViewControl.TabItemsChanged += TabView_TabItemsChanged;
 
-        Title = "File Explorer";
+        Title = BaseWindowTitle;
         SystemBackdrop = new MicaBackdrop();
 
         Hwnd = WindowNative.GetWindowHandle(this);
         _dispatcherQueue = DispatcherQueue.GetForCurrentThread();
         _fileSystemService = App.Services.GetRequiredService<IFileSystemService>();
         ViewModel = App.Services.GetRequiredService<MainViewModel>();
+        ViewModel.Tabs.CollectionChanged += Tabs_CollectionChanged;
         RootGrid.DataContext = ViewModel;
         _shortcutsFolderPath = ResolveShortcutsFolderPath();
         _fileSystemService.OperationError += FileSystemService_OperationError;
@@ -173,10 +188,22 @@ public sealed partial class MainWindow : Window
     private void MainWindow_Activated(object sender, WindowActivatedEventArgs args)
     {
         if (args.WindowActivationState == WindowActivationState.Deactivated)
+        {
+            _windowWasDeactivated = true;
             return;
+        }
 
         EnsureStartupMaximized();
-        Activated -= MainWindow_Activated;
+
+        if (_windowWasDeactivated)
+        {
+            _windowWasDeactivated = false;
+
+            if (ViewModel.ActiveTab is not null)
+            {
+                _ = RefreshTabAfterActivationAsync(ViewModel.ActiveTab);
+            }
+        }
     }
 
     private void EnsureStartupMaximized()
@@ -234,6 +261,7 @@ public sealed partial class MainWindow : Window
         try
         {
             await ViewModel.InitializeAsync(App.StartupPath);
+            SyncTabPropertySubscriptions();
 
             UpdateTabBindings();
             UpdateStatusBar();
@@ -246,6 +274,7 @@ public sealed partial class MainWindow : Window
                 SubscribeToTabNavigation(ViewModel.ActiveTab);
                 FileList.BindToTab(ViewModel.ActiveTab);
                 InspectorSidebar.BindToTab(ViewModel.ActiveTab);
+                UpdateWindowTitle(ViewModel.ActiveTab);
                 UpdateAddressBar(ViewModel.ActiveTab.CurrentPath);
                 UpdateSearchPlaceholder(ViewModel.ActiveTab.CurrentPath);
             }
@@ -268,33 +297,173 @@ public sealed partial class MainWindow : Window
 
     private void TabView_TabCloseRequested(TabView sender, TabViewTabCloseRequestedEventArgs args)
     {
-        if (args.Item is TabContentViewModel tab)
+        if (args.Item is TabViewItem tabViewItem && tabViewItem.DataContext is TabContentViewModel tab)
         {
             ViewModel.CloseTab(tab);
+            UpdateTabBindings();
+            return;
+        }
+
+        if (args.Item is TabContentViewModel fallbackTab)
+        {
+            ViewModel.CloseTab(fallbackTab);
             UpdateTabBindings();
         }
     }
 
-    private void TabView_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    private async void TabView_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (TabViewControl.SelectedItem is TabContentViewModel tab)
+        if (_suppressTabSelectionChanged)
+            return;
+
+        if (TabViewControl.SelectedItem is TabViewItem tabViewItem && tabViewItem.DataContext is TabContentViewModel tab)
         {
             ActivateTab(tab, syncTabViewSelection: false);
             ActivateRightPaneForKeyboardNavigation();
+            await RefreshTabAfterActivationAsync(tab);
+            return;
+        }
+
+        if (TabViewControl.SelectedItem is TabContentViewModel fallbackTab)
+        {
+            ActivateTab(fallbackTab, syncTabViewSelection: false);
+            ActivateRightPaneForKeyboardNavigation();
+            await RefreshTabAfterActivationAsync(fallbackTab);
         }
     }
 
     private void UpdateTabBindings()
     {
-        TabViewControl.TabItemsSource = ViewModel.Tabs;
-        TabViewControl.SelectedItem = ViewModel.ActiveTab;
+        var orderedTabs = ViewModel.Tabs.ToList();
+        var targetIds = orderedTabs.Select(tab => tab.TabState.Id).ToHashSet();
+
+        foreach (var staleEntry in _tabItemsById.ToList())
+        {
+            if (!targetIds.Contains(staleEntry.Key))
+            {
+                TabViewControl.TabItems.Remove(staleEntry.Value);
+                _tabItemsById.Remove(staleEntry.Key);
+            }
+        }
+
+        for (var index = 0; index < orderedTabs.Count; index++)
+        {
+            var tab = orderedTabs[index];
+            if (!_tabItemsById.TryGetValue(tab.TabState.Id, out var tabViewItem))
+            {
+                tabViewItem = new TabViewItem
+                {
+                    DataContext = tab,
+                    IsClosable = !tab.IsPinned
+                };
+
+                _tabItemsById[tab.TabState.Id] = tabViewItem;
+                TabViewControl.TabItems.Insert(index, tabViewItem);
+            }
+            else
+            {
+                var currentIndex = TabViewControl.TabItems.IndexOf(tabViewItem);
+                if (currentIndex >= 0 && currentIndex != index)
+                {
+                    TabViewControl.TabItems.RemoveAt(currentIndex);
+                    TabViewControl.TabItems.Insert(index, tabViewItem);
+                }
+            }
+
+            RefreshTabHeader(tab);
+        }
+
+        if (ViewModel.ActiveTab is not null && _tabItemsById.TryGetValue(ViewModel.ActiveTab.TabState.Id, out var selectedTabViewItem))
+        {
+            if (!ReferenceEquals(TabViewControl.SelectedItem, selectedTabViewItem))
+            {
+                _suppressTabSelectionChanged = true;
+                try
+                {
+                    TabViewControl.SelectedItem = selectedTabViewItem;
+                }
+                finally
+                {
+                    _suppressTabSelectionChanged = false;
+                }
+            }
+        }
+
+        _dispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low, RefreshVisibleTabHeaders);
+    }
+
+    private void TabView_TabItemsChanged(TabView sender, object args)
+    {
+        _dispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low, UpdateTabBindings);
+    }
+
+    private void Tabs_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        if (e.OldItems is not null)
+        {
+            foreach (var item in e.OldItems.OfType<TabContentViewModel>())
+            {
+                RemoveTabPropertySubscription(item);
+                EndTabActivationRefresh(item.TabState.Id);
+            }
+        }
+
+        if (e.NewItems is not null)
+        {
+            foreach (var item in e.NewItems.OfType<TabContentViewModel>())
+            {
+                EnsureTabPropertySubscription(item);
+            }
+        }
+
+        _dispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low, RefreshVisibleTabHeaders);
+    }
+
+    private void SyncTabPropertySubscriptions()
+    {
+        foreach (var tab in ViewModel.Tabs)
+        {
+            EnsureTabPropertySubscription(tab);
+        }
+
+        foreach (var staleTab in _tabPropertySubscriptions.ToList())
+        {
+            if (!ViewModel.Tabs.Contains(staleTab))
+            {
+                RemoveTabPropertySubscription(staleTab);
+            }
+        }
+    }
+
+    private void EnsureTabPropertySubscription(TabContentViewModel tab)
+    {
+        if (!_tabPropertySubscriptions.Add(tab))
+            return;
+
+        tab.PropertyChanged += OnTabPropertyChanged;
+    }
+
+    private void RemoveTabPropertySubscription(TabContentViewModel tab)
+    {
+        if (!_tabPropertySubscriptions.Remove(tab))
+            return;
+
+        tab.PropertyChanged -= OnTabPropertyChanged;
     }
 
     private void ActivateTab(TabContentViewModel tab, bool syncTabViewSelection)
     {
-        if (syncTabViewSelection && !ReferenceEquals(TabViewControl.SelectedItem, tab))
+        if (syncTabViewSelection && _tabItemsById.TryGetValue(tab.TabState.Id, out var tabViewItem) && !ReferenceEquals(TabViewControl.SelectedItem, tabViewItem))
         {
-            TabViewControl.SelectedItem = tab;
+            _suppressTabSelectionChanged = true;
+            try
+            {
+                TabViewControl.SelectedItem = tabViewItem;
+            }
+            finally
+            {
+                _suppressTabSelectionChanged = false;
+            }
         }
 
         if (!ReferenceEquals(ViewModel.ActiveTab, tab))
@@ -305,9 +474,63 @@ public sealed partial class MainWindow : Window
         SubscribeToTabNavigation(tab);
         FileList.BindToTab(tab);
         InspectorSidebar.BindToTab(tab);
+        UpdateWindowTitle(tab);
         UpdateAddressBar(tab.CurrentPath);
         UpdateStatusBar();
         UpdateSearchPlaceholder(tab.CurrentPath);
+    }
+
+    private async Task RefreshTabAfterActivationAsync(TabContentViewModel tab)
+    {
+        try
+        {
+            var waitCycles = 0;
+            while (tab.IsLoading && waitCycles < 30)
+            {
+                await Task.Delay(100);
+                waitCycles++;
+
+                if (!ReferenceEquals(ViewModel.ActiveTab, tab))
+                    return;
+            }
+
+            if (!ReferenceEquals(ViewModel.ActiveTab, tab) || string.IsNullOrWhiteSpace(tab.CurrentPath))
+                return;
+
+            await tab.RefreshAsync();
+
+            if (!ReferenceEquals(ViewModel.ActiveTab, tab))
+                return;
+
+            RefreshTabHeader(tab);
+            UpdateStatusBar();
+            UpdateAddressBar(tab.CurrentPath);
+            UpdateSearchPlaceholder(tab.CurrentPath);
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Tab activation refresh failed for '{tab.CurrentPath}': {ex.Message}");
+        }
+        finally
+        {
+            EndTabActivationRefresh(tab.TabState.Id);
+        }
+    }
+
+    private bool TryBeginTabActivationRefresh(Guid tabId)
+    {
+        lock (_tabActivationRefreshLock)
+        {
+            return _tabActivationRefreshInFlight.Add(tabId);
+        }
+    }
+
+    private void EndTabActivationRefresh(Guid tabId)
+    {
+        lock (_tabActivationRefreshLock)
+        {
+            _tabActivationRefreshInFlight.Remove(tabId);
+        }
     }
 
     #endregion
@@ -446,24 +669,106 @@ public sealed partial class MainWindow : Window
     private void SubscribeToTabNavigation(TabContentViewModel? tab)
     {
         if (_subscribedTab is not null)
+        {
             _subscribedTab.Navigated -= OnActiveTabNavigated;
+        }
 
         _subscribedTab = tab;
 
         if (tab is not null)
+        {
             tab.Navigated += OnActiveTabNavigated;
+        }
+    }
+
+    private void OnTabPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (sender is not TabContentViewModel tab)
+            return;
+
+        if (string.Equals(e.PropertyName, nameof(TabContentViewModel.TabTitle), StringComparison.Ordinal))
+        {
+            _dispatcherQueue.TryEnqueue(() =>
+            {
+                RefreshTabHeader(tab);
+
+                if (ReferenceEquals(ViewModel.ActiveTab, tab))
+                {
+                    UpdateWindowTitle(tab);
+                }
+            });
+
+            return;
+        }
+
+        if (string.Equals(e.PropertyName, nameof(TabContentViewModel.CurrentPath), StringComparison.Ordinal))
+        {
+            _dispatcherQueue.TryEnqueue(() =>
+            {
+                RefreshTabHeader(tab);
+
+                if (ReferenceEquals(ViewModel.ActiveTab, tab))
+                {
+                    UpdateAddressBar(tab.CurrentPath);
+                    UpdateSearchPlaceholder(tab.CurrentPath);
+                }
+            });
+
+            return;
+        }
+
+        if (string.Equals(e.PropertyName, nameof(TabContentViewModel.IsPinned), StringComparison.Ordinal))
+        {
+            _dispatcherQueue.TryEnqueue(() => RefreshTabHeader(tab));
+        }
     }
 
     private void OnActiveTabNavigated(object? sender, string path)
     {
         _dispatcherQueue.TryEnqueue(() =>
         {
-            UpdateTabBindings();
+            if (ViewModel.ActiveTab is not null)
+            {
+                UpdateWindowTitle(ViewModel.ActiveTab);
+                RefreshTabHeader(ViewModel.ActiveTab);
+            }
+
             FileList.SetSearchMode(false);
             UpdateAddressBar(path);
             UpdateStatusBar();
             UpdateSearchPlaceholder(path);
         });
+    }
+
+    private void RefreshVisibleTabHeaders()
+    {
+        foreach (var tab in ViewModel.Tabs)
+        {
+            RefreshTabHeader(tab);
+        }
+    }
+
+    private void RefreshTabHeader(TabContentViewModel tab)
+    {
+        if (!_tabItemsById.TryGetValue(tab.TabState.Id, out var tabViewItem))
+            return;
+
+        tabViewItem.DataContext = tab;
+        tabViewItem.Header = tab.TabTitle;
+        tabViewItem.IsClosable = !tab.IsPinned;
+        ToolTipService.SetToolTip(tabViewItem, tab.CurrentPath);
+    }
+
+    private void UpdateWindowTitle(TabContentViewModel? tab)
+    {
+        var tabTitle = tab?.TabTitle;
+        if (string.IsNullOrWhiteSpace(tabTitle))
+        {
+            Title = BaseWindowTitle;
+            return;
+        }
+
+        Title = $"{tabTitle} - {BaseWindowTitle}";
     }
 
     private void AddressBar_QuerySubmitted(AutoSuggestBox sender, AutoSuggestBoxQuerySubmittedEventArgs args)
@@ -951,7 +1256,7 @@ public sealed partial class MainWindow : Window
         _ = Task.Run(PreloadShortcutCacheAsync);
     }
 
-    private async Task PreloadShortcutCacheAsync()
+    private Task PreloadShortcutCacheAsync()
     {
         var totalStopwatch = Stopwatch.StartNew();
         try
@@ -986,29 +1291,8 @@ public sealed partial class MainWindow : Window
                 _ = GetOrCreateShortcutLauncherFlyout();
             });
 
-            await Task.Yield();
-
-            // Phase 2: silently pre-populate every reachable layer in the background.
-            var phase2Stopwatch = Stopwatch.StartNew();
-            var deepEntries = new Dictionary<string, ShortcutFolderCacheData>(StringComparer.OrdinalIgnoreCase);
-            foreach (var root in rootEntries)
-            {
-                if (string.IsNullOrWhiteSpace(root.FolderPath))
-                    continue;
-
-                PopulateFolderCacheRecursive(root.FolderPath, 0, deepEntries);
-            }
-
-            lock (_shortcutCacheLock)
-            {
-                foreach (var (path, data) in deepEntries)
-                {
-                    _shortcutFolderCache[path] = data;
-                }
-            }
-
-            phase2Stopwatch.Stop();
-            Debug.WriteLine($"Shortcut cache preload phase2 elapsed: {phase2Stopwatch.ElapsedMilliseconds} ms, cached={deepEntries.Count}");
+            // Phase 2: deep preload every reachable layer in background so submenu expansion is instant.
+            QueueDeepShortcutCachePreload(rootEntries);
         }
         catch (Exception ex)
         {
@@ -1019,6 +1303,55 @@ public sealed partial class MainWindow : Window
             totalStopwatch.Stop();
             Debug.WriteLine($"Shortcut cache preload total elapsed: {totalStopwatch.ElapsedMilliseconds} ms");
         }
+
+        return Task.CompletedTask;
+    }
+
+    private void QueueDeepShortcutCachePreload(IReadOnlyList<ShortcutRootEntryData>? rootEntries = null)
+    {
+        lock (_shortcutCacheLock)
+        {
+            if (_shortcutDeepPreloadStarted)
+                return;
+
+            _shortcutDeepPreloadStarted = true;
+        }
+
+        _ = Task.Run(() =>
+        {
+            var stopwatch = Stopwatch.StartNew();
+            try
+            {
+                var roots = rootEntries ?? GetShortcutRootEntriesForFlyout();
+                var deepEntries = new Dictionary<string, ShortcutFolderCacheData>(StringComparer.OrdinalIgnoreCase);
+
+                foreach (var root in roots)
+                {
+                    if (string.IsNullOrWhiteSpace(root.FolderPath))
+                        continue;
+
+                    PopulateFolderCacheRecursive(root.FolderPath, 0, deepEntries);
+                }
+
+                lock (_shortcutCacheLock)
+                {
+                    foreach (var (path, data) in deepEntries)
+                    {
+                        _shortcutFolderCache[path] = data;
+                    }
+                }
+
+                Debug.WriteLine($"Shortcut cache preload phase2 elapsed: {stopwatch.ElapsedMilliseconds} ms, cached={deepEntries.Count}");
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Shortcut cache preload phase2 failed: {ex.Message}");
+            }
+            finally
+            {
+                stopwatch.Stop();
+            }
+        });
     }
 
     private List<ShortcutRootEntryData> GetShortcutRootEntriesForFlyout()
@@ -1131,6 +1464,20 @@ public sealed partial class MainWindow : Window
             }
         }
 
+        // If cache has a transient empty snapshot, force a direct refresh so first-open is never blank.
+        if (!HasFolderCacheItems(folderData))
+        {
+            var refreshed = BuildFolderCacheData(folderPath, includeDescendants: folderData.IsFullyLoaded);
+            if (HasFolderCacheItems(refreshed) || !folderData.IsFullyLoaded)
+            {
+                folderData = refreshed;
+                lock (_shortcutCacheLock)
+                {
+                    _shortcutFolderCache[folderPath] = folderData;
+                }
+            }
+        }
+
         AddFolderItemsToFlyout(flyout, folderData, 1);
         StartFolderDescendantPrefetch(folderPath, 1);
 
@@ -1158,7 +1505,15 @@ public sealed partial class MainWindow : Window
         {
             var hasCachedChildren = cachedData.Subfolders.Count > 0 || cachedData.Files.Count > 0;
             if (!hasCachedChildren)
+            {
+                // Empty non-final cache can happen during warm-up. Keep lazy loading enabled.
+                if (!cachedData.IsFullyLoaded)
+                {
+                    InitializeFolderLazyLoading(folderItem);
+                }
+
                 return folderItem;
+            }
 
             if (depth == 0 || cachedData.IsFullyLoaded)
             {
@@ -1167,17 +1522,14 @@ public sealed partial class MainWindow : Window
             }
             else
             {
+                StartFolderDescendantPrefetch(folderPath, depth);
                 InitializeFolderLazyLoading(folderItem);
             }
 
             return folderItem;
         }
 
-        var hasChildren = GetSubfolders(folderPath, 1).Count > 0 || GetFiles(folderPath, 1).Count > 0;
-        if (hasChildren)
-        {
-            InitializeFolderLazyLoading(folderItem);
-        }
+        InitializeFolderLazyLoading(folderItem);
 
         return folderItem;
     }
@@ -1229,45 +1581,80 @@ public sealed partial class MainWindow : Window
 
     private async Task EnsureFolderSubMenuLoadedAsync(MenuFlyoutSubItem folderItem)
     {
-        if (folderItem.Tag is not ShortcutFolderMenuContext context || context.IsLoaded)
+        if (folderItem.Tag is not ShortcutFolderMenuContext context || context.IsLoaded || context.IsLoading)
             return;
 
         var stopwatch = Stopwatch.StartNew();
         var source = "unknown";
 
-        context.IsLoaded = true;
+        context.IsLoading = true;
 
-        if (context.Depth >= ShortcutMenuMaxDepth)
-            return;
-
-        if (TryGetShortcutFolderCache(context.FolderPath, out var cachedData))
+        try
         {
-            source = cachedData.IsFullyLoaded ? "cache:full" : "cache:shallow";
+            if (context.Depth >= ShortcutMenuMaxDepth)
+            {
+                context.IsLoaded = true;
+                folderItem.Items.Clear();
+                folderItem.Items.Add(CreateDetailsViewFlyoutItem("No deeper levels", isEnabled: false));
+                source = "max-depth";
+                return;
+            }
+
+            if (TryGetShortcutFolderCache(context.FolderPath, out var cachedData))
+            {
+                var hasCachedItems = HasFolderCacheItems(cachedData);
+                if (hasCachedItems || cachedData.IsFullyLoaded)
+                {
+                    source = cachedData.IsFullyLoaded ? "cache:full" : "cache:shallow";
+                    folderItem.Items.Clear();
+                    AddFolderSubMenuItems(folderItem, cachedData, context.Depth + 1);
+                    if (folderItem.Items.Count == 0)
+                        folderItem.Items.Add(CreateDetailsViewFlyoutItem("No items", isEnabled: false));
+
+                    if (!cachedData.IsFullyLoaded)
+                        StartFolderDescendantPrefetch(context.FolderPath, context.Depth + 1);
+
+                    context.IsLoaded = true;
+                    return;
+                }
+
+                source = "cache:empty-warmup";
+            }
+
             folderItem.Items.Clear();
-            AddFolderSubMenuItems(folderItem, cachedData, context.Depth + 1);
+            folderItem.Items.Add(CreateDetailsViewFlyoutItem("Loading...", isEnabled: false));
+
+            var fallbackData = await Task.Run(() => BuildFolderCacheData(context.FolderPath, includeDescendants: false));
+            source = "filesystem:fallback";
+
+            lock (_shortcutCacheLock)
+            {
+                _shortcutFolderCache[context.FolderPath] = fallbackData;
+            }
+
+            StartFolderDescendantPrefetch(context.FolderPath, context.Depth + 1);
+
+            folderItem.Items.Clear();
+            AddFolderSubMenuItems(folderItem, fallbackData, context.Depth + 1);
+            if (folderItem.Items.Count == 0)
+                folderItem.Items.Add(CreateDetailsViewFlyoutItem("No items", isEnabled: false));
+
+            context.IsLoaded = true;
+        }
+        catch (Exception ex)
+        {
+            context.IsLoaded = false;
+            folderItem.Items.Clear();
+            folderItem.Items.Add(CreateDetailsViewFlyoutItem("Failed to load (hover to retry)", isEnabled: false));
+            source = "error";
+            Debug.WriteLine($"Shortcut submenu load failed: depth={context.Depth}, path={context.FolderPath}, error={ex.Message}");
+        }
+        finally
+        {
+            context.IsLoading = false;
             stopwatch.Stop();
             Debug.WriteLine($"Shortcut submenu load elapsed: {stopwatch.ElapsedMilliseconds} ms, depth={context.Depth}, source={source}, path={context.FolderPath}");
-            return;
         }
-
-        folderItem.Items.Clear();
-        folderItem.Items.Add(CreateDetailsViewFlyoutItem("Loading...", isEnabled: false));
-
-        var fallbackData = await Task.Run(() => BuildFolderCacheData(context.FolderPath, includeDescendants: false));
-        source = "filesystem:fallback";
-
-        StartFolderDescendantPrefetch(context.FolderPath, context.Depth + 1);
-
-        lock (_shortcutCacheLock)
-        {
-            _shortcutFolderCache[context.FolderPath] = fallbackData;
-        }
-
-        folderItem.Items.Clear();
-        AddFolderSubMenuItems(folderItem, fallbackData, context.Depth + 1);
-
-        stopwatch.Stop();
-        Debug.WriteLine($"Shortcut submenu load elapsed: {stopwatch.ElapsedMilliseconds} ms, depth={context.Depth}, source={source}, path={context.FolderPath}");
     }
 
     private void AddFolderSubMenuItems(MenuFlyoutSubItem folderItem, ShortcutFolderCacheData data, int childDepth)
@@ -1316,6 +1703,11 @@ public sealed partial class MainWindow : Window
         }
     }
 
+    private static bool HasFolderCacheItems(ShortcutFolderCacheData data)
+    {
+        return data.Subfolders.Count > 0 || data.Files.Count > 0;
+    }
+
     private ShortcutFolderCacheData BuildFolderCacheData(string folderPath, bool includeDescendants)
     {
         var subfolders = GetSubfolders(folderPath, ShortcutMenuMaxSubfolders);
@@ -1346,6 +1738,14 @@ public sealed partial class MainWindow : Window
         if (depth >= ShortcutMenuMaxDepth)
             return;
 
+        lock (_shortcutCacheLock)
+        {
+            if (_shortcutPrefetchInProgress.Contains(folderPath))
+                return;
+
+            _shortcutPrefetchInProgress.Add(folderPath);
+        }
+
         _ = Task.Run(() =>
         {
             try
@@ -1364,6 +1764,13 @@ public sealed partial class MainWindow : Window
             catch (Exception ex)
             {
                 Debug.WriteLine($"Shortcut descendant prefetch failed: {ex.Message}");
+            }
+            finally
+            {
+                lock (_shortcutCacheLock)
+                {
+                    _shortcutPrefetchInProgress.Remove(folderPath);
+                }
             }
         });
     }
@@ -2322,6 +2729,26 @@ public sealed partial class MainWindow : Window
     private async void MainWindow_Closed(object sender, WindowEventArgs args)
     {
         _fileSystemService.OperationError -= FileSystemService_OperationError;
+        ViewModel.Tabs.CollectionChanged -= Tabs_CollectionChanged;
+
+        foreach (var tab in _tabPropertySubscriptions.ToList())
+        {
+            tab.PropertyChanged -= OnTabPropertyChanged;
+        }
+
+        _tabPropertySubscriptions.Clear();
+        _tabItemsById.Clear();
+        lock (_tabActivationRefreshLock)
+        {
+            _tabActivationRefreshInFlight.Clear();
+        }
+
+        if (_subscribedTab is not null)
+        {
+            _subscribedTab.Navigated -= OnActiveTabNavigated;
+            _subscribedTab = null;
+        }
+
         await ViewModel.SaveSessionAsync();
         ViewModel.Dispose();
     }

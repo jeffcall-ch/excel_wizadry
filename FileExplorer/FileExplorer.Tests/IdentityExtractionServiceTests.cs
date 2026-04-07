@@ -83,6 +83,30 @@ public sealed class IdentityExtractionServiceTests
     }
 
     [Fact]
+    public async Task ExtractIdentityAsync_Xlsx_DocumentNameFallsBackToFileName_WhenMissingInSheet()
+    {
+        var service = new IdentityExtractionService(NullLogger<IdentityExtractionService>.Instance);
+        var tempFolder = Path.Combine(Path.GetTempPath(), $"id-xlsx-docname-fallback-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempFolder);
+        var tempPath = Path.Combine(tempFolder, "price list lot general piping pipe material.xlsx");
+
+        try
+        {
+            CreateXlsxSample(tempPath, "Project X", "B-17", string.Empty);
+
+            var identity = await service.ExtractIdentityAsync(tempPath);
+
+            identity.ProjectTitle.Should().Be("Project X");
+            identity.Revision.Should().Be("B-17");
+            identity.DocumentName.Should().Be("price list lot general piping pipe material");
+        }
+        finally
+        {
+            TryDelete(tempFolder);
+        }
+    }
+
+    [Fact]
     public async Task ExtractIdentityAsync_Pdf_FirstPageProjectNameBelowAnchor_ReturnsProject()
     {
         var service = new IdentityExtractionService(NullLogger<IdentityExtractionService>.Instance);

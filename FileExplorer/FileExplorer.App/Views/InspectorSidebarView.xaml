@@ -4,139 +4,43 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
-    <UserControl.Resources>
-        <Style x:Key="InspectorTextStyle" TargetType="TextBlock">
-            <Setter Property="FontSize" Value="12" />
-            <Setter Property="MinHeight" Value="22" />
-            <Setter Property="VerticalAlignment" Value="Center" />
-        </Style>
-        <Style x:Key="InspectorSectionHeaderStyle" TargetType="TextBlock" BasedOn="{StaticResource InspectorTextStyle}">
-            <Setter Property="FontWeight" Value="SemiBold" />
-        </Style>
-    </UserControl.Resources>
-
-    <Grid Padding="8" RowSpacing="8">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="*" />
-            <RowDefinition Height="Auto" />
-        </Grid.RowDefinitions>
-
-        <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto">
-            <StackPanel Spacing="8">
-                <StackPanel x:Name="IdentitySinglePanel" Spacing="4">
-                    <TextBlock Text="Identity Card" Style="{StaticResource InspectorSectionHeaderStyle}" />
-                    <Grid ColumnSpacing="8" RowSpacing="0">
+    <Grid Padding="8">
+        <ListView x:Name="NavigationHubRootList"
+                  IsItemClickEnabled="True"
+                  SelectionMode="None"
+                  ItemClick="NavigationHubRootList_ItemClick"
+                  ScrollViewer.VerticalScrollBarVisibility="Auto"
+                  ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                  BorderThickness="0"
+                  Padding="0">
+            <ListView.ItemContainerStyle>
+                <Style TargetType="ListViewItem">
+                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                    <Setter Property="VerticalContentAlignment" Value="Center" />
+                    <Setter Property="Padding" Value="0" />
+                    <Setter Property="Margin" Value="0" />
+                    <Setter Property="MinHeight" Value="22" />
+                    <Setter Property="BorderThickness" Value="0" />
+                </Style>
+            </ListView.ItemContainerStyle>
+            <ListView.ItemTemplate>
+                <DataTemplate>
+                    <Grid Padding="8,0"
+                          MinHeight="22"
+                          ColumnSpacing="8">
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
-                        </Grid.RowDefinitions>
-
-                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Project" Opacity="0.7" Style="{StaticResource InspectorTextStyle}" />
-                        <TextBlock Grid.Row="0" Grid.Column="1" x:Name="ProjectValue" Text="-" TextWrapping="Wrap" Style="{StaticResource InspectorTextStyle}" />
-
-                        <TextBlock Grid.Row="1" Grid.Column="0" Text="Revision" Opacity="0.7" Style="{StaticResource InspectorTextStyle}" />
-                        <TextBlock Grid.Row="1" Grid.Column="1" x:Name="RevisionValue" Text="-" TextWrapping="Wrap" Style="{StaticResource InspectorTextStyle}" />
-
-                        <TextBlock Grid.Row="2" Grid.Column="0" Text="Document" Opacity="0.7" Style="{StaticResource InspectorTextStyle}" />
-                        <TextBlock Grid.Row="2" Grid.Column="1" x:Name="DocumentNameValue" Text="-" TextWrapping="Wrap" Style="{StaticResource InspectorTextStyle}" />
+                        <TextBlock Text="{Binding DisplayName}" FontSize="12" TextTrimming="CharacterEllipsis" />
+                        <FontIcon Grid.Column="1"
+                                  FontFamily="{StaticResource SymbolThemeFontFamily}"
+                                  Glyph="&#xE76C;"
+                                  FontSize="12"
+                                  Opacity="0.65" />
                     </Grid>
-                </StackPanel>
-
-                <StackPanel x:Name="IdentityAggregatePanel" Spacing="2" Visibility="Collapsed">
-                    <TextBlock Text="Selection Summary" Style="{StaticResource InspectorSectionHeaderStyle}" />
-                    <TextBlock x:Name="AggregateSelectedCountValue" Text="Selected items: -" Style="{StaticResource InspectorTextStyle}" />
-                    <TextBlock x:Name="AggregateTotalSizeValue" Text="Total size: -" Style="{StaticResource InspectorTextStyle}" />
-                    <TextBlock x:Name="AggregateByTypeValue" Text="Types: -" TextWrapping="Wrap" Style="{StaticResource InspectorTextStyle}" />
-                </StackPanel>
-
-                <Border BorderThickness="1" CornerRadius="6" Padding="8" BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}">
-                    <StackPanel Spacing="2">
-                        <TextBlock Text="Metadata" Style="{StaticResource InspectorSectionHeaderStyle}" />
-                        <TextBlock x:Name="DateModifiedValue" Text="Date: -" Style="{StaticResource InspectorTextStyle}" />
-                        <TextBlock x:Name="MetadataValue" Text="Details: -" TextWrapping="Wrap" Style="{StaticResource InspectorTextStyle}" />
-                        <TextBlock x:Name="PathValue" Text="Path: -" TextWrapping="WrapWholeWords" Opacity="0.8" Style="{StaticResource InspectorTextStyle}" />
-                    </StackPanel>
-                </Border>
-
-                <Border BorderThickness="1" CornerRadius="6" Padding="8" BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}">
-                    <StackPanel Spacing="4">
-                        <TextBlock Text="Navigation Hub" Style="{StaticResource InspectorSectionHeaderStyle}" />
-                        <ScrollViewer MaxHeight="240" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                            <ListView x:Name="NavigationHubRootList"
-                                      IsItemClickEnabled="True"
-                                      SelectionMode="None"
-                                      ItemClick="NavigationHubRootList_ItemClick"
-                                      ScrollViewer.VerticalScrollBarVisibility="Auto"
-                                      ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                                      BorderThickness="0"
-                                      Padding="0">
-                                <ListView.ItemContainerStyle>
-                                    <Style TargetType="ListViewItem">
-                                        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-                                        <Setter Property="VerticalContentAlignment" Value="Center" />
-                                        <Setter Property="Padding" Value="0" />
-                                        <Setter Property="Margin" Value="0" />
-                                        <Setter Property="MinHeight" Value="22" />
-                                        <Setter Property="BorderThickness" Value="0" />
-                                    </Style>
-                                </ListView.ItemContainerStyle>
-                                <ListView.ItemTemplate>
-                                    <DataTemplate>
-                                            <Grid Padding="8,0"
-                                                MinHeight="22"
-                                                ColumnSpacing="8">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*" />
-                                                <ColumnDefinition Width="Auto" />
-                                            </Grid.ColumnDefinitions>
-                                            <TextBlock Text="{Binding DisplayName}" FontSize="12" TextTrimming="CharacterEllipsis" />
-                                            <FontIcon Grid.Column="1"
-                                                      FontFamily="{StaticResource SymbolThemeFontFamily}"
-                                                      Glyph="&#xE76C;"
-                                                      FontSize="12"
-                                                      Opacity="0.65" />
-                                        </Grid>
-                                    </DataTemplate>
-                                </ListView.ItemTemplate>
-                            </ListView>
-                        </ScrollViewer>
-                        <TextBlock x:Name="NavigationHubStatusText"
-                                   Text="Loading favorites..."
-                                   Opacity="0.7"
-                                   TextWrapping="Wrap"
-                                   Style="{StaticResource InspectorTextStyle}" />
-                        <TextBlock x:Name="DeepIndexWarningText"
-                                   Visibility="Collapsed"
-                                   Foreground="{ThemeResource SystemFillColorCriticalBrush}"
-                                   TextWrapping="Wrap"
-                                   Style="{StaticResource InspectorTextStyle}" />
-                    </StackPanel>
-                </Border>
-            </StackPanel>
-        </ScrollViewer>
-
-        <Border
-            x:Name="DumpDropBorder"
-            Grid.Row="1"
-            BorderThickness="1"
-            CornerRadius="8"
-            Padding="8"
-            AllowDrop="True"
-            DragOver="DumpDropBorder_DragOver"
-            Drop="DumpDropBorder_Drop"
-            BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
-            Background="{ThemeResource LayerFillColorDefaultBrush}">
-            <StackPanel Spacing="2">
-                <TextBlock Text="Physical File Dump" Style="{StaticResource InspectorSectionHeaderStyle}" />
-                <TextBlock Text="C:\temp\x_file_dump" x:Name="DumpPathText" Opacity="0.85" TextWrapping="Wrap" Style="{StaticResource InspectorTextStyle}" />
-                <TextBlock Text="Drop files here to stage (Move)." Opacity="0.7" Style="{StaticResource InspectorTextStyle}" />
-                <TextBlock x:Name="DumpSummaryText" Text="Items: calculating..." Opacity="0.8" Style="{StaticResource InspectorTextStyle}" />
-            </StackPanel>
-        </Border>
+                </DataTemplate>
+            </ListView.ItemTemplate>
+        </ListView>
     </Grid>
 </UserControl>

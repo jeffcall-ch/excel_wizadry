@@ -60,6 +60,43 @@ If you see `WindowsAppSDK SelfContained requires a supported Windows architectur
 dotnet test .\FileExplorer.Tests\FileExplorer.Tests.csproj
 ```
 
+## Identity normalization rules (Project and Revision)
+
+The Extracted Project and Extracted Revision columns are normalized before being shown and cached:
+
+- Project names are matched against an allowlist CSV with fuzzy canonical matching.
+- Revisions are shown only if they are in strict numeric format: `N.N`, `0.0`, `10.1`.
+
+### Configure allowed project names
+
+Default allowlist file:
+
+- `Development\allowed_project_names.csv`
+
+CSV format (single column, header optional):
+
+```csv
+Project
+Thameside ERF
+Walsall ERF
+Medworth EfW CHP Facility
+```
+
+Matching behavior:
+
+- Exact and fuzzy matching are both used.
+- On a high-confidence fuzzy match, the displayed value is replaced by the canonical CSV value.
+- If no high-confidence match is found, the project column is left blank.
+
+Optional override:
+
+- Set environment variable `FILEEXPLORER_ALLOWED_PROJECTS_CSV` to an absolute CSV path.
+
+Revision behavior:
+
+- Only `^\d+\.\d+$` is accepted.
+- Any other revision form is cleared from display/cache.
+
 ## Reliable portable packaging (one-folder)
 
 ### Why this approach

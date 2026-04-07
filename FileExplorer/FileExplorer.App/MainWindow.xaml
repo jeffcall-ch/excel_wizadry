@@ -49,13 +49,7 @@
             CanDragTabs="True"
             CanReorderTabs="True"
             TabWidthMode="Equal"
-            VerticalAlignment="Stretch">
-            <TabView.TabItemTemplate>
-                <DataTemplate>
-                    <TextBlock Text="{Binding TabTitle}" TextTrimming="CharacterEllipsis" />
-                </DataTemplate>
-            </TabView.TabItemTemplate>
-        </TabView>
+            VerticalAlignment="Stretch" />
 
         <!-- ROW 1: Navigation Bar -->
         <Grid Grid.Row="1" Padding="4,0" ColumnSpacing="4">

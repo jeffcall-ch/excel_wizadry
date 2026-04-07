@@ -7,10 +7,13 @@ using Microsoft.UI.Input;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
+using Microsoft.UI.Xaml.Data;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Windows.ApplicationModel.DataTransfer;
 using Windows.Storage;
+using System.Collections.ObjectModel;
+using System.Globalization;
 
 namespace FileExplorer.App.Views;
 
@@ -20,6 +23,16 @@ namespace FileExplorer.App.Views;
 /// </summary>
 public sealed partial class FileListView : UserControl
 {
+    private sealed class DateDividerGroup : ObservableCollection<FileItemViewModel>
+    {
+        public DateDividerGroup(string header)
+        {
+            Header = header;
+        }
+
+        public string Header { get; }
+    }
+
     private TabContentViewModel? _currentTab;
     private string _typeAheadBuffer = string.Empty;
     private DateTimeOffset _lastKeyTime;
@@ -31,6 +44,9 @@ public sealed partial class FileListView : UserControl
     private bool _restoreFocusAfterNavigation;
     private string? _pendingSelectPathAfterGoUp;
     private bool _topLockScrollQueued;
+    private CancellationTokenSource? _dateDividerRefreshCts;
+    private readonly ObservableCollection<DateDividerGroup> _dateDividerGroups = [];
+    private readonly CollectionViewSource _groupedItemsSource = new() { IsSourceGrouped = true };
 
     /// <summary>Initializes a new instance of the <see cref="FileListView"/> class.</summary>
     public FileListView()
@@ -68,7 +84,7 @@ public sealed partial class FileListView : UserControl
         FileListView_Inner.ItemsSource = null;
 
         _currentTab = tab;
-        FileListView_Inner.ItemsSource = tab.Items;
+        RefreshItemsSourceForCurrentSort();
         ClearTransientSelection();
         UpdateEmptyState();
         UpdateSortIndicators();
@@ -85,6 +101,7 @@ public sealed partial class FileListView : UserControl
         DispatcherQueue.TryEnqueue(() =>
         {
             UpdateEmptyState();
+            QueueRefreshDateDividers();
 
             if (_currentTab?.IsLoading == true)
             {
@@ -132,11 +149,23 @@ public sealed partial class FileListView : UserControl
 
                 if (!_currentTab.IsLoading)
                 {
+                    QueueRefreshDateDividers();
+
                     if (!TryApplyPendingSelectionAfterGoUp())
                     {
                         EnsureTopRowVisibleWhenNoSelection();
                     }
                 }
+            });
+        }
+
+        if (e.PropertyName == nameof(TabContentViewModel.SortColumn) ||
+            e.PropertyName == nameof(TabContentViewModel.SortAscending))
+        {
+            DispatcherQueue.TryEnqueue(() =>
+            {
+                UpdateSortIndicators();
+                RefreshItemsSourceForCurrentSort();
             });
         }
     }
@@ -155,7 +184,139 @@ public sealed partial class FileListView : UserControl
         {
             _currentTab.SetSortCommand.Execute(column);
             UpdateSortIndicators();
+            QueueRefreshDateDividers();
         }
+    }
+
+    private void QueueRefreshDateDividers()
+    {
+        if (_currentTab is null)
+            return;
+
+        if (!ShouldUseDateDividers())
+        {
+            _dateDividerRefreshCts?.Cancel();
+            _dateDividerRefreshCts?.Dispose();
+            _dateDividerRefreshCts = null;
+            RefreshItemsSourceForCurrentSort();
+            return;
+        }
+
+        if (_currentTab.IsLoading)
+            return;
+
+        _dateDividerRefreshCts?.Cancel();
+        _dateDividerRefreshCts?.Dispose();
+        var cts = new CancellationTokenSource();
+        _dateDividerRefreshCts = cts;
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(250, cts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+
+            if (cts.IsCancellationRequested)
+                return;
+
+            DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
+            {
+                if (cts.IsCancellationRequested)
+                    return;
+
+                RefreshItemsSourceForCurrentSort();
+            });
+        });
+    }
+
+    private void RefreshItemsSourceForCurrentSort()
+    {
+        if (_currentTab is null)
+            return;
+
+        if (ShouldUseDateDividers())
+        {
+            BuildDateDividerGroups();
+            _groupedItemsSource.Source = _dateDividerGroups;
+            FileListView_Inner.ItemsSource = _groupedItemsSource.View;
+            return;
+        }
+
+        FileListView_Inner.ItemsSource = _currentTab.Items;
+    }
+
+    private bool ShouldUseDateDividers()
+    {
+        return _currentTab is not null &&
+            string.Equals(_currentTab.SortColumn, "DateModified", StringComparison.OrdinalIgnoreCase) &&
+            !_currentTab.SortAscending;
+    }
+
+    private void BuildDateDividerGroups()
+    {
+        _dateDividerGroups.Clear();
+
+        if (_currentTab is null || _currentTab.Items.Count == 0)
+            return;
+
+        DateDividerGroup? currentGroup = null;
+        string? currentHeader = null;
+
+        foreach (var item in _currentTab.Items)
+        {
+            var header = GetDateDividerLabel(item.Entry.DateModified.LocalDateTime);
+            if (!string.Equals(header, currentHeader, StringComparison.Ordinal))
+            {
+                currentGroup = new DateDividerGroup(header);
+                _dateDividerGroups.Add(currentGroup);
+                currentHeader = header;
+            }
+
+            currentGroup!.Add(item);
+        }
+    }
+
+    private static string GetDateDividerLabel(DateTime itemLocalTime)
+    {
+        var today = DateTime.Now.Date;
+        var yesterday = today.AddDays(-1);
+        var startOfWeek = GetStartOfWeek(today);
+        var startOfLastWeek = startOfWeek.AddDays(-7);
+        var startOfMonth = new DateTime(today.Year, today.Month, 1);
+        var startOfLastMonth = startOfMonth.AddMonths(-1);
+
+        var itemDate = itemLocalTime.Date;
+        if (itemDate >= today)
+            return "Today";
+
+        if (itemDate >= yesterday)
+            return "Yesterday";
+
+        if (itemDate >= startOfWeek)
+            return "This Week";
+
+        if (itemDate >= startOfLastWeek)
+            return "Last Week";
+
+        if (itemDate >= startOfMonth)
+            return "This Month";
+
+        if (itemDate >= startOfLastMonth)
+            return "Last Month";
+
+        return "Older";
+    }
+
+    private static DateTime GetStartOfWeek(DateTime date)
+    {
+        var firstDayOfWeek = CultureInfo.CurrentCulture.DateTimeFormat.FirstDayOfWeek;
+        var diff = (7 + (date.DayOfWeek - firstDayOfWeek)) % 7;
+        return date.AddDays(-diff).Date;
     }
 
     private void ColumnHeader_RightTapped(object sender, RightTappedRoutedEventArgs e)
@@ -360,7 +521,7 @@ public sealed partial class FileListView : UserControl
             _selectionAnchorIndex = _currentTab.Items.IndexOf(selected);
         }
 
-        ApplySelectionFrames();
+        ApplySelectionFramesForDelta(e.AddedItems, e.RemovedItems);
     }
 
     private void ApplyLoadingVisualState(bool isLoading)
@@ -1181,6 +1342,25 @@ public sealed partial class FileListView : UserControl
         for (int i = 0; i < FileListView_Inner.Items.Count; i++)
         {
             if (FileListView_Inner.ContainerFromIndex(i) is ListViewItem container)
+            {
+                ApplySelectionFrame(container);
+            }
+        }
+    }
+
+    private void ApplySelectionFramesForDelta(IList<object> addedItems, IList<object> removedItems)
+    {
+        foreach (var item in removedItems.OfType<FileItemViewModel>())
+        {
+            if (FileListView_Inner.ContainerFromItem(item) is ListViewItem container)
+            {
+                ApplySelectionFrame(container);
+            }
+        }
+
+        foreach (var item in addedItems.OfType<FileItemViewModel>())
+        {
+            if (FileListView_Inner.ContainerFromItem(item) is ListViewItem container)
             {
                 ApplySelectionFrame(container);
             }

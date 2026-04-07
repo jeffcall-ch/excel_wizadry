@@ -2,6 +2,8 @@
 
 using System.Collections.ObjectModel;
 using System.Diagnostics;
+using System.Globalization;
+using System.Text;
 using System.Text.RegularExpressions;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -17,12 +19,23 @@ namespace FileExplorer.Core.ViewModels;
 /// </summary>
 public sealed partial class TabContentViewModel : ObservableObject, IDisposable
 {
+    private const int IdentitySkipLargeFolderThreshold = 900;
     private const int IdentityApplyBatchSize = 50;
     private static readonly TimeSpan IdentityApplyDebounce = TimeSpan.FromMilliseconds(250);
+    private const double ProjectMatchThreshold = 0.88;
 
     private static readonly Regex RevisionFromFileNameRegex = new(
         @"(?<!\d)(?<rev>\d+\.\d+)(?!\d)",
         RegexOptions.Compiled);
+
+    private static readonly Regex StrictRevisionRegex = new(
+        @"^\d+\.\d+$",
+        RegexOptions.Compiled);
+
+    private static readonly object AllowedProjectsLock = new();
+    private static string? _allowedProjectsCsvPath;
+    private static DateTime _allowedProjectsCsvWriteUtc;
+    private static IReadOnlyList<AllowedProjectEntry> _allowedProjectEntries = [];
 
     private readonly IFileSystemService _fileSystemService;
     private readonly IShellIntegrationService _shellService;
@@ -30,9 +43,16 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
     private readonly IPreviewService _previewService;
     private readonly IIdentityExtractionService _identityExtractionService;
     private readonly IIdentityCacheService _identityCacheService;
+    private readonly ITabPathStateService _tabPathStateService;
+    private readonly ISettingsService _settingsService;
     private readonly ILogger<TabContentViewModel> _logger;
+    private readonly SynchronizationContext? _uiContext;
     private IDisposable? _watcherHandle;
     private CancellationTokenSource? _loadCts;
+    private volatile bool _identityProcessingEnabledForCurrentPath = true;
+    private int _tabPathSyncVersion;
+
+    private sealed record AllowedProjectEntry(string CanonicalName, string NormalizedName, HashSet<string> Tokens);
 
     /// <summary>The underlying tab state.</summary>
     public TabState TabState { get; }
@@ -99,6 +119,8 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
         IPreviewService previewService,
         IIdentityExtractionService identityExtractionService,
         IIdentityCacheService identityCacheService,
+        ITabPathStateService tabPathStateService,
+        ISettingsService settingsService,
         ILogger<TabContentViewModel> logger,
         TabState? existingState = null)
     {
@@ -108,8 +130,79 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
         _previewService = previewService;
         _identityExtractionService = identityExtractionService;
         _identityCacheService = identityCacheService;
+        _tabPathStateService = tabPathStateService;
+        _settingsService = settingsService;
         _logger = logger;
+        _uiContext = SynchronizationContext.Current;
         TabState = existingState ?? new TabState();
+
+        if (!string.IsNullOrWhiteSpace(TabState.CurrentPath))
+        {
+            CurrentPath = TabState.CurrentPath;
+        }
+    }
+
+    partial void OnCurrentPathChanged(string value)
+    {
+        TabState.CurrentPath = value;
+        _identityProcessingEnabledForCurrentPath = ShouldEnableIdentityProcessing(value, Items.Count);
+
+        var fallbackTitle = BuildFriendlyTabTitle(value);
+        if (!string.Equals(TabTitle, fallbackTitle, StringComparison.Ordinal))
+        {
+            TabTitle = fallbackTitle;
+        }
+
+        TabState.Title = TabTitle;
+
+        var version = Interlocked.Increment(ref _tabPathSyncVersion);
+        _ = PersistAndApplyTabPathStateAsync(value, fallbackTitle, version);
+    }
+
+    private async Task PersistAndApplyTabPathStateAsync(string currentPath, string fallbackTitle, int version)
+    {
+        try
+        {
+            await _tabPathStateService.UpsertCurrentPathAsync(TabState.Id, currentPath, fallbackTitle);
+            var persisted = await _tabPathStateService.GetByTabIdAsync(TabState.Id);
+            if (persisted is null)
+                return;
+
+            if (version != Volatile.Read(ref _tabPathSyncVersion))
+                return;
+
+            var titleFromDb = string.IsNullOrWhiteSpace(persisted.DisplayTitle)
+                ? fallbackTitle
+                : persisted.DisplayTitle;
+
+            void ApplyTitleFromDb()
+            {
+                if (version != Volatile.Read(ref _tabPathSyncVersion))
+                    return;
+
+                if (!string.Equals(TabTitle, titleFromDb, StringComparison.Ordinal))
+                {
+                    TabTitle = titleFromDb;
+                }
+
+                TabState.Title = titleFromDb;
+            }
+
+            if (_uiContext is null)
+                return;
+
+            if (!ReferenceEquals(SynchronizationContext.Current, _uiContext))
+            {
+                _uiContext.Post(_ => ApplyTitleFromDb(), null);
+                return;
+            }
+
+            ApplyTitleFromDb();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Failed to sync tab path state for tab {TabId}", TabState.Id);
+        }
     }
 
     /// <summary>Navigates to the specified directory path.</summary>
@@ -156,9 +249,6 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
 
             // Update state
             CurrentPath = path;
-            TabState.CurrentPath = path;
-            TabTitle = BuildFriendlyTabTitle(path);
-            TabState.Title = TabTitle;
 
             // Add to navigation history
             if (!skipHistory)
@@ -172,10 +262,19 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
             await foreach (var entry in _fileSystemService.EnumerateDirectoryAsync(path, ct))
             {
                 ct.ThrowIfCancellationRequested();
-                entry.TypeDescription = _shellService.GetTypeDescription(entry.FullPath);
-                entry.IconIndex = _shellService.GetIconIndex(entry.FullPath, entry.IsDirectory);
+                entry.TypeDescription = GetTypeDescriptionFast(entry);
+                entry.IconIndex = 0;
                 items.Add(new FileItemViewModel(entry));
+
+                if (items.Count % 250 == 0)
+                {
+                    await Task.Yield();
+                }
             }
+
+            _identityProcessingEnabledForCurrentPath = ShouldEnableIdentityProcessing(path, items.Count);
+
+            ApplyFolderSortPreference(path);
 
             // Sort and populate
             var sorted = ApplySort(items);
@@ -184,7 +283,10 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
                 Items.Add(item);
             }
 
-            _ = HydrateIdentityColumnsAsync(ct);
+            if (_identityProcessingEnabledForCurrentPath)
+            {
+                _ = HydrateIdentityColumnsAsync(ct);
+            }
 
             IsEmpty = Items.Count == 0;
             UpdateStatusText();
@@ -340,8 +442,8 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
 
         item.Entry.FullPath = renamedPath;
         item.Entry.Extension = Path.GetExtension(newName);
-        item.Entry.TypeDescription = _shellService.GetTypeDescription(renamedPath);
-        item.Entry.IconIndex = _shellService.GetIconIndex(renamedPath, item.Entry.IsDirectory);
+        item.Entry.TypeDescription = GetTypeDescriptionFast(item.Entry);
+        item.Entry.IconIndex = 0;
         item.NotifyRenamed();
 
         MoveItemToSortedPosition(item);
@@ -467,6 +569,8 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
         TabState.SortColumn = SortColumn;
         TabState.SortAscending = SortAscending;
 
+        PersistCurrentFolderSortPreference();
+
         var sorted = ApplySort(Items.ToList());
         Items.Clear();
         foreach (var item in sorted) Items.Add(item);
@@ -588,14 +692,51 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
         return normalized;
     }
 
+    private void ApplyFolderSortPreference(string folderPath)
+    {
+        var normalizedPath = NormalizeNavigationPath(folderPath);
+        var persisted = _settingsService.GetFolderSort(normalizedPath);
+        if (persisted is null)
+            return;
+
+        var persistedColumn = string.IsNullOrWhiteSpace(persisted.SortColumn)
+            ? "Name"
+            : persisted.SortColumn;
+
+        SortColumn = persistedColumn;
+        SortAscending = persisted.SortAscending;
+        TabState.SortColumn = SortColumn;
+        TabState.SortAscending = SortAscending;
+    }
+
+    private void PersistCurrentFolderSortPreference()
+    {
+        if (string.IsNullOrWhiteSpace(CurrentPath))
+            return;
+
+        try
+        {
+            _settingsService.SaveFolderSort(CurrentPath, new FolderSortSettings
+            {
+                SortColumn = SortColumn,
+                SortAscending = SortAscending
+            });
+
+            _ = _settingsService.SaveAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Failed to persist folder sort settings for {Path}", CurrentPath);
+        }
+    }
+
     private void StartWatcher(string path)
     {
         try
         {
             _watcherHandle = _fileSystemService.WatchDirectory(path, change =>
             {
-                // Marshal to UI thread — the view will need to call DispatcherQueue.TryEnqueue
-                HandleFileSystemChange(change);
+                DispatchFileSystemChange(change);
             });
         }
         catch (Exception ex)
@@ -603,6 +744,29 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
             _logger.LogWarning(ex, "Failed to start FileSystemWatcher for {Path}", path);
             IsAutoRefreshPaused = true;
         }
+    }
+
+    private void DispatchFileSystemChange(FileSystemChangeEvent change)
+    {
+        void Execute()
+        {
+            try
+            {
+                HandleFileSystemChange(change);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Failed to process file system change {ChangeType} for {Path}", change.ChangeType, change.FullPath);
+            }
+        }
+
+        if (_uiContext is null || ReferenceEquals(SynchronizationContext.Current, _uiContext))
+        {
+            Execute();
+            return;
+        }
+
+        _uiContext.Post(_ => Execute(), null);
     }
 
     private void HandleFileSystemChange(FileSystemChangeEvent change)
@@ -631,7 +795,7 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
                             Attributes = attributes,
                             Extension = isDir ? string.Empty : Path.GetExtension(change.FullPath)
                         };
-                        entry.TypeDescription = _shellService.GetTypeDescription(change.FullPath);
+                        entry.TypeDescription = GetTypeDescriptionFast(entry);
                         var vm = new FileItemViewModel(entry) { IsNewItem = true };
                         Items.Add(vm);
 
@@ -641,10 +805,18 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
                         }
 
                         if (!isDir &&
+                            _identityProcessingEnabledForCurrentPath &&
                             _identityExtractionService.SupportsExtension(entry.Extension) &&
                             !ShouldSkipIndexing(entry))
                         {
                             _ = RefreshIdentityForSingleFileAsync(vm);
+                        }
+
+                        if (_identityProcessingEnabledForCurrentPath &&
+                            Items.Count >= IdentitySkipLargeFolderThreshold)
+                        {
+                            _identityProcessingEnabledForCurrentPath = false;
+                            _logger.LogDebug("Identity processing suspended for high-volume folder {Path}", CurrentPath);
                         }
 
                         UpdateStatusText();
@@ -661,6 +833,7 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
                 }
 
                 if (changed is not null &&
+                    _identityProcessingEnabledForCurrentPath &&
                     !changed.Entry.IsDirectory &&
                     _identityExtractionService.SupportsExtension(changed.Entry.Extension) &&
                     !ShouldSkipIndexing(changed.Entry))
@@ -690,7 +863,7 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
                     renamed.Entry.Name = change.Name;
                     renamed.Entry.FullPath = change.FullPath;
                     renamed.Entry.Extension = Path.GetExtension(change.FullPath);
-                    renamed.Entry.TypeDescription = _shellService.GetTypeDescription(change.FullPath);
+                    renamed.Entry.TypeDescription = GetTypeDescriptionFast(renamed.Entry);
                     renamed.NotifyNameChanged();
                     renamed.NotifyRenamed();
 
@@ -698,6 +871,7 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
                     _ = _identityCacheService.DeleteByNormalizedPathAsync(change.FullPath);
 
                     if (!renamed.Entry.IsDirectory &&
+                        _identityProcessingEnabledForCurrentPath &&
                         _identityExtractionService.SupportsExtension(renamed.Entry.Extension) &&
                         !ShouldSkipIndexing(renamed.Entry))
                     {
@@ -731,6 +905,9 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
 
     private async Task HydrateIdentityColumnsAsync(CancellationToken ct)
     {
+        if (!_identityProcessingEnabledForCurrentPath)
+            return;
+
         try
         {
             IsIdentityHydrationActive = true;
@@ -795,6 +972,8 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
                         identity = identity with { Revision = revisionFromFileName };
                     }
 
+                    identity = SanitizeIdentity(identity);
+
                     if (identity.HasAnyValue && NeedsIdentityUpdate(liveEntry.Item, identity))
                     {
                         cacheApplyQueue.Add((liveEntry.Item, identity));
@@ -845,6 +1024,8 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
                 {
                     identity = identity with { Revision = revisionFromFileName };
                 }
+
+                identity = SanitizeIdentity(identity);
 
                 if (!identity.HasAnyValue)
                     continue;
@@ -916,6 +1097,9 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
 
     private async Task RefreshIdentityForSingleFileAsync(FileItemViewModel item)
     {
+        if (!_identityProcessingEnabledForCurrentPath)
+            return;
+
         if (item.Entry.IsDirectory || ShouldSkipIndexing(item.Entry))
             return;
 
@@ -951,6 +1135,8 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
             {
                 identity = identity with { Revision = revisionFromFileName };
             }
+
+            identity = SanitizeIdentity(identity);
 
             if (!identity.HasAnyValue)
             {
@@ -990,6 +1176,282 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
             !string.Equals(item.ExtractedDocumentName, identity.DocumentName, StringComparison.Ordinal);
     }
 
+    private static DocumentIdentity SanitizeIdentity(DocumentIdentity identity)
+    {
+        if (!identity.HasAnyValue)
+            return identity;
+
+        var matchedProject = MatchAllowedProjectName(identity.ProjectTitle);
+        var revision = NormalizeRevision(identity.Revision);
+
+        return identity with
+        {
+            ProjectTitle = matchedProject,
+            Revision = revision
+        };
+    }
+
+    private static string NormalizeRevision(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return string.Empty;
+
+        var normalized = value.Trim();
+        return StrictRevisionRegex.IsMatch(normalized) ? normalized : string.Empty;
+    }
+
+    private static string MatchAllowedProjectName(string? extractedProject)
+    {
+        if (string.IsNullOrWhiteSpace(extractedProject))
+            return string.Empty;
+
+        EnsureAllowedProjectsLoaded();
+        var entries = _allowedProjectEntries;
+        if (entries.Count == 0)
+            return string.Empty;
+
+        var normalizedInput = NormalizeForProjectMatch(extractedProject);
+        if (string.IsNullOrWhiteSpace(normalizedInput))
+            return string.Empty;
+
+        var inputTokens = TokenizeForMatch(normalizedInput);
+        AllowedProjectEntry? bestEntry = null;
+        var bestScore = 0d;
+
+        foreach (var entry in entries)
+        {
+            if (string.Equals(entry.NormalizedName, normalizedInput, StringComparison.Ordinal))
+                return entry.CanonicalName;
+
+            var score = ComputeProjectMatchScore(normalizedInput, inputTokens, entry);
+            if (score > bestScore)
+            {
+                bestScore = score;
+                bestEntry = entry;
+            }
+        }
+
+        return bestEntry is not null && bestScore >= ProjectMatchThreshold
+            ? bestEntry.CanonicalName
+            : string.Empty;
+    }
+
+    private static double ComputeProjectMatchScore(
+        string normalizedInput,
+        HashSet<string> inputTokens,
+        AllowedProjectEntry candidate)
+    {
+        var levenshtein = ComputeLevenshteinSimilarity(normalizedInput, candidate.NormalizedName);
+        var tokenScore = ComputeTokenSimilarity(inputTokens, candidate.Tokens);
+        var containment = candidate.NormalizedName.Contains(normalizedInput, StringComparison.Ordinal) ||
+            normalizedInput.Contains(candidate.NormalizedName, StringComparison.Ordinal)
+            ? 1d
+            : 0d;
+
+        return (levenshtein * 0.6d) + (tokenScore * 0.3d) + (containment * 0.1d);
+    }
+
+    private static double ComputeLevenshteinSimilarity(string left, string right)
+    {
+        if (left.Length == 0 && right.Length == 0)
+            return 1d;
+
+        var distance = ComputeLevenshteinDistance(left, right);
+        var maxLength = Math.Max(left.Length, right.Length);
+        if (maxLength == 0)
+            return 1d;
+
+        return 1d - (distance / (double)maxLength);
+    }
+
+    private static int ComputeLevenshteinDistance(string left, string right)
+    {
+        if (left.Length == 0)
+            return right.Length;
+
+        if (right.Length == 0)
+            return left.Length;
+
+        var costs = new int[right.Length + 1];
+        for (var index = 0; index <= right.Length; index++)
+        {
+            costs[index] = index;
+        }
+
+        for (var i = 1; i <= left.Length; i++)
+        {
+            var diagonal = costs[0];
+            costs[0] = i;
+
+            for (var j = 1; j <= right.Length; j++)
+            {
+                var oldDiagonal = costs[j];
+                var substitutionCost = left[i - 1] == right[j - 1] ? 0 : 1;
+
+                costs[j] = Math.Min(
+                    Math.Min(costs[j] + 1, costs[j - 1] + 1),
+                    diagonal + substitutionCost);
+
+                diagonal = oldDiagonal;
+            }
+        }
+
+        return costs[right.Length];
+    }
+
+    private static double ComputeTokenSimilarity(HashSet<string> left, HashSet<string> right)
+    {
+        if (left.Count == 0 || right.Count == 0)
+            return 0d;
+
+        var intersection = left.Count(token => right.Contains(token));
+        return (2d * intersection) / (left.Count + right.Count);
+    }
+
+    private static HashSet<string> TokenizeForMatch(string normalized)
+    {
+        return normalized
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .ToHashSet(StringComparer.Ordinal);
+    }
+
+    private static string NormalizeForProjectMatch(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return string.Empty;
+
+        var formD = value.Normalize(NormalizationForm.FormD);
+        var builder = new StringBuilder(formD.Length);
+
+        foreach (var character in formD)
+        {
+            var category = CharUnicodeInfo.GetUnicodeCategory(character);
+            if (category == UnicodeCategory.NonSpacingMark)
+                continue;
+
+            if (char.IsLetterOrDigit(character))
+            {
+                builder.Append(char.ToLowerInvariant(character));
+            }
+            else
+            {
+                builder.Append(' ');
+            }
+        }
+
+        return Regex.Replace(builder.ToString(), @"\s+", " ").Trim();
+    }
+
+    private static void EnsureAllowedProjectsLoaded()
+    {
+        var csvPath = ResolveAllowedProjectsCsvPath();
+
+        if (string.IsNullOrWhiteSpace(csvPath) || !File.Exists(csvPath))
+        {
+            lock (AllowedProjectsLock)
+            {
+                _allowedProjectsCsvPath = csvPath;
+                _allowedProjectsCsvWriteUtc = DateTime.MinValue;
+                _allowedProjectEntries = [];
+            }
+
+            return;
+        }
+
+        var writeUtc = File.GetLastWriteTimeUtc(csvPath);
+
+        lock (AllowedProjectsLock)
+        {
+            if (string.Equals(_allowedProjectsCsvPath, csvPath, StringComparison.OrdinalIgnoreCase) &&
+                _allowedProjectsCsvWriteUtc == writeUtc &&
+                _allowedProjectEntries.Count > 0)
+            {
+                return;
+            }
+
+            var lines = File.ReadAllLines(csvPath);
+            var entries = new List<AllowedProjectEntry>(lines.Length);
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var line in lines)
+            {
+                var value = ParseProjectCsvValue(line);
+                if (string.IsNullOrWhiteSpace(value))
+                    continue;
+
+                if (value.Equals("project", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                var normalized = NormalizeForProjectMatch(value);
+                if (string.IsNullOrWhiteSpace(normalized))
+                    continue;
+
+                if (!seen.Add(normalized))
+                    continue;
+
+                entries.Add(new AllowedProjectEntry(value, normalized, TokenizeForMatch(normalized)));
+            }
+
+            _allowedProjectsCsvPath = csvPath;
+            _allowedProjectsCsvWriteUtc = writeUtc;
+            _allowedProjectEntries = entries;
+        }
+    }
+
+    private static string ParseProjectCsvValue(string line)
+    {
+        if (string.IsNullOrWhiteSpace(line))
+            return string.Empty;
+
+        var trimmed = line.Trim();
+        if (trimmed.Length >= 2 && trimmed[0] == '"' && trimmed[^1] == '"')
+        {
+            trimmed = trimmed[1..^1].Replace("\"\"", "\"");
+        }
+
+        return trimmed.Trim();
+    }
+
+    private static string ResolveAllowedProjectsCsvPath()
+    {
+        var envPath = Environment.GetEnvironmentVariable("FILEEXPLORER_ALLOWED_PROJECTS_CSV");
+        if (!string.IsNullOrWhiteSpace(envPath))
+        {
+            var expanded = Environment.ExpandEnvironmentVariables(envPath);
+            if (File.Exists(expanded))
+                return Path.GetFullPath(expanded);
+        }
+
+        var repoRoot = FindRepositoryRoot();
+        if (!string.IsNullOrWhiteSpace(repoRoot))
+        {
+            var fromRepo = Path.Combine(repoRoot, "Development", "allowed_project_names.csv");
+            if (File.Exists(fromRepo))
+                return fromRepo;
+        }
+
+        var fromBaseDev = Path.Combine(AppContext.BaseDirectory, "Development", "allowed_project_names.csv");
+        if (File.Exists(fromBaseDev))
+            return fromBaseDev;
+
+        var fromBase = Path.Combine(AppContext.BaseDirectory, "allowed_project_names.csv");
+        return File.Exists(fromBase) ? fromBase : string.Empty;
+    }
+
+    private static string? FindRepositoryRoot()
+    {
+        var current = new DirectoryInfo(AppContext.BaseDirectory);
+        for (var i = 0; i < 12 && current is not null; i++)
+        {
+            if (File.Exists(Path.Combine(current.FullName, "FileExplorer.sln")))
+                return current.FullName;
+
+            current = current.Parent;
+        }
+
+        return null;
+    }
+
     private static bool ShouldSkipIndexing(FileSystemEntry entry)
     {
         if (entry.IsDirectory)
@@ -1002,6 +1464,17 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
             return true;
 
         return false;
+    }
+
+    private static string GetTypeDescriptionFast(FileSystemEntry entry)
+    {
+        if (entry.IsDirectory)
+            return "File folder";
+
+        if (string.IsNullOrWhiteSpace(entry.Extension))
+            return "File";
+
+        return $"{entry.Extension.TrimStart('.').ToUpperInvariant()} File";
     }
 
     private static string ExtractRevisionFromFileName(string fileName)
@@ -1087,10 +1560,44 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
         _loadCts?.Cancel();
         _loadCts?.Dispose();
         _watcherHandle?.Dispose();
+        _ = _tabPathStateService.DeleteByTabIdAsync(TabState.Id);
     }
 
     /// <summary>Returns the current tab title as a fallback header text.</summary>
     public override string ToString() => TabTitle;
+
+    private static bool ShouldEnableIdentityProcessing(string currentPath, int itemCount)
+    {
+        if (itemCount >= IdentitySkipLargeFolderThreshold)
+            return false;
+
+        if (string.IsNullOrWhiteSpace(currentPath))
+            return true;
+
+        string normalizedCurrentPath;
+        try
+        {
+            normalizedCurrentPath = NormalizeNavigationPath(currentPath);
+        }
+        catch
+        {
+            return true;
+        }
+
+        var downloadsPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
+        try
+        {
+            var normalizedDownloadsPath = NormalizeNavigationPath(downloadsPath);
+            if (string.Equals(normalizedCurrentPath, normalizedDownloadsPath, StringComparison.OrdinalIgnoreCase))
+                return false;
+        }
+        catch
+        {
+            // Keep indexing enabled when Downloads path normalization is unavailable.
+        }
+
+        return true;
+    }
 }
 
 /// <summary>

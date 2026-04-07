@@ -29,4 +29,10 @@ public interface ISettingsService
 
     /// <summary>Gets persisted column widths for a specific folder.</summary>
     Dictionary<string, double>? GetColumnWidths(string folderPath);
+
+    /// <summary>Saves sort settings for a specific folder.</summary>
+    void SaveFolderSort(string folderPath, FolderSortSettings sortSettings);
+
+    /// <summary>Gets persisted sort settings for a specific folder.</summary>
+    FolderSortSettings? GetFolderSort(string folderPath);
 }
