@@ -8,7 +8,8 @@
 
     <UserControl.Resources>
         <StaticResource x:Key="ListViewItemBackground" ResourceKey="SubtleFillColorTransparentBrush" />
-        <StaticResource x:Key="ListViewItemBackgroundPointerOver" ResourceKey="SubtleFillColorTransparentBrush" />
+        <SolidColorBrush x:Key="FileRowHoverOverlayBrush" Color="#146FA8DC" />
+        <StaticResource x:Key="ListViewItemBackgroundPointerOver" ResourceKey="FileRowHoverOverlayBrush" />
         <StaticResource x:Key="ListViewItemBackgroundPressed" ResourceKey="SubtleFillColorTransparentBrush" />
         <SolidColorBrush x:Key="ListViewItemBackgroundSelected" Color="Transparent" />
         <SolidColorBrush x:Key="ListViewItemBackgroundSelectedPointerOver" Color="Transparent" />
@@ -50,7 +51,7 @@
                 IsHitTestVisible="False">
                 <TextBlock
                     Text="{Binding Header}"
-                    FontSize="11"
+                    FontSize="12.1"
                     FontWeight="SemiBold"
                     Opacity="0.75"
                     CharacterSpacing="40" />
@@ -101,7 +102,7 @@
                             <TextBlock
                                 Grid.Column="1"
                                 Text="{Binding Name}"
-                                FontSize="12"
+                                FontSize="13.2"
                                 Foreground="{Binding Extension, Converter={StaticResource ExtensionBrush}}"
                                 VerticalAlignment="Center"
                                 TextTrimming="CharacterEllipsis" />
@@ -121,7 +122,7 @@
                             Text="{Binding EditingName, Mode=TwoWay}"
                             Visibility="{Binding IsRenaming, Converter={StaticResource BoolToVis}}"
                             MinWidth="150"
-                            FontSize="12"
+                            FontSize="13.2"
                             VerticalAlignment="Center"
                             KeyDown="RenameTextBox_KeyDown"
                             LostFocus="RenameTextBox_LostFocus"
@@ -133,7 +134,7 @@
                         Grid.Column="1"
                         Text="{Binding ExtractedProject}"
                         VerticalAlignment="Center"
-                        FontSize="12"
+                        FontSize="13.2"
                         Opacity="0.85"
                         TextTrimming="CharacterEllipsis"
                         Padding="8,0,0,0" />
@@ -143,7 +144,7 @@
                         Grid.Column="2"
                         Text="{Binding ExtractedRevision}"
                         VerticalAlignment="Center"
-                        FontSize="12"
+                        FontSize="13.2"
                         Opacity="0.85"
                         TextTrimming="CharacterEllipsis"
                         Padding="8,0,0,0" />
@@ -153,7 +154,7 @@
                         Grid.Column="3"
                         Text="{Binding DateModifiedText}"
                         VerticalAlignment="Center"
-                        FontSize="12"
+                        FontSize="13.2"
                         Opacity="0.8"
                         Padding="8,0,0,0" />
 
@@ -162,7 +163,7 @@
                         Grid.Column="4"
                         Text="{Binding SizeText}"
                         VerticalAlignment="Center"
-                        FontSize="12"
+                        FontSize="13.2"
                         Opacity="0.8"
                         HorizontalTextAlignment="Right"
                         Padding="0,0,8,0" />
@@ -216,7 +217,7 @@
                 Tag="Name"
                 RightTapped="ColumnHeader_RightTapped">
                 <StackPanel Orientation="Horizontal" Spacing="4">
-                    <TextBlock Text="Name" FontWeight="SemiBold" FontSize="12" />
+                    <TextBlock Text="Name" FontWeight="SemiBold" FontSize="13.2" />
                     <FontIcon
                         x:Name="NameSortIcon"
                         FontFamily="{StaticResource SymbolThemeFontFamily}"
@@ -242,7 +243,7 @@
                 Tag="ExtractedProject"
                 RightTapped="ColumnHeader_RightTapped">
                 <StackPanel Orientation="Horizontal" Spacing="4">
-                    <TextBlock Text="Project" FontWeight="SemiBold" FontSize="12" />
+                    <TextBlock Text="Project" FontWeight="SemiBold" FontSize="13.2" />
                     <FontIcon
                         x:Name="ProjectSortIcon"
                         FontFamily="{StaticResource SymbolThemeFontFamily}"
@@ -266,7 +267,7 @@
                 Tag="ExtractedRevision"
                 RightTapped="ColumnHeader_RightTapped">
                 <StackPanel Orientation="Horizontal" Spacing="4">
-                    <TextBlock Text="Revision" FontWeight="SemiBold" FontSize="12" />
+                    <TextBlock Text="Revision" FontWeight="SemiBold" FontSize="13.2" />
                     <FontIcon
                         x:Name="RevisionSortIcon"
                         FontFamily="{StaticResource SymbolThemeFontFamily}"
@@ -290,7 +291,7 @@
                 Tag="DateModified"
                 RightTapped="ColumnHeader_RightTapped">
                 <StackPanel Orientation="Horizontal" Spacing="4">
-                    <TextBlock Text="Date modified" FontWeight="SemiBold" FontSize="12" />
+                    <TextBlock Text="Date modified" FontWeight="SemiBold" FontSize="13.2" />
                     <FontIcon
                         x:Name="DateSortIcon"
                         FontFamily="{StaticResource SymbolThemeFontFamily}"
@@ -314,7 +315,7 @@
                 Tag="Size"
                 RightTapped="ColumnHeader_RightTapped">
                 <StackPanel Orientation="Horizontal" Spacing="4">
-                    <TextBlock Text="Size" FontWeight="SemiBold" FontSize="12" />
+                    <TextBlock Text="Size" FontWeight="SemiBold" FontSize="13.2" />
                     <FontIcon
                         x:Name="SizeSortIcon"
                         FontFamily="{StaticResource SymbolThemeFontFamily}"
@@ -427,7 +428,7 @@
             <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
                 <ProgressRing Width="12" Height="12" IsActive="True" />
                 <TextBlock Text="Processing folder... list locked to top row"
-                           FontSize="11"
+                           FontSize="12.1"
                            Opacity="0.9"
                            VerticalAlignment="Center" />
             </StackPanel>

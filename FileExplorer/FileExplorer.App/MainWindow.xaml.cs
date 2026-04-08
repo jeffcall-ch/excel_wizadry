@@ -52,6 +52,7 @@ public sealed partial class MainWindow : Window
 
     private readonly DispatcherQueue _dispatcherQueue;
     private readonly IFileSystemService _fileSystemService;
+    private readonly ISettingsService _settingsService;
     private readonly HashSet<TabContentViewModel> _tabPropertySubscriptions = [];
     private readonly Dictionary<Guid, TabViewItem> _tabItemsById = [];
     private bool _suppressTabSelectionChanged;
@@ -163,6 +164,7 @@ public sealed partial class MainWindow : Window
         Hwnd = WindowNative.GetWindowHandle(this);
         _dispatcherQueue = DispatcherQueue.GetForCurrentThread();
         _fileSystemService = App.Services.GetRequiredService<IFileSystemService>();
+        _settingsService = App.Services.GetRequiredService<ISettingsService>();
         ViewModel = App.Services.GetRequiredService<MainViewModel>();
         ViewModel.Tabs.CollectionChanged += Tabs_CollectionChanged;
         RootGrid.DataContext = ViewModel;
@@ -2116,6 +2118,124 @@ public sealed partial class MainWindow : Window
         ActivateRightPaneForKeyboardNavigation();
     }
 
+    public async Task AddFavoritesAsync(IReadOnlyList<string> paths)
+    {
+        if (paths.Count == 0)
+            return;
+
+        var normalizedPaths = paths
+            .Select(NormalizeFavoritePath)
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (normalizedPaths.Count == 0)
+            return;
+
+        var favorites = _settingsService.Settings.Favorites;
+        var existing = favorites
+            .Select(favorite => NormalizeFavoritePath(favorite.Path))
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var changed = false;
+
+        foreach (var favoritePath in normalizedPaths)
+        {
+            if (existing.Add(favoritePath))
+            {
+                favorites.Add(new FavoriteEntrySettings { Path = favoritePath });
+                changed = true;
+            }
+        }
+
+        if (!changed)
+            return;
+
+        _settingsService.Settings.Favorites = NormalizeAndSortFavorites(favorites);
+
+        await _settingsService.SaveAsync();
+        InspectorSidebar.RefreshFavorites();
+    }
+
+    public async Task RemoveFavoritesAsync(IReadOnlyList<string> paths)
+    {
+        if (paths.Count == 0)
+            return;
+
+        var normalizedToRemove = paths
+            .Select(NormalizeFavoritePath)
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        if (normalizedToRemove.Count == 0)
+            return;
+
+        var favorites = _settingsService.Settings.Favorites;
+        var updated = favorites
+            .Where(favorite => !normalizedToRemove.Contains(NormalizeFavoritePath(favorite.Path)))
+            .ToList();
+
+        if (updated.Count == favorites.Count)
+            return;
+
+        _settingsService.Settings.Favorites = NormalizeAndSortFavorites(updated);
+        await _settingsService.SaveAsync();
+        InspectorSidebar.RefreshFavorites();
+    }
+
+    public async Task RenameFavoriteAsync(string path, string? alias)
+    {
+        var normalizedPath = NormalizeFavoritePath(path);
+        if (string.IsNullOrWhiteSpace(normalizedPath))
+            return;
+
+        var favorites = _settingsService.Settings.Favorites;
+        var favorite = favorites.FirstOrDefault(item =>
+            string.Equals(NormalizeFavoritePath(item.Path), normalizedPath, StringComparison.OrdinalIgnoreCase));
+
+        if (favorite is null)
+            return;
+
+        favorite.Alias = NormalizeFavoriteAlias(alias, normalizedPath);
+        _settingsService.Settings.Favorites = NormalizeAndSortFavorites(favorites);
+
+        await _settingsService.SaveAsync();
+        InspectorSidebar.RefreshFavorites();
+    }
+
+    public async Task OpenFavoritePathAsync(string path)
+    {
+        try
+        {
+            var normalizedPath = NormalizeFavoritePath(path);
+            if (string.IsNullOrWhiteSpace(normalizedPath))
+                return;
+
+            if (Directory.Exists(normalizedPath))
+            {
+                await OpenFolderInNewTabAsync(normalizedPath);
+                return;
+            }
+
+            if (File.Exists(normalizedPath))
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = normalizedPath,
+                    UseShellExecute = true,
+                    WorkingDirectory = Path.GetDirectoryName(normalizedPath) ?? Environment.CurrentDirectory
+                });
+                return;
+            }
+
+            ShowError($"Favorite path not found: {normalizedPath}");
+        }
+        catch (Exception ex)
+        {
+            ShowError($"Failed to open favorite: {ex.Message}");
+        }
+    }
+
     public void OpenFolderInNewWindow(string path)
     {
         path = TabContentViewModel.NormalizeNavigationPath(path);
@@ -2154,6 +2274,75 @@ public sealed partial class MainWindow : Window
         {
             OpenFolderInNewWindow(path);
         };
+    }
+
+    private static string NormalizeFavoritePath(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            return string.Empty;
+
+        var candidate = path.Trim().Trim('"');
+
+        try
+        {
+            candidate = TabContentViewModel.NormalizeNavigationPath(candidate);
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            // Keep best-effort raw path for display/open attempts.
+        }
+
+        return candidate;
+    }
+
+    private static List<FavoriteEntrySettings> NormalizeAndSortFavorites(IEnumerable<FavoriteEntrySettings> favorites)
+    {
+        var deduped = new Dictionary<string, FavoriteEntrySettings>(StringComparer.OrdinalIgnoreCase);
+        foreach (var favorite in favorites)
+        {
+            var normalizedPath = NormalizeFavoritePath(favorite.Path);
+            if (string.IsNullOrWhiteSpace(normalizedPath))
+                continue;
+
+            var normalizedAlias = NormalizeFavoriteAlias(favorite.Alias, normalizedPath);
+            if (!deduped.TryGetValue(normalizedPath, out var existing))
+            {
+                deduped[normalizedPath] = new FavoriteEntrySettings
+                {
+                    Path = normalizedPath,
+                    Alias = normalizedAlias
+                };
+                continue;
+            }
+
+            if (string.IsNullOrWhiteSpace(existing.Alias) && !string.IsNullOrWhiteSpace(normalizedAlias))
+            {
+                existing.Alias = normalizedAlias;
+            }
+        }
+
+        return deduped.Values
+            .OrderBy(GetFavoriteSortLabel, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(favorite => favorite.Path, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private static string GetFavoriteSortLabel(FavoriteEntrySettings favorite)
+    {
+        return string.IsNullOrWhiteSpace(favorite.Alias)
+            ? GetPathLeafLabel(favorite.Path)
+            : favorite.Alias;
+    }
+
+    private static string? NormalizeFavoriteAlias(string? alias, string favoritePath)
+    {
+        if (string.IsNullOrWhiteSpace(alias))
+            return null;
+
+        var trimmed = alias.Trim();
+        return string.Equals(trimmed, GetPathLeafLabel(favoritePath), StringComparison.OrdinalIgnoreCase)
+            ? null
+            : trimmed;
     }
 
     private static TreeViewItem? FindAncestorOfType<TreeViewItem>(DependencyObject? element) where TreeViewItem : DependencyObject

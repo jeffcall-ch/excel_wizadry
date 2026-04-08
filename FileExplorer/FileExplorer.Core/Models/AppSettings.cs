@@ -41,6 +41,26 @@ public sealed class AppSettings
 
     /// <summary>Persisted sort settings per folder path.</summary>
     public Dictionary<string, FolderSortSettings> PerFolderSortSettings { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Pinned favorite file/folder items shown in the right pane.</summary>
+    public List<FavoriteEntrySettings> Favorites { get; set; } = [];
+
+    /// <summary>Legacy favorite paths from older builds. Used for one-time migration.</summary>
+    public List<string> FavoritePaths { get; set; } = [];
+}
+
+/// <summary>
+/// Persisted favorite entry with path and optional custom alias.
+/// </summary>
+public sealed class FavoriteEntrySettings
+{
+    /// <summary>Full file or folder path.</summary>
+    [JsonPropertyName("path")]
+    public string Path { get; set; } = string.Empty;
+
+    /// <summary>Optional user-defined display alias.</summary>
+    [JsonPropertyName("alias")]
+    public string? Alias { get; set; }
 }
 
 /// <summary>

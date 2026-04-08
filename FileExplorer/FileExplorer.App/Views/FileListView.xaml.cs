@@ -644,6 +644,15 @@ public sealed partial class FileListView : UserControl
                 };
             }
 
+            if (contextPaths.Count > 0 && App.MainWindow is MainWindow mainWindowForFavorites)
+            {
+                flyout.Items.Add(new MenuFlyoutItem { Text = "Make favorite", Icon = new FontIcon { Glyph = "\uE734" } });
+                ((MenuFlyoutItem)flyout.Items[^1]).Click += (_, _) =>
+                {
+                    _ = mainWindowForFavorites.AddFavoritesAsync(contextPaths);
+                };
+            }
+
             if (_isSearchMode)
             {
                 flyout.Items.Add(new MenuFlyoutItem { Text = "Open file location", Icon = new FontIcon { Glyph = "\uE8DA" } });

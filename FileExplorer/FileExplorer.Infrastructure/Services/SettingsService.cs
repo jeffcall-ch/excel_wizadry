@@ -53,6 +53,7 @@ public sealed class SettingsService : ISettingsService
             if (loaded is not null)
             {
                 NormalizePerFolderSettingsCollections(loaded);
+                NormalizeFavoritesCollection(loaded);
                 Settings = loaded;
                 _logger.LogInformation("Settings loaded from {Path}", _settingsFilePath);
             }
@@ -196,6 +197,76 @@ public sealed class SettingsService : ISettingsService
                 pair => NormalizeFolderSettingsKey(pair.Key),
                 pair => pair.Value,
                 StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static void NormalizeFavoritesCollection(AppSettings settings)
+    {
+        var sourceFavorites = settings.Favorites;
+        if (sourceFavorites.Count == 0 && settings.FavoritePaths.Count > 0)
+        {
+            sourceFavorites = settings.FavoritePaths
+                .Select(path => new FavoriteEntrySettings { Path = path })
+                .ToList();
+        }
+
+        var deduped = new Dictionary<string, FavoriteEntrySettings>(StringComparer.OrdinalIgnoreCase);
+        foreach (var favorite in sourceFavorites)
+        {
+            var normalizedPath = NormalizeFolderSettingsKey(favorite.Path);
+            if (string.IsNullOrWhiteSpace(normalizedPath))
+                continue;
+
+            var normalizedAlias = NormalizeFavoriteAlias(favorite.Alias, normalizedPath);
+
+            if (!deduped.TryGetValue(normalizedPath, out var existing))
+            {
+                deduped[normalizedPath] = new FavoriteEntrySettings
+                {
+                    Path = normalizedPath,
+                    Alias = normalizedAlias
+                };
+
+                continue;
+            }
+
+            if (string.IsNullOrWhiteSpace(existing.Alias) && !string.IsNullOrWhiteSpace(normalizedAlias))
+            {
+                existing.Alias = normalizedAlias;
+            }
+        }
+
+        settings.Favorites = deduped.Values
+            .OrderBy(GetFavoriteSortLabel, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(favorite => favorite.Path, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        // Legacy property is retained only for migration.
+        settings.FavoritePaths = [];
+    }
+
+    private static string GetFavoriteSortLabel(FavoriteEntrySettings favorite)
+    {
+        return string.IsNullOrWhiteSpace(favorite.Alias)
+            ? GetPathLeafLabel(favorite.Path)
+            : favorite.Alias;
+    }
+
+    private static string? NormalizeFavoriteAlias(string? alias, string path)
+    {
+        if (string.IsNullOrWhiteSpace(alias))
+            return null;
+
+        var trimmed = alias.Trim();
+        return string.Equals(trimmed, GetPathLeafLabel(path), StringComparison.OrdinalIgnoreCase)
+            ? null
+            : trimmed;
+    }
+
+    private static string GetPathLeafLabel(string path)
+    {
+        var trimmed = path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var leaf = Path.GetFileName(trimmed);
+        return string.IsNullOrWhiteSpace(leaf) ? path : leaf;
     }
 
     private static string NormalizeFolderSettingsKey(string folderPath)
