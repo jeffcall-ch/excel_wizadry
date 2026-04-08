@@ -57,4 +57,56 @@ public sealed class FileSystemEntry
 
     /// <summary>Parent directory path.</summary>
     public string? ParentPath => Path.GetDirectoryName(FullPath);
+
+    /// <summary>Stable file identity key used for diff/reconciliation.</summary>
+    public string FileKey => $"{NormalizePathForKey(FullPath)}|{(IsDirectory ? 1 : 0)}|{Size}|{DateModified.UtcTicks}";
+
+    /// <inheritdoc/>
+    public override bool Equals(object? obj)
+    {
+        if (ReferenceEquals(this, obj))
+            return true;
+
+        if (obj is not FileSystemEntry other)
+            return false;
+
+        return IsDirectory == other.IsDirectory &&
+               Size == other.Size &&
+               DateModified.UtcTicks == other.DateModified.UtcTicks &&
+               string.Equals(NormalizePathForKey(FullPath), NormalizePathForKey(other.FullPath), StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <inheritdoc/>
+    public override int GetHashCode()
+    {
+        var hash = new HashCode();
+        hash.Add(NormalizePathForKey(FullPath), StringComparer.OrdinalIgnoreCase);
+        hash.Add(IsDirectory);
+        hash.Add(Size);
+        hash.Add(DateModified.UtcTicks);
+        return hash.ToHashCode();
+    }
+
+    private static string NormalizePathForKey(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            return string.Empty;
+
+        var candidate = path.Trim();
+        if (candidate.StartsWith(@"\\?\UNC\", StringComparison.OrdinalIgnoreCase))
+            candidate = @"\\" + candidate[8..];
+        else if (candidate.StartsWith(@"\\?\", StringComparison.OrdinalIgnoreCase))
+            candidate = candidate[4..];
+
+        try
+        {
+            candidate = Path.GetFullPath(candidate);
+        }
+        catch
+        {
+            // Keep best-effort key when normalization fails.
+        }
+
+        return candidate.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+    }
 }

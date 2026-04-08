@@ -73,9 +73,12 @@ public sealed partial class MainWindow : Window
     private bool _shortcutDeepPreloadStarted;
     private bool _isShortcutOpenInProgress;
     private bool _startupWindowStateApplied;
+    private bool _isActivationRefreshInProgress;
+    private DateTimeOffset _lastActivationRefreshUtc = DateTimeOffset.MinValue;
     private const int ShortcutMenuMaxItems = 50;
     private const int ShortcutMenuMaxSubfolders = 50;
     private const int ShortcutMenuMaxDepth = 64;
+    private static readonly TimeSpan ActivationRefreshMinInterval = TimeSpan.FromSeconds(1);
     private const double FlyoutDetailsFontSize = 12;
     private const double FlyoutDetailsMinHeight = 22;
 
@@ -198,6 +201,29 @@ public sealed partial class MainWindow : Window
         if (_windowWasDeactivated)
         {
             _windowWasDeactivated = false;
+            _ = RefreshAfterWindowActivationAsync();
+        }
+    }
+
+    private async Task RefreshAfterWindowActivationAsync()
+    {
+        if (_isActivationRefreshInProgress || ViewModel.ActiveTab is null)
+            return;
+
+        var now = DateTimeOffset.UtcNow;
+        if (now - _lastActivationRefreshUtc < ActivationRefreshMinInterval)
+            return;
+
+        _isActivationRefreshInProgress = true;
+        _lastActivationRefreshUtc = now;
+
+        try
+        {
+            await RefreshActiveTabAsync();
+        }
+        finally
+        {
+            _isActivationRefreshInProgress = false;
         }
     }
 
@@ -446,6 +472,8 @@ public sealed partial class MainWindow : Window
 
     private void ActivateTab(TabContentViewModel tab, bool syncTabViewSelection)
     {
+        var wasDifferentTab = !ReferenceEquals(ViewModel.ActiveTab, tab);
+
         if (syncTabViewSelection && _tabItemsById.TryGetValue(tab.TabState.Id, out var tabViewItem) && !ReferenceEquals(TabViewControl.SelectedItem, tabViewItem))
         {
             _suppressTabSelectionChanged = true;
@@ -471,6 +499,11 @@ public sealed partial class MainWindow : Window
         UpdateAddressBar(tab.CurrentPath);
         UpdateStatusBar();
         UpdateSearchPlaceholder(tab.CurrentPath);
+
+        if (wasDifferentTab)
+        {
+            _ = RefreshActiveTabAsync();
+        }
     }
 
     #endregion
@@ -587,7 +620,7 @@ public sealed partial class MainWindow : Window
         CloseShortcutLauncherFlyoutAndFocusRightPane();
         try
         {
-            await OpenFolderInNewTabAsync(path);
+            await OpenFolderOrActivateExistingTabAsync(path);
         }
         finally
         {
@@ -604,7 +637,16 @@ public sealed partial class MainWindow : Window
 
         _ = ViewModel.GoUpAsync();
     }
-    private void RefreshButton_Click(object sender, RoutedEventArgs e) => _ = ViewModel.RefreshAsync();
+    private void RefreshButton_Click(object sender, RoutedEventArgs e) => _ = RefreshActiveTabAsync();
+
+    private async Task RefreshActiveTabAsync()
+    {
+        if (ViewModel.ActiveTab is null || string.IsNullOrWhiteSpace(ViewModel.ActiveTab.CurrentPath))
+            return;
+
+        await ViewModel.RefreshAsync();
+        UpdateStatusBar();
+    }
 
     private void SubscribeToTabNavigation(TabContentViewModel? tab)
     {
@@ -1782,6 +1824,12 @@ public sealed partial class MainWindow : Window
     {
         try
         {
+            if (TryResolveShortcutFolderTarget(path, out var shortcutFolderPath))
+            {
+                _ = OpenFolderFromShortcutFlyoutAsync(shortcutFolderPath);
+                return;
+            }
+
             if (Directory.Exists(path))
             {
                 _ = OpenFolderFromShortcutFlyoutAsync(path);
@@ -1796,6 +1844,33 @@ public sealed partial class MainWindow : Window
         {
             ShowError($"Failed to open item: {ex.Message}");
         }
+    }
+
+    private bool TryResolveShortcutFolderTarget(string path, out string folderPath)
+    {
+        folderPath = string.Empty;
+
+        if (!string.Equals(Path.GetExtension(path), ".lnk", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        var resolvedTarget = ResolveShortcutTargetPath(path);
+        if (string.IsNullOrWhiteSpace(resolvedTarget))
+            return false;
+
+        try
+        {
+            resolvedTarget = TabContentViewModel.NormalizeNavigationPath(resolvedTarget);
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return false;
+        }
+
+        if (!Directory.Exists(resolvedTarget))
+            return false;
+
+        folderPath = resolvedTarget;
+        return true;
     }
 
     private void EnsureShortcutsFolderExists()
@@ -2118,6 +2193,19 @@ public sealed partial class MainWindow : Window
         ActivateRightPaneForKeyboardNavigation();
     }
 
+    public async Task OpenFolderOrActivateExistingTabAsync(string path)
+    {
+        await ViewModel.OpenFolderOrActivateExistingTabAsync(path);
+        UpdateTabBindings();
+
+        if (ViewModel.ActiveTab is not null)
+        {
+            ActivateTab(ViewModel.ActiveTab, syncTabViewSelection: true);
+        }
+
+        ActivateRightPaneForKeyboardNavigation();
+    }
+
     public async Task AddFavoritesAsync(IReadOnlyList<string> paths)
     {
         if (paths.Count == 0)
@@ -2211,9 +2299,15 @@ public sealed partial class MainWindow : Window
             if (string.IsNullOrWhiteSpace(normalizedPath))
                 return;
 
+            if (TryResolveShortcutFolderTarget(normalizedPath, out var shortcutFolderPath))
+            {
+                await OpenFolderOrActivateExistingTabAsync(shortcutFolderPath);
+                return;
+            }
+
             if (Directory.Exists(normalizedPath))
             {
-                await OpenFolderInNewTabAsync(normalizedPath);
+                await OpenFolderOrActivateExistingTabAsync(normalizedPath);
                 return;
             }
 
@@ -2664,7 +2758,7 @@ public sealed partial class MainWindow : Window
         {
             PreviewColumn.Width = new GridLength(ViewModel.PreviewPaneWidth > 0 ? ViewModel.PreviewPaneWidth : 320);
         }));
-        Content.KeyboardAccelerators.Add(CreateAccelerator(Windows.System.VirtualKey.F5, Windows.System.VirtualKeyModifiers.None, (_, _) => _ = ViewModel.RefreshAsync()));
+        Content.KeyboardAccelerators.Add(CreateAccelerator(Windows.System.VirtualKey.F5, Windows.System.VirtualKeyModifiers.None, (_, _) => _ = RefreshActiveTabAsync()));
         Content.KeyboardAccelerators.Add(CreateAccelerator(Windows.System.VirtualKey.Delete, Windows.System.VirtualKeyModifiers.None, (_, _) =>
         {
             if (IsTextInputFocused())

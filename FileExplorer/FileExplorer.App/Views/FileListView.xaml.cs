@@ -209,7 +209,14 @@ public sealed partial class FileListView : UserControl
             _dateDividerRefreshCts?.Cancel();
             _dateDividerRefreshCts?.Dispose();
             _dateDividerRefreshCts = null;
-            RefreshItemsSourceForCurrentSort();
+
+            // Keep the existing ungrouped source to avoid full ListView rebind/flicker
+            // on every add/remove/move operation (e.g., rename reorder).
+            if (!ReferenceEquals(FileListView_Inner.ItemsSource, _currentTab.Items))
+            {
+                RefreshItemsSourceForCurrentSort();
+            }
+
             return;
         }
 
@@ -258,7 +265,10 @@ public sealed partial class FileListView : UserControl
             return;
         }
 
-        FileListView_Inner.ItemsSource = _currentTab.Items;
+        if (!ReferenceEquals(FileListView_Inner.ItemsSource, _currentTab.Items))
+        {
+            FileListView_Inner.ItemsSource = _currentTab.Items;
+        }
     }
 
     private bool ShouldUseDateDividers()
@@ -617,11 +627,11 @@ public sealed partial class FileListView : UserControl
             ((MenuFlyoutItem)flyout.Items[^1]).Click += (_, _) =>
             {
                 var sel = _currentTab.SelectedItems.FirstOrDefault();
-                if (sel is not null) _ = _currentTab.OpenItemAsync(sel);
+                if (sel is not null) _ = OpenItemFromListAsync(sel);
             };
 
-            var folderTarget = ResolveFolderTarget(tappedItem);
-            if (folderTarget is not null && App.MainWindow is MainWindow mainWindow)
+            var folderTargetPath = ResolveFolderTargetPath(tappedItem);
+            if (folderTargetPath is not null && App.MainWindow is MainWindow mainWindow)
             {
                 flyout.Items.Add(new MenuFlyoutItem { Text = "Open in new tab", Icon = new FontIcon { Glyph = "\uE7C3" } });
                 ((MenuFlyoutItem)flyout.Items[^1]).Click += (_, _) =>
@@ -629,7 +639,7 @@ public sealed partial class FileListView : UserControl
                     flyout.Hide();
                     DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
                     {
-                        _ = mainWindow.OpenFolderInNewTabAsync(folderTarget.Entry.FullPath);
+                        _ = mainWindow.OpenFolderInNewTabAsync(folderTargetPath!);
                     });
                 };
 
@@ -639,7 +649,7 @@ public sealed partial class FileListView : UserControl
                     flyout.Hide();
                     DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
                     {
-                        mainWindow.OpenFolderInNewWindow(folderTarget.Entry.FullPath);
+                        mainWindow.OpenFolderInNewWindow(folderTargetPath!);
                     });
                 };
             }
@@ -796,15 +806,21 @@ public sealed partial class FileListView : UserControl
     private void RevealItem(FileItemViewModel item)
     {
         FileListView_Inner.SelectedItem = item;
-        FileListView_Inner.ScrollIntoView(item, ScrollIntoViewAlignment.Leading);
 
         DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
         {
-            FileListView_Inner.UpdateLayout();
-            if (FileListView_Inner.ContainerFromItem(item) is ListViewItem container)
-            {
-                container.StartBringIntoView();
+            var container = FileListView_Inner.ContainerFromItem(item) as ListViewItem;
 
+            // Avoid forced viewport jumps after rename commit; only ensure visibility while
+            // an item is actively in rename mode (new folder or inline rename edit).
+            if (container is null && item.IsRenaming)
+            {
+                FileListView_Inner.ScrollIntoView(item);
+                container = FileListView_Inner.ContainerFromItem(item) as ListViewItem;
+            }
+
+            if (container is not null)
+            {
                 if (item.IsRenaming && FindChildOfType<TextBox>(container) is TextBox tb)
                 {
                     tb.Focus(FocusState.Programmatic);
@@ -824,6 +840,15 @@ public sealed partial class FileListView : UserControl
 
     private async Task OpenItemFromListAsync(FileItemViewModel item)
     {
+        var shortcutFolderTarget = ResolveShortcutFolderTarget(item);
+        if (shortcutFolderTarget is not null && App.MainWindow is MainWindow mainWindow)
+        {
+            _restoreFocusAfterNavigation = true;
+            ClearTransientSelection();
+            await mainWindow.OpenFolderInNewTabAsync(shortcutFolderTarget);
+            return;
+        }
+
         if (item.Entry.IsDirectory || string.Equals(item.Entry.Extension, ".lnk", StringComparison.OrdinalIgnoreCase))
         {
             _restoreFocusAfterNavigation = true;
@@ -1271,15 +1296,45 @@ public sealed partial class FileListView : UserControl
         args.Handled = true;
     }
 
-    private FileItemViewModel? ResolveFolderTarget(FileItemViewModel? tappedItem)
+    private string? ResolveFolderTargetPath(FileItemViewModel? tappedItem)
     {
         if (_currentTab is null)
             return null;
 
-        if (_currentTab.SelectedItems.Count == 1 && _currentTab.SelectedItems[0].Entry.IsDirectory)
-            return _currentTab.SelectedItems[0];
+        if (_currentTab.SelectedItems.Count == 1)
+        {
+            var selectedPath = ResolveDirectoryOrShortcutFolderPath(_currentTab.SelectedItems[0]);
+            if (!string.IsNullOrWhiteSpace(selectedPath))
+                return selectedPath;
+        }
 
-        return tappedItem?.Entry.IsDirectory == true ? tappedItem : null;
+        return ResolveDirectoryOrShortcutFolderPath(tappedItem);
+    }
+
+    private string? ResolveShortcutFolderTarget(FileItemViewModel item)
+    {
+        if (!string.Equals(item.Entry.Extension, ".lnk", StringComparison.OrdinalIgnoreCase))
+            return null;
+
+        return ResolveDirectoryOrShortcutFolderPath(item);
+    }
+
+    private string? ResolveDirectoryOrShortcutFolderPath(FileItemViewModel? item)
+    {
+        if (item is null)
+            return null;
+
+        if (item.Entry.IsDirectory)
+            return item.Entry.FullPath;
+
+        if (!string.Equals(item.Entry.Extension, ".lnk", StringComparison.OrdinalIgnoreCase))
+            return null;
+
+        var shellService = App.Services.GetRequiredService<Core.Interfaces.IShellIntegrationService>();
+        var shortcutTarget = shellService.ResolveShortcutTarget(item.Entry.FullPath);
+        return !string.IsNullOrWhiteSpace(shortcutTarget) && Directory.Exists(shortcutTarget)
+            ? shortcutTarget
+            : null;
     }
 
     #endregion
@@ -1306,10 +1361,7 @@ public sealed partial class FileListView : UserControl
 
     private void ColGrip_Name_ManipulationDelta(object sender, ManipulationDeltaRoutedEventArgs e)
     {
-        // Name column is star-sized; convert ActualWidth to pixel on first drag
-        if (ColName.Width.IsStar)
-            ColName.Width = new GridLength(ColName.ActualWidth);
-        ResizeColumn(ColName, e.Delta.Translation.X, 100);
+        ResizeColumn(ColName, e.Delta.Translation.X, 300);
     }
 
     private void ColGrip_ExtractedProject_ManipulationDelta(object sender, ManipulationDeltaRoutedEventArgs e)
@@ -1422,7 +1474,7 @@ public sealed partial class FileListView : UserControl
     private void ApplyColumnWidths(ListViewItem container)
     {
         var grid = FindDataRowGrid(container);
-        if (grid is null || grid.ColumnDefinitions.Count < 5) return;
+        if (grid is null || grid.ColumnDefinitions.Count < 6) return;
 
         // Mirror the header column widths exactly
         grid.ColumnDefinitions[0].Width = ColName.Width;
@@ -1430,6 +1482,7 @@ public sealed partial class FileListView : UserControl
         grid.ColumnDefinitions[2].Width = new GridLength(ColExtractedRevision.Width.Value);
         grid.ColumnDefinitions[3].Width = new GridLength(ColDateModified.Width.Value);
         grid.ColumnDefinitions[4].Width = new GridLength(ColSize.Width.Value);
+        grid.ColumnDefinitions[5].Width = ColTrailingSpacer.Width;
     }
 
     private static Grid? FindDataRowGrid(DependencyObject parent)
@@ -1438,7 +1491,9 @@ public sealed partial class FileListView : UserControl
         for (int i = 0; i < count; i++)
         {
             var child = VisualTreeHelper.GetChild(parent, i);
-            if (child is Grid g && g.ColumnDefinitions.Count == 5)
+            if (child is Grid g &&
+                g.Tag is string tag &&
+                string.Equals(tag, "DataRowGrid", StringComparison.Ordinal))
                 return g;
             var found = FindDataRowGrid(child);
             if (found is not null) return found;

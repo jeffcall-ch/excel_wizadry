@@ -21,7 +21,7 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
 {
     private const int IdentitySkipLargeFolderThreshold = 900;
     private const int IdentityApplyBatchSize = 50;
-    private static readonly TimeSpan IdentityApplyDebounce = TimeSpan.FromMilliseconds(250);
+    private static readonly TimeSpan IdentityApplyDebounce = TimeSpan.FromMilliseconds(150);
     private const double ProjectMatchThreshold = 0.88;
 
     private static readonly Regex RevisionFromFileNameRegex = new(
@@ -257,20 +257,9 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
             // Stop previous watcher
             _watcherHandle?.Dispose();
 
-            // Start enumeration
-            var items = new List<FileItemViewModel>();
-            await foreach (var entry in _fileSystemService.EnumerateDirectoryAsync(path, ct))
-            {
-                ct.ThrowIfCancellationRequested();
-                entry.TypeDescription = GetTypeDescriptionFast(entry);
-                entry.IconIndex = 0;
-                items.Add(new FileItemViewModel(entry));
-
-                if (items.Count % 250 == 0)
-                {
-                    await Task.Yield();
-                }
-            }
+            // Stage 1: fetch light snapshot off the UI thread (name/path/type/date/size).
+            var snapshot = await LoadDirectorySnapshotAsync(path, ct);
+            var items = snapshot.Select(entry => new FileItemViewModel(entry)).ToList();
 
             _identityProcessingEnabledForCurrentPath = ShouldEnableIdentityProcessing(path, items.Count);
 
@@ -278,10 +267,7 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
 
             // Sort and populate
             var sorted = ApplySort(items);
-            foreach (var item in sorted)
-            {
-                Items.Add(item);
-            }
+            await AppendItemsInChunksAsync(sorted, ct, 50);
 
             if (_identityProcessingEnabledForCurrentPath)
             {
@@ -314,6 +300,52 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
         finally
         {
             IsLoading = false;
+        }
+    }
+
+    private async Task<List<FileSystemEntry>> LoadDirectorySnapshotAsync(string path, CancellationToken ct)
+    {
+        return await Task.Run(async () =>
+        {
+            var snapshot = new List<FileSystemEntry>(capacity: 256);
+
+            await foreach (var entry in _fileSystemService.EnumerateDirectoryAsync(path, ct))
+            {
+                ct.ThrowIfCancellationRequested();
+                entry.TypeDescription = GetTypeDescriptionFast(entry);
+                entry.IconIndex = 0;
+                snapshot.Add(entry);
+
+                if (snapshot.Count % 512 == 0)
+                    await Task.Yield();
+            }
+
+            return snapshot;
+        }, ct);
+    }
+
+    private async Task AppendItemsInChunksAsync(IReadOnlyList<FileItemViewModel> items, CancellationToken ct, int batchSize)
+    {
+        if (items.Count == 0)
+            return;
+
+        var firstBatchCount = Math.Min(batchSize, items.Count);
+        for (var index = 0; index < firstBatchCount; index++)
+        {
+            ct.ThrowIfCancellationRequested();
+            Items.Add(items[index]);
+        }
+
+        if (firstBatchCount >= items.Count)
+            return;
+
+        for (var index = firstBatchCount; index < items.Count; index++)
+        {
+            ct.ThrowIfCancellationRequested();
+            Items.Add(items[index]);
+
+            if (((index - firstBatchCount) + 1) % batchSize == 0)
+                await Task.Yield();
         }
     }
 
@@ -609,15 +641,7 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
 
         try
         {
-            var latestEntries = new List<FileSystemEntry>();
-
-            await foreach (var entry in _fileSystemService.EnumerateDirectoryAsync(path, CancellationToken.None))
-            {
-                latestEntries.Add(entry);
-
-                if (latestEntries.Count % 250 == 0)
-                    await Task.Yield();
-            }
+            var latestEntries = await LoadDirectorySnapshotAsync(path, CancellationToken.None);
 
             _identityProcessingEnabledForCurrentPath = ShouldEnableIdentityProcessing(path, latestEntries.Count);
 
@@ -625,10 +649,7 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
             var latestByPath = new Dictionary<string, FileSystemEntry>(comparer);
             foreach (var entry in latestEntries)
             {
-                if (!latestByPath.ContainsKey(entry.FullPath))
-                {
-                    latestByPath[entry.FullPath] = entry;
-                }
+                latestByPath.TryAdd(entry.FullPath, entry);
             }
 
             if (!HasMaterialChanges(latestByPath))
@@ -658,7 +679,9 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
 
             var hasChanges = false;
             var affectedItems = new List<FileItemViewModel>();
+            var reorderCandidates = new HashSet<FileItemViewModel>();
 
+            var removedCount = 0;
             foreach (var item in Items.ToList())
             {
                 if (!latestByPath.ContainsKey(item.Entry.FullPath))
@@ -666,9 +689,14 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
                     Items.Remove(item);
                     _ = _identityCacheService.DeleteByNormalizedPathAsync(item.Entry.FullPath);
                     hasChanges = true;
+                    removedCount++;
+
+                    if (removedCount % 64 == 0)
+                        await Task.Yield();
                 }
             }
 
+            var processedCount = 0;
             foreach (var (fullPath, latestEntry) in latestByPath)
             {
                 if (existingByPath.TryGetValue(fullPath, out var existingItem))
@@ -678,8 +706,13 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
                         PreserveComputedFields(existingItem.Entry, latestEntry);
                         existingItem.ApplyEntrySnapshot(latestEntry);
                         affectedItems.Add(existingItem);
+                        reorderCandidates.Add(existingItem);
                         hasChanges = true;
                     }
+
+                    processedCount++;
+                    if (processedCount % 128 == 0)
+                        await Task.Yield();
 
                     continue;
                 }
@@ -689,22 +722,17 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
                 var newItem = new FileItemViewModel(latestEntry);
                 Items.Add(newItem);
                 affectedItems.Add(newItem);
+                 reorderCandidates.Add(newItem);
                 hasChanges = true;
+
+                processedCount++;
+                if (processedCount % 128 == 0)
+                    await Task.Yield();
             }
 
-            var sortedItems = ApplySort(Items.ToList());
-            for (var index = 0; index < sortedItems.Count; index++)
+            if (reorderCandidates.Count > 0)
             {
-                var expectedItem = sortedItems[index];
-                if (ReferenceEquals(Items[index], expectedItem))
-                    continue;
-
-                var currentIndex = Items.IndexOf(expectedItem);
-                if (currentIndex >= 0)
-                {
-                    Items.Move(currentIndex, index);
-                    hasChanges = true;
-                }
+                hasChanges |= await ApplyTargetedReorderAsync(reorderCandidates);
             }
 
             if (hasChanges && selectedPaths.Count > 0)
@@ -761,6 +789,42 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
         {
             _logger.LogError(ex, "Failed to refresh directory incrementally: {Path}", path);
         }
+    }
+
+    private async Task<bool> ApplyTargetedReorderAsync(IReadOnlyCollection<FileItemViewModel> candidates)
+    {
+        if (candidates.Count == 0 || Items.Count <= 1)
+            return false;
+
+        var sortedItems = ApplySort(Items.ToList());
+        var expectedIndexByPath = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        for (var index = 0; index < sortedItems.Count; index++)
+        {
+            var path = sortedItems[index].Entry.FullPath;
+            if (!expectedIndexByPath.ContainsKey(path))
+            {
+                expectedIndexByPath[path] = index;
+            }
+        }
+
+        var moveCount = 0;
+        foreach (var item in candidates)
+        {
+            if (!expectedIndexByPath.TryGetValue(item.Entry.FullPath, out var expectedIndex))
+                continue;
+
+            var currentIndex = Items.IndexOf(item);
+            if (currentIndex < 0 || currentIndex == expectedIndex)
+                continue;
+
+            Items.Move(currentIndex, expectedIndex);
+            moveCount++;
+
+            if (moveCount % 64 == 0)
+                await Task.Yield();
+        }
+
+        return moveCount > 0;
     }
 
     private static bool AreEntriesEquivalent(FileSystemEntry existing, FileSystemEntry latest)
@@ -951,20 +1015,11 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
 
     private void StartWatcher(string path)
     {
-        try
-        {
-            _watcherHandle = _fileSystemService.WatchDirectory(path, change =>
-            {
-                DispatchFileSystemChange(change);
-            });
-
-            IsAutoRefreshPaused = false;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to start FileSystemWatcher for {Path}", path);
-            IsAutoRefreshPaused = true;
-        }
+        // Auto-refresh from file system notifications is intentionally disabled to avoid
+        // frequent redraws; refresh is driven explicitly by UI actions and focus/tab events.
+        _watcherHandle?.Dispose();
+        _watcherHandle = null;
+        IsAutoRefreshPaused = true;
     }
 
     private void DispatchFileSystemChange(FileSystemChangeEvent change)

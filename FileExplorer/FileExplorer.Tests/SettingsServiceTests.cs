@@ -40,7 +40,7 @@ public class SettingsServiceTests : IDisposable
         _service.Settings.ShowFileExtensions.Should().BeTrue();
         _service.Settings.ShowPreviewPane.Should().BeFalse();
         _service.Settings.NavigationPaneWidth.Should().Be(250);
-        _service.Settings.RestoreSessionOnLaunch.Should().BeTrue();
+        _service.Settings.RestoreSessionOnLaunch.Should().BeFalse();
     }
 
     [Fact]

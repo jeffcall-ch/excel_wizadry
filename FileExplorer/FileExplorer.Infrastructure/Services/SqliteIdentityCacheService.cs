@@ -297,6 +297,12 @@ public sealed class SqliteIdentityCacheService : IIdentityCacheService
                 CREATE INDEX IF NOT EXISTS IX_FileIdentityCache_ParentPath
                     ON FileIdentityCache (ParentPath);
 
+                CREATE INDEX IF NOT EXISTS idx_parent_path
+                    ON FileIdentityCache (ParentPath);
+
+                CREATE INDEX IF NOT EXISTS idx_ParentPath
+                    ON FileIdentityCache (ParentPath);
+
                 CREATE INDEX IF NOT EXISTS IX_FileIdentityCache_LastWriteTime
                     ON FileIdentityCache (LastWriteTime);
                 """;

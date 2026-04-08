@@ -104,7 +104,7 @@ public class TabContentViewModelTests
         viewModel.CurrentPath.Should().Be(driveRoot);
         viewModel.TabState.CurrentPath.Should().Be(driveRoot);
         fileSystem.Verify(service => service.EnumerateDirectoryAsync(driveRoot, It.IsAny<CancellationToken>()), Times.Once);
-        fileSystem.Verify(service => service.WatchDirectory(driveRoot, It.IsAny<Action<FileSystemChangeEvent>>()), Times.Once);
+        fileSystem.Verify(service => service.WatchDirectory(driveRoot, It.IsAny<Action<FileSystemChangeEvent>>()), Times.Never);
     }
 
     [Fact]

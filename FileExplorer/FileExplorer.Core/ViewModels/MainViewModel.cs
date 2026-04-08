@@ -145,6 +145,28 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         await OpenTabAsync(normalizedPath, null);
     }
 
+    public async Task OpenFolderOrActivateExistingTabAsync(string path)
+    {
+        var normalizedPath = NormalizeStartupPath(path);
+        if (!Directory.Exists(normalizedPath))
+            return;
+
+        foreach (var tab in Tabs)
+        {
+            var tabPath = NormalizePathForTabLookup(tab.CurrentPath);
+            if (string.IsNullOrWhiteSpace(tabPath))
+                continue;
+
+            if (string.Equals(tabPath, normalizedPath, StringComparison.OrdinalIgnoreCase))
+            {
+                ActiveTab = tab;
+                return;
+            }
+        }
+
+        await OpenTabAsync(normalizedPath, null);
+    }
+
     private async Task OpenTabAsync(string path, TabState? state)
     {
         var tab = _tabFactory(state);
@@ -185,6 +207,21 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private static string NormalizeStartupPath(string path)
     {
         return TabContentViewModel.NormalizeNavigationPath(path);
+    }
+
+    private static string NormalizePathForTabLookup(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            return string.Empty;
+
+        try
+        {
+            return TabContentViewModel.NormalizeNavigationPath(path);
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return path.Trim();
+        }
     }
 
     /// <summary>Closes the specified tab.</summary>
@@ -326,7 +363,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     [RelayCommand]
     public async Task RefreshAsync()
     {
-        if (ActiveTab is not null) await ActiveTab.RefreshAsync();
+        if (ActiveTab is not null)
+            await ActiveTab.RefreshAsync();
     }
 
     /// <summary>Navigates to a path typed in the address bar.</summary>

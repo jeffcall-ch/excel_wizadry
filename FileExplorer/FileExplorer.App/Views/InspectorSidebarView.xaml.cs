@@ -88,9 +88,21 @@ public sealed partial class InspectorSidebarView : UserControl
         if (ReferenceEquals(_currentTab, tab))
             return;
 
+        // The sidebar content is global (shortcut roots + favorites), not per-tab.
+        // Avoid clearing/rebuilding lists on tab switches to prevent visual flicker.
         _currentTab = tab;
-        ReloadNavigationHubRoots();
-        ReloadFavorites();
+
+        // Load lazily when the app is fully initialized; constructor-time load can happen
+        // before MainWindow/settings are ready and leave lists empty.
+        if (_navigationHubRoots.Count == 0)
+        {
+            ReloadNavigationHubRoots();
+        }
+
+        if (_favorites.Count == 0 && _settingsService.Settings.Favorites.Count > 0)
+        {
+            ReloadFavorites();
+        }
     }
 
     public void RefreshFavorites()

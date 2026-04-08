@@ -69,6 +69,7 @@
                 Padding="0">
 
                 <Grid
+                    Tag="DataRowGrid"
                     Padding="8,0"
                     Height="22"
                     MinHeight="22"
@@ -76,11 +77,12 @@
                     Background="Transparent">
 
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="532" />
                         <ColumnDefinition Width="180" />
                         <ColumnDefinition Width="80" />
                         <ColumnDefinition Width="160" />
                         <ColumnDefinition Width="90" />
+                        <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
 
                     <!-- Name column -->
@@ -201,11 +203,12 @@
             </FlyoutBase.AttachedFlyout>
 
             <Grid.ColumnDefinitions>
-                <ColumnDefinition x:Name="ColName" Width="*" MinWidth="100" />
+                <ColumnDefinition x:Name="ColName" Width="532" MinWidth="300" />
                 <ColumnDefinition x:Name="ColExtractedProject" Width="180" MinWidth="120" />
                 <ColumnDefinition x:Name="ColExtractedRevision" Width="80" MinWidth="60" />
                 <ColumnDefinition x:Name="ColDateModified" Width="160" MinWidth="80" />
                 <ColumnDefinition x:Name="ColSize" Width="90" MinWidth="50" />
+                <ColumnDefinition x:Name="ColTrailingSpacer" Width="*" MinWidth="0" />
             </Grid.ColumnDefinitions>
 
             <Button
@@ -332,6 +335,7 @@
             Grid.Row="1"
             SelectionMode="Extended"
             IsItemClickEnabled="True"
+            ItemContainerTransitions="{x:Null}"
             PreviewKeyDown="FileListView_Inner_PreviewKeyDown"
             KeyUp="FileListView_Inner_KeyUp"
             ItemClick="FileList_ItemClick"
