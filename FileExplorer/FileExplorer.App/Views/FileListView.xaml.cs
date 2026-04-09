@@ -26,7 +26,10 @@ public sealed partial class FileListView : UserControl
     private static readonly SolidColorBrush TransparentSelectionBrush = new(Colors.Transparent);
     private static readonly SolidColorBrush SelectedRowOverlayBrush = new(Windows.UI.Color.FromArgb(40, 120, 120, 120));
 
-    private sealed class DateDividerGroup : ObservableCollection<FileItemViewModel>
+    // Plain List<T> intentionally: ObservableCollection would fire one CollectionChanged per item
+    // during BuildDateDividerGroups, causing O(n) layout passes on the ListView.
+    // The outer _dateDividerGroups ObservableCollection handles group-level change notifications.
+    private sealed class DateDividerGroup : List<FileItemViewModel>
     {
         public DateDividerGroup(string header)
         {
@@ -84,6 +87,8 @@ public sealed partial class FileListView : UserControl
             return;
         }
 
+        var bsw = System.Diagnostics.Stopwatch.StartNew();
+
         if (_currentTab is not null)
         {
             _currentTab.Items.CollectionChanged -= CurrentTab_ItemsCollectionChanged;
@@ -91,20 +96,69 @@ public sealed partial class FileListView : UserControl
             _currentTab.RevealItemRequested -= CurrentTab_RevealItemRequested;
         }
 
-        // Force container recycle before switching tabs so old rows never blend with new tab content.
-        FileListView_Inner.ItemsSource = null;
+        // ── Cycle 1 (this frame) ──────────────────────────────────────────────
+        // Determine whether the incoming tab will use the grouped (date-divider) source.
+        bool newTabIsGrouped = string.Equals(tab.SortColumn, "DateModified", StringComparison.OrdinalIgnoreCase)
+                               && !tab.SortAscending;
+        bool currentSourceIsGrouped = ReferenceEquals(FileListView_Inner.ItemsSource, _groupedItemsSource.View);
+
+        if (currentSourceIsGrouped)
+        {
+            if (!newTabIsGrouped)
+            {
+                // Switching to a flat tab: detach the grouped source FIRST so the subsequent
+                // _dateDividerGroups.Clear() fires its CollectionChanged(Reset) into nothing —
+                // no WinUI container-recycling work happens on the UI thread.
+                FileListView_Inner.ItemsSource = null;
+                _dateDividerGroups.Clear();
+            }
+            else
+            {
+                // Staying on a grouped (DateModified) tab: keep ItemsSource attached so the Reset
+                // recycles visible containers back into the VSP pool — cycle-2 retrieves them
+                // when it populates the new tab's groups, making grouped→grouped switches faster.
+                _dateDividerGroups.Clear();
+            }
+        }
+        else
+        {
+            // Coming from a flat source (or null): detach so cycle-2 picks the right source.
+            FileListView_Inner.ItemsSource = null;
+        }
 
         _currentTab = tab;
-        RefreshItemsSourceForCurrentSort();
         ClearTransientSelection();
         UpdateEmptyState();
         UpdateSortIndicators();
-
         ApplyLoadingVisualState(tab.IsLoading);
 
+        // Subscribe BEFORE dispatching so no CollectionChanged events are missed.
         tab.Items.CollectionChanged += CurrentTab_ItemsCollectionChanged;
         tab.PropertyChanged += CurrentTab_PropertyChanged;
         tab.RevealItemRequested += CurrentTab_RevealItemRequested;
+
+        System.Diagnostics.Debug.WriteLine($"[BindToTab] cycle-1 (shell visible): {bsw.ElapsedMilliseconds} ms  items={tab.Items.Count}  path={tab.CurrentPath}");
+
+        // ── Cycle 2 (next frame, Normal priority) ────────────────────────────
+        // Attach the real data source.  WinUI realises only the visible viewport
+        // containers — the list appears populated without blocking the first frame.
+        DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Normal, () =>
+        {
+            if (!ReferenceEquals(_currentTab, tab))
+                return; // Tab was switched again before this frame — skip.
+
+            RefreshItemsSourceForCurrentSort();
+            System.Diagnostics.Debug.WriteLine($"[BindToTab] cycle-2 (items attached): {bsw.ElapsedMilliseconds} ms  items={tab.Items.Count}");
+
+            // Do NOT call QueueRefreshDateDividers() here.
+            // RefreshItemsSourceForCurrentSort() just built the date groups from the current items.
+            // Calling QueueRefreshDateDividers() would schedule a second BuildDateDividerGroups()
+            // + Source re-assignment 250 ms later — nothing will have changed, but the CVS fires
+            // CollectionChanged(Reset) which recycles and re-creates every visible row = the
+            // "full row blink" seen after switching to a date-sorted tab.
+            // Date-divider refreshes for real data changes are triggered by
+            // CurrentTab_ItemsCollectionChanged and CurrentTab_PropertyChanged(IsLoading).
+        });
     }
 
     private void CurrentTab_ItemsCollectionChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
@@ -260,9 +314,26 @@ public sealed partial class FileListView : UserControl
         if (ShouldUseDateDividers())
         {
             BuildDateDividerGroups();
+            // Always re-assign Source after building groups.
+            // DateDividerGroup : List<T> is not an ObservableCollection — the CollectionViewSource
+            // cannot observe individual item additions.  It snapshots each group's contents when
+            // the group is added to _dateDividerGroups.  BuildDateDividerGroups() adds items to a
+            // group AFTER adding the group to _dateDividerGroups, so the CVS snapshot is empty.
+            // Re-assigning Source forces the CVS to re-read all groups and their items in full.
             _groupedItemsSource.Source = _dateDividerGroups;
-            FileListView_Inner.ItemsSource = _groupedItemsSource.View;
+            if (!ReferenceEquals(FileListView_Inner.ItemsSource, _groupedItemsSource.View))
+                FileListView_Inner.ItemsSource = _groupedItemsSource.View;
             return;
+        }
+
+        // When the ListView currently holds a grouped CollectionViewSource.View, replacing it
+        // directly with a flat ObservableCollection costs ~90 ms because WinUI reconciles the
+        // full group/container tree against the new flat list.
+        // Clearing the outer group collection first fires a single Reset event, leaving the
+        // grouped view empty. The subsequent flat assignment is then an empty→N swap: < 5 ms.
+        if (ReferenceEquals(FileListView_Inner.ItemsSource, _groupedItemsSource.View))
+        {
+            _dateDividerGroups.Clear();
         }
 
         if (!ReferenceEquals(FileListView_Inner.ItemsSource, _currentTab.Items))
@@ -293,13 +364,23 @@ public sealed partial class FileListView : UserControl
             var header = GetDateDividerLabel(item.Entry.DateModified.LocalDateTime);
             if (!string.Equals(header, currentHeader, StringComparison.Ordinal))
             {
+                // Commit the PREVIOUS group (fully populated) before opening a new one.
+                // The CollectionViewSource snapshots group items when CollectionChanged fires;
+                // if we add the group while it is still empty the CVS sees 0 items and headers
+                // appear without rows.  Adding only completed groups avoids this.
+                if (currentGroup is not null)
+                    _dateDividerGroups.Add(currentGroup);
+
                 currentGroup = new DateDividerGroup(header);
-                _dateDividerGroups.Add(currentGroup);
                 currentHeader = header;
             }
 
             currentGroup!.Add(item);
         }
+
+        // Commit the last group.
+        if (currentGroup is not null)
+            _dateDividerGroups.Add(currentGroup);
     }
 
     private static string GetDateDividerLabel(DateTime itemLocalTime)
@@ -1001,6 +1082,11 @@ public sealed partial class FileListView : UserControl
             _currentTab.SelectedItems.Clear();
         }
 
+        // Capture the currently-selected items BEFORE clearing so we can reset only those
+        // selection-frame borders. Using ApplySelectionFrames() would iterate ALL items via
+        // ContainerFromIndex(i), which is O(n) and the dominant cost of tab switching.
+        var prevSelected = FileListView_Inner.SelectedItems.OfType<FileItemViewModel>().ToList();
+
         _isClearingSelection = true;
         try
         {
@@ -1012,7 +1098,12 @@ public sealed partial class FileListView : UserControl
             _isClearingSelection = false;
         }
 
-        ApplySelectionFrames();
+        // O(previously_selected_count) — typically 0 on a tab switch, never O(total items).
+        foreach (var item in prevSelected)
+        {
+            if (FileListView_Inner.ContainerFromItem(item) is ListViewItem container)
+                ApplySelectionFrame(container);
+        }
     }
 
     private bool TryApplyPendingSelectionAfterGoUp()

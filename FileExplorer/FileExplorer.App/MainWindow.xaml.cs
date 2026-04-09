@@ -53,6 +53,7 @@ public sealed partial class MainWindow : Window
     private readonly DispatcherQueue _dispatcherQueue;
     private readonly IFileSystemService _fileSystemService;
     private readonly ISettingsService _settingsService;
+    private readonly IDirectorySnapshotCache _snapshotCache;
     private readonly HashSet<TabContentViewModel> _tabPropertySubscriptions = [];
     private readonly Dictionary<Guid, TabViewItem> _tabItemsById = [];
     private bool _suppressTabSelectionChanged;
@@ -67,10 +68,12 @@ public sealed partial class MainWindow : Window
     private List<ShortcutRootEntryData> _shortcutRootCache = [];
     private readonly ConcurrentDictionary<string, IReadOnlyList<string>> _breadcrumbSiblingCache = new(StringComparer.OrdinalIgnoreCase);
     private MenuFlyout? _shortcutLauncherFlyout;
+    private readonly Dictionary<string, MenuFlyout> _hubChildrenFlyoutCache = new(StringComparer.OrdinalIgnoreCase);
     private CancellationTokenSource? _breadcrumbSiblingCts;
     private int _breadcrumbSiblingRequestId;
     private bool _shortcutPreloadStarted;
     private bool _shortcutDeepPreloadStarted;
+    private bool _snapshotPrefetchStarted;
     private bool _isShortcutOpenInProgress;
     private bool _startupWindowStateApplied;
     private bool _isActivationRefreshInProgress;
@@ -168,8 +171,14 @@ public sealed partial class MainWindow : Window
         _dispatcherQueue = DispatcherQueue.GetForCurrentThread();
         _fileSystemService = App.Services.GetRequiredService<IFileSystemService>();
         _settingsService = App.Services.GetRequiredService<ISettingsService>();
+        _snapshotCache = App.Services.GetRequiredService<IDirectorySnapshotCache>();
         ViewModel = App.Services.GetRequiredService<MainViewModel>();
         ViewModel.Tabs.CollectionChanged += Tabs_CollectionChanged;
+        // Single authoritative ActivateTab path: whenever MainViewModel.ActiveTab changes,
+        // bind the FileList and Inspector to the new tab. This covers new-tab, duplicate-tab,
+        // open-folder-in-new-tab, and Ctrl+1-9 keyboard shortcuts — all paths that change
+        // ActiveTab without going through TabView_SelectionChanged.
+        ViewModel.PropertyChanged += ViewModel_ActiveTabChanged;
         RootGrid.DataContext = ViewModel;
         _shortcutsFolderPath = ResolveShortcutsFolderPath();
         _fileSystemService.OperationError += FileSystemService_OperationError;
@@ -214,12 +223,23 @@ public sealed partial class MainWindow : Window
         if (now - _lastActivationRefreshUtc < ActivationRefreshMinInterval)
             return;
 
+        // Capture the tab NOW (synchronously, before any await) so that a concurrent
+        // tab-switch (TabView_SelectionChanged fires before Activated on pointer-click)
+        // cannot redirect this scan to the newly-selected tab.
+        var tabToRefresh = ViewModel.ActiveTab;
+
         _isActivationRefreshInProgress = true;
         _lastActivationRefreshUtc = now;
 
         try
         {
-            await RefreshActiveTabAsync();
+            if (!string.IsNullOrWhiteSpace(tabToRefresh.CurrentPath))
+            {
+                System.Diagnostics.Debug.WriteLine($"[WindowActivation] refresh start  path={tabToRefresh.CurrentPath}");
+                await tabToRefresh.RefreshAsync();
+                System.Diagnostics.Debug.WriteLine($"[WindowActivation] refresh done   path={tabToRefresh.CurrentPath}");
+                UpdateStatusBar();
+            }
         }
         finally
         {
@@ -312,6 +332,7 @@ public sealed partial class MainWindow : Window
 
     private void TabView_AddTabButtonClick(TabView sender, object args)
     {
+        System.Diagnostics.Debug.WriteLine("[NewTab] button clicked");
         _ = ViewModel.NewTabAsync();
         UpdateTabBindings();
     }
@@ -454,6 +475,24 @@ public sealed partial class MainWindow : Window
         }
     }
 
+    private void ViewModel_ActiveTabChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (!string.Equals(e.PropertyName, nameof(MainViewModel.ActiveTab), StringComparison.Ordinal))
+            return;
+
+        var tab = ViewModel.ActiveTab;
+        if (tab is null)
+            return;
+
+        // Always marshal to the UI thread — PropertyChanged can fire from any context.
+        _dispatcherQueue.TryEnqueue(DispatcherQueuePriority.Normal, () =>
+        {
+            // ActivateTab is idempotent for the same tab (BindToTab guards with ReferenceEquals).
+            // TabView_SelectionChanged may also call ActivateTab for the same tab — that is fine.
+            ActivateTab(tab, syncTabViewSelection: true);
+        });
+    }
+
     private void EnsureTabPropertySubscription(TabContentViewModel tab)
     {
         if (!_tabPropertySubscriptions.Add(tab))
@@ -474,6 +513,9 @@ public sealed partial class MainWindow : Window
     {
         var wasDifferentTab = !ReferenceEquals(ViewModel.ActiveTab, tab);
 
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        System.Diagnostics.Debug.WriteLine($"[TabSwitch] ActiveTab set: 0 ms  (wasDifferent={wasDifferentTab}  items={tab.Items.Count}  path={tab.CurrentPath})");
+
         if (syncTabViewSelection && _tabItemsById.TryGetValue(tab.TabState.Id, out var tabViewItem) && !ReferenceEquals(TabViewControl.SelectedItem, tabViewItem))
         {
             _suppressTabSelectionChanged = true;
@@ -491,18 +533,32 @@ public sealed partial class MainWindow : Window
         {
             ViewModel.ActiveTab = tab;
         }
+        System.Diagnostics.Debug.WriteLine($"[TabSwitch] ActiveTab set: {sw.ElapsedMilliseconds} ms");
 
         SubscribeToTabNavigation(tab);
+        System.Diagnostics.Debug.WriteLine($"[TabSwitch] SubscribeToTabNavigation: {sw.ElapsedMilliseconds} ms");
+
         FileList.BindToTab(tab);
+        System.Diagnostics.Debug.WriteLine($"[TabSwitch] BindToTab: {sw.ElapsedMilliseconds} ms  ({tab.Items.Count} items, sort={tab.SortColumn})");
+
         InspectorSidebar.BindToTab(tab);
+        System.Diagnostics.Debug.WriteLine($"[TabSwitch] InspectorSidebar.BindToTab: {sw.ElapsedMilliseconds} ms");
+
         UpdateWindowTitle(tab);
         UpdateAddressBar(tab.CurrentPath);
+        System.Diagnostics.Debug.WriteLine($"[TabSwitch] UpdateAddressBar: {sw.ElapsedMilliseconds} ms");
+
         UpdateStatusBar();
         UpdateSearchPlaceholder(tab.CurrentPath);
+        System.Diagnostics.Debug.WriteLine($"[TabSwitch] TOTAL synchronous work: {sw.ElapsedMilliseconds} ms  path={tab.CurrentPath}");
 
         if (wasDifferentTab)
         {
-            _ = RefreshActiveTabAsync();
+            // Tab switches never trigger a background disk scan.
+            // Cached items are shown instantly. The folder is re-scanned only when:
+            //   - the user presses the Refresh button ( RefreshButton_Click )
+            //   - the user returns to the app after being away ( RefreshAfterWindowActivationAsync )
+            System.Diagnostics.Debug.WriteLine($"[TabSwitch] no refresh on tab switch → cached view  path={tab.CurrentPath}");
         }
     }
 
@@ -1166,7 +1222,11 @@ public sealed partial class MainWindow : Window
 
             if (root.IsFolder && !string.IsNullOrWhiteSpace(root.FolderPath))
             {
-                var flyout = BuildShortcutHubChildrenFlyout(root.DisplayName, root.FolderPath);
+                if (!_hubChildrenFlyoutCache.TryGetValue(root.FolderPath, out var flyout))
+                {
+                    flyout = BuildShortcutHubChildrenFlyout(root.DisplayName, root.FolderPath);
+                    _hubChildrenFlyoutCache[root.FolderPath] = flyout;
+                }
                 flyout.ShowAt(anchor);
                 return;
             }
@@ -1275,6 +1335,10 @@ public sealed partial class MainWindow : Window
 
             // Phase 2: deep preload every reachable layer in background so submenu expansion is instant.
             QueueDeepShortcutCachePreload(rootEntries);
+
+            // Phase 3: pre-scan the directory contents of every shortcut target + 2 levels of
+            // subdirectories so the first NavigateAsync to any of those paths costs 0 ms disk I/O.
+            StartSnapshotPrefetch(rootEntries);
         }
         catch (Exception ex)
         {
@@ -1287,6 +1351,86 @@ public sealed partial class MainWindow : Window
         }
 
         return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Scans every shortcut target folder plus 2 levels of subfolders on a background thread
+    /// and stores the results in <see cref="IDirectorySnapshotCache"/>.  The first
+    /// NavigateAsync call to any of those paths consumes the snapshot and shows items
+    /// instantly with 0 ms disk I/O.
+    /// </summary>
+    private void StartSnapshotPrefetch(IReadOnlyList<ShortcutRootEntryData> rootEntries)
+    {
+        if (_snapshotPrefetchStarted)
+            return;
+
+        _snapshotPrefetchStarted = true;
+
+        _ = Task.Run(async () =>
+        {
+            var sw = Stopwatch.StartNew();
+            var scanned = 0;
+
+            // Scan level by level (BFS), all paths at a given depth in parallel.
+            // EnumerateDirectoryAsync is synchronous under the hood (Win32 FindFirstFileExW).
+            // Task.WhenAll(Select(async...)) does NOT give real parallelism for synchronous
+            // iterators — all lambdas run on the same thread.  Parallel.ForEachAsync schedules
+            // each iteration on a separate thread-pool thread, giving genuine I/O parallelism.
+            const int SnapshotMaxDepth = 8;
+            const int ScanParallelism = 8; // concurrent Win32 scans per level
+
+            var currentLevel = new List<string>();
+            foreach (var root in rootEntries)
+            {
+                if (!string.IsNullOrWhiteSpace(root.FolderPath))
+                    currentLevel.Add(root.FolderPath);
+            }
+
+            Debug.WriteLine($"[SnapshotPrefetch] starting  roots={currentLevel.Count}  maxDepth={SnapshotMaxDepth}");
+
+            for (int depth = 0; depth <= SnapshotMaxDepth && currentLevel.Count > 0; depth++)
+            {
+                var nextLevel = new ConcurrentBag<string>();
+                int levelScanned = 0;
+                int capturedDepth = depth;
+
+                await Parallel.ForEachAsync(
+                    currentLevel,
+                    new ParallelOptions { MaxDegreeOfParallelism = ScanParallelism },
+                    async (dirPath, ct) =>
+                    {
+                        try
+                        {
+                            var entries = new List<FileExplorer.Core.Models.FileSystemEntry>(capacity: 64);
+                            await foreach (var entry in _fileSystemService.EnumerateDirectoryAsync(dirPath, ct))
+                            {
+                                entry.TypeDescription = string.Empty;
+                                entries.Add(entry);
+                            }
+
+                            _snapshotCache.Store(dirPath, entries);
+                            Interlocked.Increment(ref levelScanned);
+
+                            if (capturedDepth < SnapshotMaxDepth)
+                            {
+                                foreach (var sub in GetSubfolders(dirPath, ShortcutMenuMaxSubfolders))
+                                    nextLevel.Add(sub.FullName);
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Debug.WriteLine($"[SnapshotPrefetch] skip {dirPath}: {ex.Message}");
+                        }
+                    });
+
+                scanned += levelScanned;
+                Debug.WriteLine($"[SnapshotPrefetch] depth={capturedDepth} done  scanned={scanned}  queued={nextLevel.Count}  ms={sw.ElapsedMilliseconds}");
+                currentLevel = nextLevel.ToList();
+            }
+
+            sw.Stop();
+            Debug.WriteLine($"[SnapshotPrefetch] done  scanned={scanned}  ms={sw.ElapsedMilliseconds}");
+        });
     }
 
     private void QueueDeepShortcutCachePreload(IReadOnlyList<ShortcutRootEntryData>? rootEntries = null)
@@ -1324,6 +1468,16 @@ public sealed partial class MainWindow : Window
                 }
 
                 Debug.WriteLine($"Shortcut cache preload phase2 elapsed: {stopwatch.ElapsedMilliseconds} ms, cached={deepEntries.Count}");
+
+                // Invalidate the cached flyout objects so the next open re-builds from the
+                // now-complete deep cache.  Do NOT rebuild here on the UI thread — building
+                // deeply-nested MenuFlyoutSubItem trees for every level at once would block
+                // the UI thread for seconds (one XAML object per cached entry, recursively).
+                _dispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
+                {
+                    _shortcutLauncherFlyout = null;
+                    _hubChildrenFlyoutCache.Clear();
+                });
             }
             catch (Exception ex)
             {
@@ -1446,17 +1600,16 @@ public sealed partial class MainWindow : Window
             }
         }
 
-        // If cache has a transient empty snapshot, force a direct refresh so first-open is never blank.
-        if (!HasFolderCacheItems(folderData))
+        // If the cache entry exists but is empty (transient warm-up race where phase-1 ran
+        // but found 0 items before the filesystem returned results), do a targeted sync refresh
+        // so the flyout is never shown blank on first open.
+        if (!HasFolderCacheItems(folderData) && !folderData.IsFullyLoaded)
         {
-            var refreshed = BuildFolderCacheData(folderPath, includeDescendants: folderData.IsFullyLoaded);
-            if (HasFolderCacheItems(refreshed) || !folderData.IsFullyLoaded)
+            var refreshed = BuildFolderCacheData(folderPath, includeDescendants: false);
+            folderData = refreshed;
+            lock (_shortcutCacheLock)
             {
-                folderData = refreshed;
-                lock (_shortcutCacheLock)
-                {
-                    _shortcutFolderCache[folderPath] = folderData;
-                }
+                _shortcutFolderCache[folderPath] = folderData;
             }
         }
 
@@ -1483,32 +1636,34 @@ public sealed partial class MainWindow : Window
         if (depth >= ShortcutMenuMaxDepth)
             return folderItem;
 
-        if (TryGetShortcutFolderCache(folderPath, out var cachedData))
+        // Pre-populate the three outermost levels eagerly from cache (depth 0, 1, 2).
+        // This covers:
+        //   - Main flyout: root subfolders (depth 0), their children (depth 1), grandchildren (depth 2)
+        //   - Hub flyout : hub-root's children (depth 1), their children (depth 2), grandchildren (depth 3)
+        // Depth 3+ items use InitializeFolderLazyLoading which reads from the in-memory cache
+        // synchronously on PointerEntered — effectively instant once phase-2 preload completes.
+        //
+        // IMPORTANT: do not raise this limit beyond depth < 3 without careful analysis.
+        // Worst case: ShortcutMenuMaxSubfolders^3 = 50^3 = 125 000 XAML objects in one dispatch.
+        if (depth < 3 && TryGetShortcutFolderCache(folderPath, out var cachedData))
         {
-            var hasCachedChildren = cachedData.Subfolders.Count > 0 || cachedData.Files.Count > 0;
-            if (!hasCachedChildren)
-            {
-                // Empty non-final cache can happen during warm-up. Keep lazy loading enabled.
-                if (!cachedData.IsFullyLoaded)
-                {
-                    InitializeFolderLazyLoading(folderItem);
-                }
-
-                return folderItem;
-            }
-
-            if (depth == 0 || cachedData.IsFullyLoaded)
+            if (HasFolderCacheItems(cachedData))
             {
                 AddFolderSubMenuItems(folderItem, cachedData, depth + 1);
                 context.IsLoaded = true;
-            }
-            else
-            {
-                StartFolderDescendantPrefetch(folderPath, depth);
-                InitializeFolderLazyLoading(folderItem);
+                if (!cachedData.IsFullyLoaded)
+                    StartFolderDescendantPrefetch(folderPath, depth);
+                return folderItem;
             }
 
-            return folderItem;
+            if (cachedData.IsFullyLoaded)
+            {
+                // Genuinely empty folder.
+                context.IsLoaded = true;
+                return folderItem;
+            }
+
+            // Empty but not fully loaded → warm-up race; fall through to lazy loading.
         }
 
         InitializeFolderLazyLoading(folderItem);
@@ -1520,7 +1675,15 @@ public sealed partial class MainWindow : Window
     {
         folderItem.Items.Clear();
         folderItem.Items.Add(CreateDetailsViewFlyoutItem("Loading...", isEnabled: false));
-        folderItem.PointerEntered += (_, _) => _ = EnsureFolderSubMenuLoadedAsync(folderItem);
+
+        // Use AddHandler with handledEventsToo=true for ALL triggers.
+        // WinUI's internal flyout logic marks pointer/focus events as Handled at deeper nesting
+        // levels, which silently drops += subscriptions.  AddHandler(..., true) fires regardless.
+        // PointerMoved is added as an extra-safe fallback: it fires on any cursor movement over
+        // the item row and is harder for WinUI to swallow than PointerEntered.
+        PointerEventHandler lazyLoadPointerHandler = (_, _) => _ = EnsureFolderSubMenuLoadedAsync(folderItem);
+        folderItem.AddHandler(UIElement.PointerEnteredEvent, lazyLoadPointerHandler, handledEventsToo: true);
+        folderItem.AddHandler(UIElement.PointerMovedEvent, lazyLoadPointerHandler, handledEventsToo: true);
         folderItem.GotFocus += (_, _) => _ = EnsureFolderSubMenuLoadedAsync(folderItem);
         folderItem.KeyDown += (_, _) => _ = EnsureFolderSubMenuLoadedAsync(folderItem);
     }

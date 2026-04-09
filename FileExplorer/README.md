@@ -296,3 +296,75 @@ If another `FileExplorer.exe` is still running, packaging can fail during publis
 - Logs: `%LOCALAPPDATA%\FileExplorer\logs\`
 - Managed crash reports: `%LOCALAPPDATA%\FileExplorer\crash-reports\`
 - WER dumps: `%LOCALAPPDATA%\FileExplorer\crash-reports\wer-dumps\`
+
+## Shortcut launcher flyout and startup prefetch
+
+### Overview
+
+The toolbar contains a **Shortcut Launcher** button that opens a cascading flyout menu. Each entry in the menu represents a `.lnk` shortcut from a designated folder on disk (the *shortcuts folder*). Clicking an entry navigates the active tab to the `.lnk` target. Subfolders inside the target are reachable via nested submenus without any disk I/O delay.
+
+To make both the flyout and folder navigation instant, the app runs a multi-phase background warm-up immediately after the main window is shown.
+
+### Shortcuts folder
+
+The app resolves the shortcuts folder in this priority order:
+
+1. **Environment variable** `FILEEXPLORER_SHORTCUTS_FOLDER` — if set and the path exists, it is used as-is. Environment variables inside the value are expanded.
+2. **`%USERPROFILE%\Shortcuts_to_folders`** — used if that folder exists.
+3. **Nearby folder auto-detect** — walks up from `AppContext.BaseDirectory` looking for `Shortcut_to_folders` or `Shortcuts_to_folders` up to 10 parent levels.
+4. **Fallback** — `%USERPROFILE%\Shortcuts_to_folders` is returned regardless of whether it exists. The app creates it on first use.
+
+`.lnk` files in the folder are resolved to their `TargetPath` at runtime. Only targets that exist on disk appear in the menu (up to `ShortcutMenuMaxItems = 50`).
+
+**Adding .lnk files**: drop them into the shortcuts folder and restart the app. The flyout and prefetch are built once at startup; there is no file watcher on the shortcuts folder. The file-list tab *does* watch for changes if you have the shortcuts folder open in a tab, so a newly added `.lnk` appears there instantly.
+
+### Startup sequence
+
+The warm-up runs entirely on background threads after the window is displayed. It has three phases:
+
+#### Phase 1 — shallow flyout cache (~10 ms)
+
+Reads the immediate children (subfolders only) of every shortcut target in parallel. The result populates `_shortcutFolderCache` — an in-memory dictionary keyed by path. After phase 1 completes, the flyout is created on a low-priority dispatcher frame. Opening the flyout for the first time and expanding any first-level submenu costs zero disk I/O.
+
+#### Phase 2 — deep flyout cache (~18 s for large trees)
+
+Recursively walks every reachable subfolder of every shortcut target (up to `ShortcutMenuMaxDepth = 64` levels, `ShortcutMenuMaxSubfolders = 50` entries per node). This runs entirely on a background `Task.Run` thread. When it finishes, it updates `_shortcutFolderCache` with the full tree and then invalidates the already-built flyout XAML objects on a low-priority dispatcher frame so the next flyout open rebuilds from the complete cache. Expanding any submenu at any depth is now instant.
+
+Phase 2 can take several seconds for deep or large OneDrive trees. It does not block the UI.
+
+#### Phase 3 — directory snapshot prefetch (~350 ms)
+
+Immediately after phase 1, a second background task pre-scans the *file contents* (not just subfolder names) of every shortcut target folder plus the first **eight** levels of subfolders (BFS). The results are stored in `IDirectorySnapshotCache` keyed by normalized path.
+
+When the user navigates to a path that has a cached snapshot (`TryConsume`), `StreamLoadDirectoryAsync` skips all disk I/O and posts the cached `FileSystemEntry` list directly to the UI collection. Navigation to those folders appears instantaneous (0 ms scan, ~3 ms total to items shown). The snapshot is consumed exactly once — subsequent navigations to the same path perform a real disk scan so the view is never stale.
+
+Typical numbers from DbgView:
+```
+Shortcut cache preload phase1 elapsed: 10 ms, roots=14
+[SnapshotPrefetch] starting  paths=471
+Shortcut cache preload total elapsed: 357 ms    ← snapshot prefetch fires here
+[SnapshotPrefetch] done  scanned=471/471  ms=353
+Shortcut cache preload phase2 elapsed: 18044 ms, cached=30342
+```
+
+```
+[Navigate] snapshot cache HIT  165 items  path=...\Downloads
+[Navigate] scan done  165 items  0 ms          ← 0 ms disk I/O
+[Navigate] items shown  3 ms
+```
+
+### How the flyout builds submenus lazily
+
+The flyout XAML is never fully pre-built for all levels at once. Building a `MenuFlyoutSubItem` tree for thousands of cache entries up-front would block the UI thread for seconds. Instead:
+
+- The root menu entries are created once after phase 1 and reused across opens.
+- Each `MenuFlyoutSubItem` gets a placeholder child. When the user hovers over a submenu (`PointerEntered`), its children are populated from `_shortcutFolderCache` on the UI thread. Because the cache is already in memory, this takes 0–1 ms per level.
+- If the cache entry for a path is not yet populated (i.e. phase 2 has not reached it yet), the code falls back to a synchronous directory read capped at `ShortcutMenuMaxSubfolders` entries.
+
+### Limits
+
+| Constant | Value | Purpose |
+|---|---|---|
+| `ShortcutMenuMaxItems` | 50 | Max `.lnk` files shown in the root flyout |
+| `ShortcutMenuMaxSubfolders` | 50 | Max subfolders shown per submenu node |
+| `ShortcutMenuMaxDepth` | 64 | Max nesting depth before submenu expansion stops |

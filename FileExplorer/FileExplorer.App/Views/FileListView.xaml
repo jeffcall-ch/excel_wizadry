@@ -363,7 +363,7 @@
 
             <ListView.ItemsPanel>
                 <ItemsPanelTemplate>
-                    <VirtualizingStackPanel />
+                    <VirtualizingStackPanel VirtualizationMode="Recycling" />
                 </ItemsPanelTemplate>
             </ListView.ItemsPanel>
 

@@ -45,12 +45,17 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
     private readonly IIdentityCacheService _identityCacheService;
     private readonly ITabPathStateService _tabPathStateService;
     private readonly ISettingsService _settingsService;
+    private readonly IDirectorySnapshotCache _snapshotCache;
     private readonly ILogger<TabContentViewModel> _logger;
     private readonly SynchronizationContext? _uiContext;
     private IDisposable? _watcherHandle;
     private CancellationTokenSource? _loadCts;
     private volatile bool _identityProcessingEnabledForCurrentPath = true;
     private int _tabPathSyncVersion;
+    private DateTimeOffset _lastLoadCompletedUtc = DateTimeOffset.MinValue;
+
+    /// <summary>UTC timestamp of the last completed directory load or incremental refresh.</summary>
+    public DateTimeOffset LastLoadCompletedUtc => _lastLoadCompletedUtc;
 
     private sealed record AllowedProjectEntry(string CanonicalName, string NormalizedName, HashSet<string> Tokens);
 
@@ -121,6 +126,7 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
         IIdentityCacheService identityCacheService,
         ITabPathStateService tabPathStateService,
         ISettingsService settingsService,
+        IDirectorySnapshotCache snapshotCache,
         ILogger<TabContentViewModel> logger,
         TabState? existingState = null)
     {
@@ -132,6 +138,7 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
         _identityCacheService = identityCacheService;
         _tabPathStateService = tabPathStateService;
         _settingsService = settingsService;
+        _snapshotCache = snapshotCache;
         _logger = logger;
         _uiContext = SynchronizationContext.Current;
         TabState = existingState ?? new TabState();
@@ -245,10 +252,12 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
         try
         {
             IsLoading = true;
-            Items.Clear();
+            // Keep old items visible during the background disk scan (no blank-screen hang).
+            // Items.Clear() is deferred until the first batch of new items is ready.
 
             // Update state
             CurrentPath = path;
+            var navSw = System.Diagnostics.Stopwatch.StartNew();
 
             // Add to navigation history
             if (!skipHistory)
@@ -257,17 +266,24 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
             // Stop previous watcher
             _watcherHandle?.Dispose();
 
-            // Stage 1: fetch light snapshot off the UI thread (name/path/type/date/size).
-            var snapshot = await LoadDirectorySnapshotAsync(path, ct);
+            // Stage 1: stream entries from disk on a background thread.
+            // After the first 50 entries arrive the UI is updated immediately (fast first-paint),
+            // then the remainder of the scan continues and the final sorted list replaces the
+            // partial view in one pass — no waiting for the full scan to show anything.
+            System.Diagnostics.Debug.WriteLine($"[Navigate] start scan  path={path}");
+            var snapshot = await StreamLoadDirectoryAsync(path, ct);
+            System.Diagnostics.Debug.WriteLine($"[Navigate] scan done  {snapshot.Count} items  {navSw.ElapsedMilliseconds} ms  path={path}");
             var items = snapshot.Select(entry => new FileItemViewModel(entry)).ToList();
 
             _identityProcessingEnabledForCurrentPath = ShouldEnableIdentityProcessing(path, items.Count);
 
             ApplyFolderSortPreference(path);
 
-            // Sort and populate
+            // Stage 2: apply full sorted list over the partial first-batch already shown.
             var sorted = ApplySort(items);
-            await AppendItemsInChunksAsync(sorted, ct, 50);
+            ReconcileItemsWithSorted(sorted);
+            _lastLoadCompletedUtc = DateTimeOffset.UtcNow;
+            System.Diagnostics.Debug.WriteLine($"[Navigate] items shown  {navSw.ElapsedMilliseconds} ms  path={path}");
 
             if (_identityProcessingEnabledForCurrentPath)
             {
@@ -346,6 +362,117 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
 
             if (((index - firstBatchCount) + 1) % batchSize == 0)
                 await Task.Yield();
+        }
+    }
+
+    /// <summary>
+    /// Returns directory entries for <paramref name="path"/>.
+    /// If a pre-scanned snapshot exists in the cache it is consumed and posted to the UI
+    /// instantly (0 ms disk I/O).  Otherwise entries are streamed from disk via Win32
+    /// FindFirstFileEx, with the first 50 sent to the UI immediately for fast first-paint.
+    /// </summary>
+    private async Task<List<FileSystemEntry>> StreamLoadDirectoryAsync(string path, CancellationToken ct)
+    {
+        // ── Cache hit: snapshot pre-scanned at startup ────────────────────────
+        if (_snapshotCache.TryConsume(path, out var cached))
+        {
+            System.Diagnostics.Debug.WriteLine($"[Navigate] snapshot cache HIT  {cached.Count} items  path={path}");
+            var all = cached is List<FileSystemEntry> list ? list : [.. cached];
+
+            // Post all items to UI immediately — no disk I/O, no streaming needed.
+            var vms = all.Select(e => new FileItemViewModel(e)).ToList();
+            _uiContext?.Post(_ =>
+            {
+                if (ct.IsCancellationRequested) return;
+                Items.Clear();
+                foreach (var vm in vms) Items.Add(vm);
+            }, null);
+
+            return all;
+        }
+
+        // ── Cache miss: stream from disk ──────────────────────────────────────
+        System.Diagnostics.Debug.WriteLine($"[Navigate] snapshot cache MISS  path={path}");
+
+        const int firstBatchSize = 50;
+        var entries = new List<FileSystemEntry>(capacity: 256);
+        var firstBatchPosted = false;
+
+        await Task.Run(async () =>
+        {
+            await foreach (var entry in _fileSystemService.EnumerateDirectoryAsync(path, ct))
+            {
+                ct.ThrowIfCancellationRequested();
+                entry.TypeDescription = GetTypeDescriptionFast(entry);
+                entry.IconIndex = 0;
+                entries.Add(entry);
+
+                // As soon as first 50 entries arrive, send them to the UI thread immediately.
+                if (!firstBatchPosted && entries.Count >= firstBatchSize)
+                {
+                    firstBatchPosted = true;
+                    var firstBatch = entries
+                        .Take(firstBatchSize)
+                        .Select(e => new FileItemViewModel(e))
+                        .ToList();
+                    _uiContext?.Post(_ =>
+                    {
+                        if (ct.IsCancellationRequested) return;
+                        Items.Clear();
+                        foreach (var vm in firstBatch) Items.Add(vm);
+                    }, null);
+                }
+
+                if (entries.Count % 512 == 0)
+                    await Task.Yield();
+            }
+        }, ct);
+
+        return entries;
+    }
+
+    /// <summary>
+    /// Applies a fully-sorted target list over the current Items collection using
+    /// Add/Remove/Move so no row is destroyed needlessly. If Items already contains
+    /// a partial first-batch from StreamLoadDirectoryAsync, those rows are reused.
+    /// </summary>
+    private void ReconcileItemsWithSorted(IReadOnlyList<FileItemViewModel> sorted)
+    {
+        // Build a path→vm lookup for what is already in Items (the streaming first-batch).
+        var existingByPath = new Dictionary<string, FileItemViewModel>(
+            Items.Count, StringComparer.OrdinalIgnoreCase);
+        foreach (var item in Items)
+            existingByPath.TryAdd(item.Entry.FullPath, item);
+
+        // Remove items no longer in the sorted list (should be none on first load).
+        for (var i = Items.Count - 1; i >= 0; i--)
+        {
+            if (!sorted.Any(s => string.Equals(s.Entry.FullPath, Items[i].Entry.FullPath,
+                    StringComparison.OrdinalIgnoreCase)))
+                Items.RemoveAt(i);
+        }
+
+        // Add missing items and move to correct positions.
+        for (var i = 0; i < sorted.Count; i++)
+        {
+            var target = sorted[i];
+            var existingIndex = -1;
+            for (var j = i; j < Items.Count; j++)
+            {
+                if (string.Equals(Items[j].Entry.FullPath, target.Entry.FullPath,
+                        StringComparison.OrdinalIgnoreCase))
+                { existingIndex = j; break; }
+            }
+
+            if (existingIndex < 0)
+            {
+                // New item (arrived after the first-batch or wasn't in first-batch).
+                Items.Insert(i, target);
+            }
+            else if (existingIndex != i)
+            {
+                Items.Move(existingIndex, i);
+            }
         }
     }
 
@@ -610,9 +737,23 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
 
         PersistCurrentFolderSortPreference();
 
-        var sorted = ApplySort(Items.ToList());
-        Items.Clear();
-        foreach (var item in sorted) Items.Add(item);
+        // Apply sort in-place using Move operations so no row is ever destroyed and
+        // re-created — eliminates the full-blink caused by Clear + sequential Add.
+        ApplySortInPlace();
+    }
+
+    private void ApplySortInPlace()
+    {
+        if (Items.Count <= 1)
+            return;
+
+        var target = ApplySort(Items.ToList());
+        for (var i = 0; i < target.Count; i++)
+        {
+            var cur = Items.IndexOf(target[i]);
+            if (cur != i)
+                Items.Move(cur, i);
+        }
     }
 
     /// <summary>Loads preview for the specified item.</summary>
@@ -641,7 +782,9 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
 
         try
         {
+            var refreshSw = System.Diagnostics.Stopwatch.StartNew();
             var latestEntries = await LoadDirectorySnapshotAsync(path, CancellationToken.None);
+            System.Diagnostics.Debug.WriteLine($"[Refresh] LoadDirectorySnapshot: {refreshSw.ElapsedMilliseconds} ms  ({latestEntries.Count} entries)  path={path}");
 
             _identityProcessingEnabledForCurrentPath = ShouldEnableIdentityProcessing(path, latestEntries.Count);
 
@@ -750,6 +893,9 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
             IsEmpty = Items.Count == 0;
             UpdateStatusText();
             UpdateFreeSpace();
+
+            _lastLoadCompletedUtc = DateTimeOffset.UtcNow;
+            System.Diagnostics.Debug.WriteLine($"[Refresh] TOTAL (snapshot+diff+UI): {refreshSw.ElapsedMilliseconds} ms  path={path}");
 
             if (_watcherHandle is null || IsAutoRefreshPaused)
             {

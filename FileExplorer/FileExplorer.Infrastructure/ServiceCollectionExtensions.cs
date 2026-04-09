@@ -15,6 +15,7 @@ public static class ServiceCollectionExtensions
     public static IServiceCollection AddInfrastructureServices(this IServiceCollection services)
     {
         services.AddSingleton<IFileSystemService, FileSystemService>();
+        services.AddSingleton<IDirectorySnapshotCache, DirectorySnapshotCache>();
         services.AddSingleton<IShellIntegrationService, ShellIntegrationService>();
         services.AddSingleton<ICloudStatusService, CloudStatusService>();
         services.AddSingleton<ISettingsService, SettingsService>();

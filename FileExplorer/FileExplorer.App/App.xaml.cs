@@ -100,6 +100,7 @@ public partial class App : Application
                 sp.GetRequiredService<IIdentityCacheService>(),
                 sp.GetRequiredService<ITabPathStateService>(),
                 sp.GetRequiredService<ISettingsService>(),
+                sp.GetRequiredService<IDirectorySnapshotCache>(),
                 sp.GetRequiredService<ILogger<TabContentViewModel>>(),
                 tabState);
             return vm;
