@@ -108,15 +108,6 @@
                                 Foreground="{Binding Extension, Converter={StaticResource ExtensionBrush}}"
                                 VerticalAlignment="Center"
                                 TextTrimming="CharacterEllipsis" />
-                            <!-- Error badge -->
-                            <FontIcon
-                                Grid.Column="2"
-                                FontFamily="{StaticResource SymbolThemeFontFamily}"
-                                Glyph="&#xE7BA;"
-                                FontSize="12"
-                                Foreground="{ThemeResource SystemFillColorCriticalBrush}"
-                                Visibility="{Binding HasError, Converter={StaticResource BoolToVis}}"
-                                ToolTipService.ToolTip="{Binding ErrorMessage}" />
                         </Grid>
 
                         <!-- Inline rename TextBox -->

@@ -50,6 +50,13 @@ public sealed partial class MainWindow : Window
     [DllImport("user32.dll", SetLastError = true)]
     private static extern nint SendMessage(nint hWnd, uint msg, nint wParam, nint lParam);
 
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+    private static extern void SHChangeNotify(int wEventId, uint uFlags, string? dwItem1, string? dwItem2);
+
+    private const int SHCNE_UPDATEITEM = 0x00002000;
+    private const uint SHCNF_PATH = 0x0005;
+    private const uint SHCNF_FLUSH = 0x1000;
+
     private readonly DispatcherQueue _dispatcherQueue;
     private readonly IFileSystemService _fileSystemService;
     private readonly ISettingsService _settingsService;
@@ -290,6 +297,12 @@ public sealed partial class MainWindow : Window
                 SendMessage(Hwnd, WM_SETICON, ICON_SMALL, hIcon);
                 SendMessage(Hwnd, WM_SETICON, ICON_BIG, hIcon);
             }
+
+            // Tell the shell the EXE icon changed so pinned taskbar entries refresh
+            // their cached icon without requiring the user to rebuild the icon cache.
+            var exePath = Environment.ProcessPath;
+            if (!string.IsNullOrEmpty(exePath))
+                SHChangeNotify(SHCNE_UPDATEITEM, SHCNF_PATH | SHCNF_FLUSH, exePath, null);
         }
         catch
         {

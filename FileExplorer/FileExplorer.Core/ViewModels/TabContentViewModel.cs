@@ -113,6 +113,9 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
     /// <summary>Raised when navigation occurs (for tree sync).</summary>
     public event EventHandler<string>? Navigated;
 
+    /// <summary>Raised when a rename operation fails, with the user-readable error message.</summary>
+    public event EventHandler<string>? RenameError;
+
     /// <summary>Raised when the UI should reveal and focus a specific item.</summary>
     public event EventHandler<FileItemViewModel>? RevealItemRequested;
 
@@ -379,14 +382,12 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
             System.Diagnostics.Debug.WriteLine($"[Navigate] snapshot cache HIT  {cached.Count} items  path={path}");
             var all = cached is List<FileSystemEntry> list ? list : [.. cached];
 
-            // Post all items to UI immediately — no disk I/O, no streaming needed.
-            var vms = all.Select(e => new FileItemViewModel(e)).ToList();
-            _uiContext?.Post(_ =>
-            {
-                if (ct.IsCancellationRequested) return;
-                Items.Clear();
-                foreach (var vm in vms) Items.Add(vm);
-            }, null);
+            // Clear Items synchronously so ReconcileItemsWithSorted (called by the caller
+            // immediately after we return, with no yield point) operates on a clean slate.
+            // Do NOT use _uiContext.Post here: a posted action would race against
+            // ReconcileItemsWithSorted and overwrite the correctly-sorted Items with an
+            // unsorted snapshot, breaking date-divider grouping on first load.
+            Items.Clear();
 
             return all;
         }
@@ -588,7 +589,13 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
         item.Entry.Name = newName;
         item.NotifyNameChanged();
 
+        // Capture the error detail from the OperationError event raised inside RenameAsync.
+        string? renameErrorDetail = null;
+        void OnOperationError(object? s, FileOperationErrorEventArgs e) => renameErrorDetail = e.ErrorMessage;
+        _fileSystemService.OperationError += OnOperationError;
         var success = await _fileSystemService.RenameAsync(oldFullPath, newName);
+        _fileSystemService.OperationError -= OnOperationError;
+
         if (!success)
         {
             // Rollback
@@ -596,7 +603,8 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
             item.EditingName = oldName;
             item.NotifyNameChanged();
             item.HasError = true;
-            item.ErrorMessage = "Rename failed";
+            item.ErrorMessage = renameErrorDetail ?? "Rename failed";
+            RenameError?.Invoke(this, item.ErrorMessage);
             RevealItemRequested?.Invoke(this, item);
             return;
         }

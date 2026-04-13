@@ -94,6 +94,7 @@ public sealed partial class FileListView : UserControl
             _currentTab.Items.CollectionChanged -= CurrentTab_ItemsCollectionChanged;
             _currentTab.PropertyChanged -= CurrentTab_PropertyChanged;
             _currentTab.RevealItemRequested -= CurrentTab_RevealItemRequested;
+            _currentTab.RenameError -= CurrentTab_RenameError;
         }
 
         // ── Cycle 1 (this frame) ──────────────────────────────────────────────
@@ -136,6 +137,7 @@ public sealed partial class FileListView : UserControl
         tab.Items.CollectionChanged += CurrentTab_ItemsCollectionChanged;
         tab.PropertyChanged += CurrentTab_PropertyChanged;
         tab.RevealItemRequested += CurrentTab_RevealItemRequested;
+        tab.RenameError += CurrentTab_RenameError;
 
         System.Diagnostics.Debug.WriteLine($"[BindToTab] cycle-1 (shell visible): {bsw.ElapsedMilliseconds} ms  items={tab.Items.Count}  path={tab.CurrentPath}");
 
@@ -239,6 +241,22 @@ public sealed partial class FileListView : UserControl
     {
         _typeAheadBuffer = string.Empty;
         DispatcherQueue.TryEnqueue(() => RevealItem(item));
+    }
+
+    private void CurrentTab_RenameError(object? sender, string errorMessage)
+    {
+        DispatcherQueue.TryEnqueue(async () =>
+        {
+            var dialog = new ContentDialog
+            {
+                Title = "Cannot rename",
+                Content = errorMessage,
+                CloseButtonText = "OK",
+                DefaultButton = ContentDialogButton.Close,
+                XamlRoot = XamlRoot
+            };
+            await dialog.ShowAsync();
+        });
     }
 
     #region Column Headers
