@@ -151,6 +151,19 @@ public sealed partial class InspectorSidebarView : UserControl
         }
     }
 
+    private void FavoritesList_ItemClick(object sender, ItemClickEventArgs e)
+    {
+        var favorite = e.ClickedItem as FavoriteListItem;
+
+        if (favorite is null)
+            return;
+
+        if (App.MainWindow is not MainWindow mainWindow)
+            return;
+
+        _ = mainWindow.OpenFavoritePathAsync(favorite.FullPath);
+    }
+
     private void FavoritesList_DoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
     {
         var favorite = ResolveFavoriteFromOriginalSource(e.OriginalSource as DependencyObject)

@@ -261,7 +261,6 @@ public sealed partial class FileListView : UserControl
         if (!ShouldUseDateDividers())
         {
             _dateDividerRefreshCts?.Cancel();
-            _dateDividerRefreshCts?.Dispose();
             _dateDividerRefreshCts = null;
 
             // Keep the existing ungrouped source to avoid full ListView rebind/flicker
@@ -278,27 +277,31 @@ public sealed partial class FileListView : UserControl
             return;
 
         _dateDividerRefreshCts?.Cancel();
-        _dateDividerRefreshCts?.Dispose();
+        // Do NOT Dispose() here — the previous Task may still be running and holds a reference
+        // to the CTS. Disposing while the Task runs causes ObjectDisposedException on cts.Token.
+        // Cancellation is sufficient; the GC collects the old CTS after the Task finishes.
         var cts = new CancellationTokenSource();
         _dateDividerRefreshCts = cts;
 
         _ = Task.Run(async () =>
         {
+            // Capture the token once; don't access cts.Token after this line.
+            var token = cts.Token;
             try
             {
-                await Task.Delay(250, cts.Token);
+                await Task.Delay(250, token);
             }
             catch (OperationCanceledException)
             {
                 return;
             }
 
-            if (cts.IsCancellationRequested)
+            if (token.IsCancellationRequested)
                 return;
 
             DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
             {
-                if (cts.IsCancellationRequested)
+                if (token.IsCancellationRequested)
                     return;
 
                 RefreshItemsSourceForCurrentSort();

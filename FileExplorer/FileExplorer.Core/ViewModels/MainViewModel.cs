@@ -15,7 +15,7 @@ namespace FileExplorer.Core.ViewModels;
 /// </summary>
 public sealed partial class MainViewModel : ObservableObject, IDisposable
 {
-    private const string DefaultStartupPath = @"C:\Users\szil\Shortcuts_to_folders";
+    private const string DefaultStartupPath = @"C:\Users\szil\OneDrive - Kanadevia Inova\Desktop\Projects";
 
     private readonly IFileSystemService _fileSystemService;
     private readonly IShellIntegrationService _shellService;

@@ -617,6 +617,9 @@ public sealed partial class MainWindow : Window
     private void CloseShortcutLauncherFlyoutAndFocusRightPane()
     {
         _shortcutLauncherFlyout?.Hide();
+        // Also close any open hub-children flyouts (shown from the inspector sidebar list).
+        foreach (var flyout in _hubChildrenFlyoutCache.Values)
+            flyout.Hide();
         ActivateRightPaneForKeyboardNavigation();
     }
 
