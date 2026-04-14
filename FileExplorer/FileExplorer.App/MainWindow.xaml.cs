@@ -78,6 +78,8 @@ public sealed partial class MainWindow : Window
     private readonly Dictionary<string, MenuFlyout> _hubChildrenFlyoutCache = new(StringComparer.OrdinalIgnoreCase);
     private CancellationTokenSource? _breadcrumbSiblingCts;
     private int _breadcrumbSiblingRequestId;
+    private List<string>? _clipboardSourcePaths;
+    private bool _clipboardIsMove;
     private bool _shortcutPreloadStarted;
     private bool _shortcutDeepPreloadStarted;
     private bool _snapshotPrefetchStarted;
@@ -2726,11 +2728,11 @@ public sealed partial class MainWindow : Window
             _ = ViewModel.ActiveTab.CreateNewFolderAsync();
     }
 
-    private void Cut_Click(object sender, RoutedEventArgs e) => CutCopyToClipboard(isMove: true);
-    private void Copy_Click(object sender, RoutedEventArgs e) => CutCopyToClipboard(isMove: false);
+    private void Cut_Click(object sender, RoutedEventArgs e) => _ = CutCopyToClipboardAsync(isMove: true);
+    private void Copy_Click(object sender, RoutedEventArgs e) => _ = CutCopyToClipboardAsync(isMove: false);
 
-    public void CutToClipboard() => CutCopyToClipboard(isMove: true);
-    public void CopyToClipboard() => CutCopyToClipboard(isMove: false);
+    public void CutToClipboard() => _ = CutCopyToClipboardAsync(isMove: true);
+    public void CopyToClipboard() => _ = CutCopyToClipboardAsync(isMove: false);
     private void Paste_Click(object sender, RoutedEventArgs e) => _ = PasteFromClipboardAsync();
     private void Rename_Click(object sender, RoutedEventArgs e) => ViewModel.ActiveTab?.StartRename();
 
@@ -2766,7 +2768,7 @@ public sealed partial class MainWindow : Window
 
     #region Clipboard
 
-    private void CutCopyToClipboard(bool isMove)
+    private async Task CutCopyToClipboardAsync(bool isMove)
     {
         if (ViewModel.ActiveTab is null) return;
         var selectedPaths = ViewModel.ActiveTab.SelectedItems.Select(i => i.Entry.FullPath).ToList();
@@ -2781,9 +2783,9 @@ public sealed partial class MainWindow : Window
             try
             {
                 if (Directory.Exists(path))
-                    files.Add(StorageFolder.GetFolderFromPathAsync(path).AsTask().Result);
+                    files.Add(await StorageFolder.GetFolderFromPathAsync(path));
                 else if (File.Exists(path))
-                    files.Add(StorageFile.GetFileFromPathAsync(path).AsTask().Result);
+                    files.Add(await StorageFile.GetFileFromPathAsync(path));
             }
             catch { /* Skip inaccessible items */ }
         }
@@ -2792,6 +2794,8 @@ public sealed partial class MainWindow : Window
         {
             package.SetStorageItems(files);
             Clipboard.SetContent(package);
+            _clipboardSourcePaths = selectedPaths;
+            _clipboardIsMove = isMove;
             ViewModel.HasClipboardContent = true;
         }
     }
@@ -2807,9 +2811,21 @@ public sealed partial class MainWindow : Window
             var content = Clipboard.GetContent();
             if (content.Contains(StandardDataFormats.StorageItems))
             {
-                var items = await content.GetStorageItemsAsync();
-                var sourcePaths = items.Select(i => i.Path).ToList();
-                var isMove = content.RequestedOperation == DataPackageOperation.Move;
+                // Fast path: if we own the clipboard, use cached paths (avoids WinRT cloud resolution).
+                List<string> sourcePaths;
+                bool isMove;
+                if (_clipboardSourcePaths is not null && ViewModel.HasClipboardContent)
+                {
+                    sourcePaths = _clipboardSourcePaths;
+                    isMove = _clipboardIsMove;
+                }
+                else
+                {
+                    // External clipboard (e.g. Windows Explorer) — resolve StorageItems normally.
+                    var items = await content.GetStorageItemsAsync();
+                    sourcePaths = items.Select(i => i.Path).ToList();
+                    isMove = content.RequestedOperation == DataPackageOperation.Move;
+                }
                 var expectedPaths = sourcePaths
                     .Select(path => GetExpectedPastedPath(path, destPath, isMove))
                     .ToList();
@@ -2853,10 +2869,106 @@ public sealed partial class MainWindow : Window
                 if (!completed)
                     return;
 
-                if (ViewModel.ActiveTab is not null)
+                if (isMove && _clipboardSourcePaths is not null)
                 {
-                    await ViewModel.ActiveTab.RefreshAsync();
-                    FileList.SelectAndRevealPaths(expectedPaths);
+                    // ── Own-clipboard MOVE: fully optimistic, zero disk I/O on the UI thread ──
+                    _clipboardSourcePaths = null; // consume the cut
+
+                    var movedPathsSet = sourcePaths.ToHashSet(StringComparer.OrdinalIgnoreCase);
+                    var sourceDirs = sourcePaths
+                        .Select(p => Path.GetDirectoryName(p))
+                        .Where(d => !string.IsNullOrEmpty(d))
+                        .Select(d => d!)
+                        .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+                    // Collect source entry metadata before removing.
+                    var sourceEntriesByPath = new Dictionary<string, FileSystemEntry>(StringComparer.OrdinalIgnoreCase);
+                    foreach (var tab in ViewModel.Tabs)
+                    {
+                        if (sourceDirs.Contains(tab.CurrentPath ?? string.Empty))
+                        {
+                            var toRemove = tab.Items
+                                .Where(i => movedPathsSet.Contains(i.Entry.FullPath))
+                                .ToList();
+                            foreach (var item in toRemove)
+                            {
+                                sourceEntriesByPath.TryAdd(item.Entry.FullPath, item.Entry);
+                                tab.Items.Remove(item);
+                            }
+                            // No background RefreshAsync — optimistic removal is sufficient.
+                            // Window-activation refresh will reconcile any edge cases.
+                        }
+                    }
+
+                    // Optimistic insert into destination using cloned source metadata.
+                    if (ViewModel.ActiveTab is not null)
+                    {
+                        var destPathsSet = ViewModel.ActiveTab.Items
+                            .Select(i => i.Entry.FullPath)
+                            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+                        var newEntries = sourcePaths.Zip(expectedPaths)
+                            .Where(pair => !destPathsSet.Contains(pair.Second) &&
+                                           sourceEntriesByPath.TryGetValue(pair.First, out _))
+                            .Select(pair =>
+                            {
+                                var src = sourceEntriesByPath[pair.First];
+                                return new FileSystemEntry
+                                {
+                                    FullPath = pair.Second,
+                                    Name = Path.GetFileName(pair.Second),
+                                    IsDirectory = src.IsDirectory,
+                                    Size = src.Size,
+                                    DateModified = src.DateModified,
+                                    Extension = src.Extension,
+                                    Attributes = src.Attributes,
+                                    TypeDescription = src.TypeDescription,
+                                    ReparseTag = src.ReparseTag,
+                                };
+                            })
+                            .ToList();
+
+                        if (newEntries.Count > 0)
+                            ViewModel.ActiveTab.InsertItemsSorted(newEntries);
+
+                        FileList.SelectAndRevealPaths(expectedPaths);
+
+                        // Background reconcile (cloud status, corrected timestamps, sort).
+                        _ = ViewModel.ActiveTab.RefreshAsync();
+                    }
+                }
+                else
+                {
+                    // External clipboard or copy: fall back to awaited refresh.
+                    if (ViewModel.ActiveTab is not null)
+                    {
+                        await ViewModel.ActiveTab.RefreshAsync();
+                        FileList.SelectAndRevealPaths(expectedPaths);
+                    }
+
+                    if (isMove)
+                    {
+                        // External-clipboard move: still do optimistic source removal.
+                        _clipboardSourcePaths = null;
+                        var movedPathsSet = sourcePaths.ToHashSet(StringComparer.OrdinalIgnoreCase);
+                        var sourceDirs = sourcePaths
+                            .Select(p => Path.GetDirectoryName(p))
+                            .Where(d => !string.IsNullOrEmpty(d))
+                            .Select(d => d!)
+                            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+                        foreach (var tab in ViewModel.Tabs)
+                        {
+                            if (!ReferenceEquals(tab, ViewModel.ActiveTab) &&
+                                sourceDirs.Contains(tab.CurrentPath ?? string.Empty))
+                            {
+                                var toRemove = tab.Items
+                                    .Where(i => movedPathsSet.Contains(i.Entry.FullPath))
+                                    .ToList();
+                                foreach (var item in toRemove)
+                                    tab.Items.Remove(item);
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -2942,7 +3054,7 @@ public sealed partial class MainWindow : Window
             if (IsTextInputFocused())
                 return;
 
-            CutToClipboard();
+            _ = CutCopyToClipboardAsync(isMove: true);
         }));
         Content.KeyboardAccelerators.Add(CreateAccelerator(Windows.System.VirtualKey.V, Windows.System.VirtualKeyModifiers.Control, (_, _) =>
         {

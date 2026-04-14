@@ -509,6 +509,30 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
             await RefreshIncrementalAsync(CurrentPath);
     }
 
+    /// <summary>
+    /// Adds new entries to <see cref="Items"/> at their correct sorted positions without
+    /// touching the disk.  Used for optimistic destination inserts after a move/copy so
+    /// the user sees pasted items instantly instead of waiting for re-enumeration.
+    /// </summary>
+    public void InsertItemsSorted(IEnumerable<FileSystemEntry> entries)
+    {
+        foreach (var entry in entries)
+        {
+            if (string.IsNullOrEmpty(entry.TypeDescription))
+                entry.TypeDescription = GetTypeDescriptionFast(entry);
+
+            var vm = new FileItemViewModel(entry);
+            Items.Add(vm);
+        }
+
+        // Re-position all items according to current sort preference.
+        var sorted = ApplySort(Items.ToList());
+        ReconcileItemsWithSorted(sorted);
+
+        IsEmpty = Items.Count == 0;
+        UpdateStatusText();
+    }
+
     /// <summary>Refreshes the status bar text to reflect the current item / selection count.</summary>
     public void RefreshStatusText() => UpdateStatusText();
 

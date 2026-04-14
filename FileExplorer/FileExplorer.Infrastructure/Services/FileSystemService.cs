@@ -290,7 +290,7 @@ public sealed class FileSystemService : IFileSystemService
             {
                 var longSrc = NativeMethods.EnsureLongPath(src);
                 var longDest = NativeMethods.EnsureLongPath(destPath);
-                if (!NativeMethods.MoveFileEx(longSrc, longDest, NativeMethods.MOVEFILE_COPY_ALLOWED | NativeMethods.MOVEFILE_WRITE_THROUGH))
+                if (!NativeMethods.MoveFileEx(longSrc, longDest, NativeMethods.MOVEFILE_COPY_ALLOWED))
                 {
                     int err = Marshal.GetLastPInvokeError();
                     throw new IOException($"MoveFileEx failed: {NativeMethods.FormatWin32Error(err)}");
