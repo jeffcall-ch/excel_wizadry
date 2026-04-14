@@ -33,6 +33,9 @@ public partial class App : Application
 
     internal static string? StartupPath { get; set; }
 
+    /// <summary>Gets the running App instance (for cross-thread pipe callbacks).</summary>
+    internal static App? Instance { get; private set; }
+
     /// <summary>Gets the DI service provider.</summary>
     public static IServiceProvider Services => _services ?? throw new InvalidOperationException("Services not initialized");
 
@@ -42,6 +45,7 @@ public partial class App : Application
     /// <summary>Initializes a new instance of the <see cref="App"/> class.</summary>
     public App()
     {
+        Instance = this;
         InitializeComponent();
         UnhandledException += App_UnhandledException;
         RegisterGlobalExceptionHandlers();
@@ -51,6 +55,24 @@ public partial class App : Application
         var services = new ServiceCollection();
         ConfigureServices(services);
         _services = services.BuildServiceProvider();
+    }
+
+    /// <summary>
+    /// Called from the background pipe-server thread when a second launch sends a path.
+    /// Marshals to the UI thread and opens the path in a new tab (or activates the window
+    /// when no path is given).
+    /// </summary>
+    internal void DispatchOpenPath(string path)
+    {
+        if (MainWindow is not MainWindow mw)
+            return;
+
+        mw.DispatcherQueue.TryEnqueue(async () =>
+        {
+            mw.Activate();
+            if (!string.IsNullOrWhiteSpace(path))
+                await mw.OpenFolderOrActivateExistingTabAsync(path);
+        });
     }
 
     /// <inheritdoc/>

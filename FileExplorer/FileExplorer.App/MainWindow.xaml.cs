@@ -84,6 +84,7 @@ public sealed partial class MainWindow : Window
     private bool _isShortcutOpenInProgress;
     private bool _startupWindowStateApplied;
     private bool _isActivationRefreshInProgress;
+    private bool _isSearchActive;
     private DateTimeOffset _lastActivationRefreshUtc = DateTimeOffset.MinValue;
     private const int ShortcutMenuMaxItems = 50;
     private const int ShortcutMenuMaxSubfolders = 50;
@@ -240,12 +241,19 @@ public sealed partial class MainWindow : Window
 
         try
         {
-            if (!string.IsNullOrWhiteSpace(tabToRefresh.CurrentPath))
+            // If a search is active, the items collection contains rq results from mixed paths.
+            // RefreshIncrementalAsync diffs against CurrentPath and would wipe those results.
+            // Skip the refresh so the search results survive window re-activation.
+            if (!string.IsNullOrWhiteSpace(tabToRefresh.CurrentPath) && !_isSearchActive)
             {
                 System.Diagnostics.Debug.WriteLine($"[WindowActivation] refresh start  path={tabToRefresh.CurrentPath}");
                 await tabToRefresh.RefreshAsync();
                 System.Diagnostics.Debug.WriteLine($"[WindowActivation] refresh done   path={tabToRefresh.CurrentPath}");
                 UpdateStatusBar();
+            }
+            else if (_isSearchActive)
+            {
+                System.Diagnostics.Debug.WriteLine($"[WindowActivation] skipped refresh — search active");
             }
         }
         finally
@@ -775,6 +783,15 @@ public sealed partial class MainWindow : Window
         {
             _dispatcherQueue.TryEnqueue(() => RefreshTabHeader(tab));
         }
+
+        if (string.Equals(e.PropertyName, nameof(TabContentViewModel.StatusText), StringComparison.Ordinal))
+        {
+            _dispatcherQueue.TryEnqueue(() =>
+            {
+                if (ReferenceEquals(ViewModel.ActiveTab, tab))
+                    UpdateStatusBar();
+            });
+        }
     }
 
     private void OnActiveTabNavigated(object? sender, string path)
@@ -787,7 +804,11 @@ public sealed partial class MainWindow : Window
                 RefreshTabHeader(ViewModel.ActiveTab);
             }
 
+            // Navigation means search is over — reset all search state.
+            _isSearchActive = false;
             FileList.SetSearchMode(false);
+            SearchBox.Text = string.Empty;
+
             UpdateAddressBar(path);
             UpdateStatusBar();
             UpdateSearchPlaceholder(path);
@@ -1192,14 +1213,28 @@ public sealed partial class MainWindow : Window
         var query = args.QueryText ?? sender.Text;
         if (string.IsNullOrWhiteSpace(query))
         {
-            // Empty search — go back to normal directory listing
+            _isSearchActive = false;
             FileList.SetSearchMode(false);
             _ = ViewModel.ClearSearchAsync();
         }
         else
         {
+            _isSearchActive = true;
             FileList.SetSearchMode(true);
             _ = ViewModel.SearchAsync(query);
+        }
+    }
+
+    private void SearchBox_TextChanged(AutoSuggestBox sender, AutoSuggestBoxTextChangedEventArgs args)
+    {
+        // When the user clears the box (via the built-in X or backspace) while a search
+        // is active, treat it as an explicit clear.
+        if (_isSearchActive && string.IsNullOrEmpty(sender.Text)
+            && args.Reason == AutoSuggestionBoxTextChangeReason.UserInput)
+        {
+            _isSearchActive = false;
+            FileList.SetSearchMode(false);
+            _ = ViewModel.ClearSearchAsync();
         }
     }
 

@@ -452,6 +452,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         finally
         {
             ActiveTab.IsLoading = false;
+            ActiveTab.RefreshStatusText();
         }
     }
 

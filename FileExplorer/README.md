@@ -54,6 +54,32 @@ dotnet run --project .\FileExplorer.App\FileExplorer.App.csproj -c Debug -r win-
 
 If you see `WindowsAppSDK SelfContained requires a supported Windows architecture`, always pass an explicit runtime identifier (`-r win-x64`).
 
+## Deploy to portable folder (fast iteration)
+
+Use this during day-to-day development.  The script builds, assembles the output into a self-contained folder, and validates required files.
+
+```powershell
+cd C:\Users\szil\Repos\excel_wizadry\FileExplorer
+
+# Debug build, no zip (fastest — used for daily dev/test)
+powershell -ExecutionPolicy Bypass -File .\scripts\publish-portable.ps1 -Configuration Debug -SkipZip
+
+# Release build with zip (for distribution)
+powershell -ExecutionPolicy Bypass -File .\scripts\publish-portable.ps1
+```
+
+Output folder:
+
+```
+C:\Users\szil\Repos\excel_wizadry\FileExplorer\artifacts\portable-folder\win-x64\FileExplorer\
+```
+
+Launch after deploy:
+
+```powershell
+Start-Process "C:\Users\szil\Repos\excel_wizadry\FileExplorer\artifacts\portable-folder\win-x64\FileExplorer\FileExplorer.exe"
+```
+
 ## Run tests
 
 ```powershell
@@ -147,6 +173,12 @@ Script parameters:
 
 - Portable folder: `artifacts\portable-folder\win-x64\FileExplorer\`
 - Optional zip: `artifacts\portable-folder\win-x64\FileExplorer-portable-win-x64.zip`
+
+Absolute path on the development machine:
+
+```
+C:\Users\szil\Repos\excel_wizadry\FileExplorer\artifacts\portable-folder\win-x64\FileExplorer\
+```
 
 Run the app from:
 
@@ -248,6 +280,47 @@ dotnet publish .\FileExplorer.App\FileExplorer.App.csproj `
 ```
 
 Use this profile for testing/perf experiments only. Validate startup and feature completeness before shipping.
+
+## Register as default folder opener
+
+When registered, clicking "Open folder location", "Show in folder", or any other app that opens a directory will route to FileExplorer instead of Windows Explorer.  The app also supports single-instance: if FileExplorer is already running the folder opens in a new tab rather than a second window.
+
+These registry keys are per-user (`HKCU`) — no admin rights required, and they survive reboots.
+
+### Register
+
+```powershell
+$exe = 'C:\Users\szil\Repos\excel_wizadry\FileExplorer\artifacts\portable-folder\win-x64\FileExplorer\FileExplorer.exe'
+
+New-Item -Path 'HKCU:\SOFTWARE\Classes\Directory\shell\open' -Force | Out-Null
+New-Item -Path 'HKCU:\SOFTWARE\Classes\Directory\shell\open\command' -Force | Out-Null
+Set-ItemProperty -Path 'HKCU:\SOFTWARE\Classes\Directory\shell\open\command' `
+    -Name '(Default)' -Value "`"$exe`" `"%1`""
+
+New-Item -Path 'HKCU:\SOFTWARE\Classes\Folder\shell\open' -Force | Out-Null
+New-Item -Path 'HKCU:\SOFTWARE\Classes\Folder\shell\open\command' -Force | Out-Null
+Set-ItemProperty -Path 'HKCU:\SOFTWARE\Classes\Folder\shell\open\command' `
+    -Name '(Default)' -Value "`"$exe`" `"%1`""
+```
+
+### Undo (restore Windows Explorer)
+
+```powershell
+Remove-Item 'HKCU:\SOFTWARE\Classes\Directory\shell\open' -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item 'HKCU:\SOFTWARE\Classes\Folder\shell\open'    -Recurse -Force -ErrorAction SilentlyContinue
+```
+
+### Remap WIN+E (optional)
+
+WIN+E is hardcoded to Windows Explorer; the registry keys above do not affect it.  Use one of:
+
+- **PowerToys** → Keyboard Manager → Remap shortcut: `Win+E` → launch `FileExplorer.exe` (recommended)
+- **AutoHotkey v2** — create `remap-winE.ahk` in `shell:startup`:
+
+```ahk
+#Requires AutoHotkey v2.0
+#e:: Run "C:\Users\szil\Repos\excel_wizadry\FileExplorer\artifacts\portable-folder\win-x64\FileExplorer\FileExplorer.exe"
+```
 
 ## Deployment verification checklist
 

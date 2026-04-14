@@ -509,6 +509,9 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
             await RefreshIncrementalAsync(CurrentPath);
     }
 
+    /// <summary>Refreshes the status bar text to reflect the current item / selection count.</summary>
+    public void RefreshStatusText() => UpdateStatusText();
+
     /// <summary>Performs a full reload of the current directory.</summary>
     public async Task ForceReloadAsync()
     {
