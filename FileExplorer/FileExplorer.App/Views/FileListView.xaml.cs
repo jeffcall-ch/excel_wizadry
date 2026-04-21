@@ -13,7 +13,6 @@ using Microsoft.UI.Xaml.Media;
 using Windows.ApplicationModel.DataTransfer;
 using Windows.Storage;
 using System.Collections.ObjectModel;
-using System.Globalization;
 
 namespace FileExplorer.App.Views;
 
@@ -26,19 +25,6 @@ public sealed partial class FileListView : UserControl
     private static readonly SolidColorBrush TransparentSelectionBrush = new(Colors.Transparent);
     private static readonly SolidColorBrush SelectedRowOverlayBrush = new(Windows.UI.Color.FromArgb(40, 120, 120, 120));
 
-    // Plain List<T> intentionally: ObservableCollection would fire one CollectionChanged per item
-    // during BuildDateDividerGroups, causing O(n) layout passes on the ListView.
-    // The outer _dateDividerGroups ObservableCollection handles group-level change notifications.
-    private sealed class DateDividerGroup : List<FileItemViewModel>
-    {
-        public DateDividerGroup(string header)
-        {
-            Header = header;
-        }
-
-        public string Header { get; }
-    }
-
     private TabContentViewModel? _currentTab;
     private string _typeAheadBuffer = string.Empty;
     private DateTimeOffset _lastKeyTime;
@@ -50,9 +36,6 @@ public sealed partial class FileListView : UserControl
     private bool _restoreFocusAfterNavigation;
     private string? _pendingSelectPathAfterGoUp;
     private bool _topLockScrollQueued;
-    private CancellationTokenSource? _dateDividerRefreshCts;
-    private readonly ObservableCollection<DateDividerGroup> _dateDividerGroups = [];
-    private readonly CollectionViewSource _groupedItemsSource = new() { IsSourceGrouped = true };
 
     /// <summary>Initializes a new instance of the <see cref="FileListView"/> class.</summary>
     public FileListView()
@@ -97,35 +80,7 @@ public sealed partial class FileListView : UserControl
             _currentTab.RenameError -= CurrentTab_RenameError;
         }
 
-        // ── Cycle 1 (this frame) ──────────────────────────────────────────────
-        // Determine whether the incoming tab will use the grouped (date-divider) source.
-        bool newTabIsGrouped = string.Equals(tab.SortColumn, "DateModified", StringComparison.OrdinalIgnoreCase)
-                               && !tab.SortAscending;
-        bool currentSourceIsGrouped = ReferenceEquals(FileListView_Inner.ItemsSource, _groupedItemsSource.View);
-
-        if (currentSourceIsGrouped)
-        {
-            if (!newTabIsGrouped)
-            {
-                // Switching to a flat tab: detach the grouped source FIRST so the subsequent
-                // _dateDividerGroups.Clear() fires its CollectionChanged(Reset) into nothing —
-                // no WinUI container-recycling work happens on the UI thread.
-                FileListView_Inner.ItemsSource = null;
-                _dateDividerGroups.Clear();
-            }
-            else
-            {
-                // Staying on a grouped (DateModified) tab: keep ItemsSource attached so the Reset
-                // recycles visible containers back into the VSP pool — cycle-2 retrieves them
-                // when it populates the new tab's groups, making grouped→grouped switches faster.
-                _dateDividerGroups.Clear();
-            }
-        }
-        else
-        {
-            // Coming from a flat source (or null): detach so cycle-2 picks the right source.
-            FileListView_Inner.ItemsSource = null;
-        }
+        FileListView_Inner.ItemsSource = null;
 
         _currentTab = tab;
         ClearTransientSelection();
@@ -141,25 +96,13 @@ public sealed partial class FileListView : UserControl
 
         System.Diagnostics.Debug.WriteLine($"[BindToTab] cycle-1 (shell visible): {bsw.ElapsedMilliseconds} ms  items={tab.Items.Count}  path={tab.CurrentPath}");
 
-        // ── Cycle 2 (next frame, Normal priority) ────────────────────────────
-        // Attach the real data source.  WinUI realises only the visible viewport
-        // containers — the list appears populated without blocking the first frame.
         DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Normal, () =>
         {
             if (!ReferenceEquals(_currentTab, tab))
-                return; // Tab was switched again before this frame — skip.
+                return;
 
             RefreshItemsSourceForCurrentSort();
             System.Diagnostics.Debug.WriteLine($"[BindToTab] cycle-2 (items attached): {bsw.ElapsedMilliseconds} ms  items={tab.Items.Count}");
-
-            // Do NOT call QueueRefreshDateDividers() here.
-            // RefreshItemsSourceForCurrentSort() just built the date groups from the current items.
-            // Calling QueueRefreshDateDividers() would schedule a second BuildDateDividerGroups()
-            // + Source re-assignment 250 ms later — nothing will have changed, but the CVS fires
-            // CollectionChanged(Reset) which recycles and re-creates every visible row = the
-            // "full row blink" seen after switching to a date-sorted tab.
-            // Date-divider refreshes for real data changes are triggered by
-            // CurrentTab_ItemsCollectionChanged and CurrentTab_PropertyChanged(IsLoading).
         });
     }
 
@@ -168,7 +111,6 @@ public sealed partial class FileListView : UserControl
         DispatcherQueue.TryEnqueue(() =>
         {
             UpdateEmptyState();
-            QueueRefreshDateDividers();
 
             if (_currentTab?.IsLoading == true)
             {
@@ -216,8 +158,6 @@ public sealed partial class FileListView : UserControl
 
                 if (!_currentTab.IsLoading)
                 {
-                    QueueRefreshDateDividers();
-
                     if (!TryApplyPendingSelectionAfterGoUp())
                     {
                         EnsureTopRowVisibleWhenNoSelection();
@@ -267,64 +207,8 @@ public sealed partial class FileListView : UserControl
         {
             _currentTab.SetSortCommand.Execute(column);
             UpdateSortIndicators();
-            QueueRefreshDateDividers();
+            RefreshItemsSourceForCurrentSort();
         }
-    }
-
-    private void QueueRefreshDateDividers()
-    {
-        if (_currentTab is null)
-            return;
-
-        if (!ShouldUseDateDividers())
-        {
-            _dateDividerRefreshCts?.Cancel();
-            _dateDividerRefreshCts = null;
-
-            // Keep the existing ungrouped source to avoid full ListView rebind/flicker
-            // on every add/remove/move operation (e.g., rename reorder).
-            if (!ReferenceEquals(FileListView_Inner.ItemsSource, _currentTab.Items))
-            {
-                RefreshItemsSourceForCurrentSort();
-            }
-
-            return;
-        }
-
-        if (_currentTab.IsLoading)
-            return;
-
-        _dateDividerRefreshCts?.Cancel();
-        // Do NOT Dispose() here — the previous Task may still be running and holds a reference
-        // to the CTS. Disposing while the Task runs causes ObjectDisposedException on cts.Token.
-        // Cancellation is sufficient; the GC collects the old CTS after the Task finishes.
-        var cts = new CancellationTokenSource();
-        _dateDividerRefreshCts = cts;
-
-        _ = Task.Run(async () =>
-        {
-            // Capture the token once; don't access cts.Token after this line.
-            var token = cts.Token;
-            try
-            {
-                await Task.Delay(250, token);
-            }
-            catch (OperationCanceledException)
-            {
-                return;
-            }
-
-            if (token.IsCancellationRequested)
-                return;
-
-            DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
-            {
-                if (token.IsCancellationRequested)
-                    return;
-
-                RefreshItemsSourceForCurrentSort();
-            });
-        });
     }
 
     private void RefreshItemsSourceForCurrentSort()
@@ -332,114 +216,10 @@ public sealed partial class FileListView : UserControl
         if (_currentTab is null)
             return;
 
-        if (ShouldUseDateDividers())
-        {
-            BuildDateDividerGroups();
-            // Always re-assign Source after building groups.
-            // DateDividerGroup : List<T> is not an ObservableCollection — the CollectionViewSource
-            // cannot observe individual item additions.  It snapshots each group's contents when
-            // the group is added to _dateDividerGroups.  BuildDateDividerGroups() adds items to a
-            // group AFTER adding the group to _dateDividerGroups, so the CVS snapshot is empty.
-            // Re-assigning Source forces the CVS to re-read all groups and their items in full.
-            _groupedItemsSource.Source = _dateDividerGroups;
-            if (!ReferenceEquals(FileListView_Inner.ItemsSource, _groupedItemsSource.View))
-                FileListView_Inner.ItemsSource = _groupedItemsSource.View;
-            return;
-        }
-
-        // When the ListView currently holds a grouped CollectionViewSource.View, replacing it
-        // directly with a flat ObservableCollection costs ~90 ms because WinUI reconciles the
-        // full group/container tree against the new flat list.
-        // Clearing the outer group collection first fires a single Reset event, leaving the
-        // grouped view empty. The subsequent flat assignment is then an empty→N swap: < 5 ms.
-        if (ReferenceEquals(FileListView_Inner.ItemsSource, _groupedItemsSource.View))
-        {
-            _dateDividerGroups.Clear();
-        }
-
         if (!ReferenceEquals(FileListView_Inner.ItemsSource, _currentTab.Items))
         {
             FileListView_Inner.ItemsSource = _currentTab.Items;
         }
-    }
-
-    private bool ShouldUseDateDividers()
-    {
-        return _currentTab is not null &&
-            string.Equals(_currentTab.SortColumn, "DateModified", StringComparison.OrdinalIgnoreCase) &&
-            !_currentTab.SortAscending;
-    }
-
-    private void BuildDateDividerGroups()
-    {
-        _dateDividerGroups.Clear();
-
-        if (_currentTab is null || _currentTab.Items.Count == 0)
-            return;
-
-        DateDividerGroup? currentGroup = null;
-        string? currentHeader = null;
-
-        foreach (var item in _currentTab.Items)
-        {
-            var header = GetDateDividerLabel(item.Entry.DateModified.LocalDateTime);
-            if (!string.Equals(header, currentHeader, StringComparison.Ordinal))
-            {
-                // Commit the PREVIOUS group (fully populated) before opening a new one.
-                // The CollectionViewSource snapshots group items when CollectionChanged fires;
-                // if we add the group while it is still empty the CVS sees 0 items and headers
-                // appear without rows.  Adding only completed groups avoids this.
-                if (currentGroup is not null)
-                    _dateDividerGroups.Add(currentGroup);
-
-                currentGroup = new DateDividerGroup(header);
-                currentHeader = header;
-            }
-
-            currentGroup!.Add(item);
-        }
-
-        // Commit the last group.
-        if (currentGroup is not null)
-            _dateDividerGroups.Add(currentGroup);
-    }
-
-    private static string GetDateDividerLabel(DateTime itemLocalTime)
-    {
-        var today = DateTime.Now.Date;
-        var yesterday = today.AddDays(-1);
-        var startOfWeek = GetStartOfWeek(today);
-        var startOfLastWeek = startOfWeek.AddDays(-7);
-        var startOfMonth = new DateTime(today.Year, today.Month, 1);
-        var startOfLastMonth = startOfMonth.AddMonths(-1);
-
-        var itemDate = itemLocalTime.Date;
-        if (itemDate >= today)
-            return "Today";
-
-        if (itemDate >= yesterday)
-            return "Yesterday";
-
-        if (itemDate >= startOfWeek)
-            return "This Week";
-
-        if (itemDate >= startOfLastWeek)
-            return "Last Week";
-
-        if (itemDate >= startOfMonth)
-            return "This Month";
-
-        if (itemDate >= startOfLastMonth)
-            return "Last Month";
-
-        return "Older";
-    }
-
-    private static DateTime GetStartOfWeek(DateTime date)
-    {
-        var firstDayOfWeek = CultureInfo.CurrentCulture.DateTimeFormat.FirstDayOfWeek;
-        var diff = (7 + (date.DayOfWeek - firstDayOfWeek)) % 7;
-        return date.AddDays(-diff).Date;
     }
 
     private void ColumnHeader_RightTapped(object sender, RightTappedRoutedEventArgs e)
@@ -457,12 +237,6 @@ public sealed partial class FileListView : UserControl
             bool visible = cb.IsChecked == true;
             switch (column)
             {
-                case "ExtractedProject":
-                    ColExtractedProject.Width = visible ? new GridLength(180) : new GridLength(0);
-                    break;
-                case "ExtractedRevision":
-                    ColExtractedRevision.Width = visible ? new GridLength(80) : new GridLength(0);
-                    break;
                 case "DateModified":
                     ColDateModified.Width = visible ? new GridLength(160) : new GridLength(0);
                     break;
@@ -478,13 +252,11 @@ public sealed partial class FileListView : UserControl
         if (_currentTab is null) return;
 
         NameSortIcon.Visibility = Visibility.Collapsed;
-        ProjectSortIcon.Visibility = Visibility.Collapsed;
-        RevisionSortIcon.Visibility = Visibility.Collapsed;
         DateSortIcon.Visibility = Visibility.Collapsed;
         SizeSortIcon.Visibility = Visibility.Collapsed;
 
-        var upGlyph = "\uE70E";   // ChevronUp
-        var downGlyph = "\uE70D"; // ChevronDown
+        var upGlyph = "\uE70E";
+        var downGlyph = "\uE70D";
         var glyph = _currentTab.SortAscending ? upGlyph : downGlyph;
 
         switch (_currentTab.SortColumn)
@@ -492,14 +264,6 @@ public sealed partial class FileListView : UserControl
             case "Name":
                 NameSortIcon.Glyph = glyph;
                 NameSortIcon.Visibility = Visibility.Visible;
-                break;
-            case "ExtractedProject":
-                ProjectSortIcon.Glyph = glyph;
-                ProjectSortIcon.Visibility = Visibility.Visible;
-                break;
-            case "ExtractedRevision":
-                RevisionSortIcon.Glyph = glyph;
-                RevisionSortIcon.Visibility = Visibility.Visible;
                 break;
             case "DateModified":
                 DateSortIcon.Glyph = glyph;
@@ -1476,12 +1240,6 @@ public sealed partial class FileListView : UserControl
         ResizeColumn(ColName, e.Delta.Translation.X, 300);
     }
 
-    private void ColGrip_ExtractedProject_ManipulationDelta(object sender, ManipulationDeltaRoutedEventArgs e)
-        => ResizeColumn(ColExtractedProject, e.Delta.Translation.X, 120);
-
-    private void ColGrip_ExtractedRevision_ManipulationDelta(object sender, ManipulationDeltaRoutedEventArgs e)
-        => ResizeColumn(ColExtractedRevision, e.Delta.Translation.X, 60);
-
     private void ColGrip_DateModified_ManipulationDelta(object sender, ManipulationDeltaRoutedEventArgs e)
         => ResizeColumn(ColDateModified, e.Delta.Translation.X, 80);
 
@@ -1586,15 +1344,12 @@ public sealed partial class FileListView : UserControl
     private void ApplyColumnWidths(ListViewItem container)
     {
         var grid = FindDataRowGrid(container);
-        if (grid is null || grid.ColumnDefinitions.Count < 6) return;
+        if (grid is null || grid.ColumnDefinitions.Count < 4) return;
 
-        // Mirror the header column widths exactly
         grid.ColumnDefinitions[0].Width = ColName.Width;
-        grid.ColumnDefinitions[1].Width = new GridLength(ColExtractedProject.Width.Value);
-        grid.ColumnDefinitions[2].Width = new GridLength(ColExtractedRevision.Width.Value);
-        grid.ColumnDefinitions[3].Width = new GridLength(ColDateModified.Width.Value);
-        grid.ColumnDefinitions[4].Width = new GridLength(ColSize.Width.Value);
-        grid.ColumnDefinitions[5].Width = ColTrailingSpacer.Width;
+        grid.ColumnDefinitions[1].Width = new GridLength(ColDateModified.Width.Value);
+        grid.ColumnDefinitions[2].Width = new GridLength(ColSize.Width.Value);
+        grid.ColumnDefinitions[3].Width = ColTrailingSpacer.Width;
     }
 
     private static Grid? FindDataRowGrid(DependencyObject parent)

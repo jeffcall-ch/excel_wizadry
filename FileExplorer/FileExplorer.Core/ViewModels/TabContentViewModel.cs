@@ -19,30 +19,19 @@ namespace FileExplorer.Core.ViewModels;
 /// </summary>
 public sealed partial class TabContentViewModel : ObservableObject, IDisposable
 {
-    private const int IdentitySkipLargeFolderThreshold = 900;
-    private const int IdentityApplyBatchSize = 50;
     private static readonly TimeSpan IdentityApplyDebounce = TimeSpan.FromMilliseconds(150);
-    private const double ProjectMatchThreshold = 0.88;
 
-    private static readonly Regex RevisionFromFileNameRegex = new(
         @"(?<!\d)(?<rev>\d+\.\d+)(?!\d)",
         RegexOptions.Compiled);
 
-    private static readonly Regex StrictRevisionRegex = new(
         @"^\d+\.\d+$",
         RegexOptions.Compiled);
 
-    private static readonly object AllowedProjectsLock = new();
-    private static string? _allowedProjectsCsvPath;
-    private static DateTime _allowedProjectsCsvWriteUtc;
-    private static IReadOnlyList<AllowedProjectEntry> _allowedProjectEntries = [];
 
     private readonly IFileSystemService _fileSystemService;
     private readonly IShellIntegrationService _shellService;
     private readonly ICloudStatusService _cloudStatusService;
     private readonly IPreviewService _previewService;
-    private readonly IIdentityExtractionService _identityExtractionService;
-    private readonly IIdentityCacheService _identityCacheService;
     private readonly ITabPathStateService _tabPathStateService;
     private readonly ISettingsService _settingsService;
     private readonly IDirectorySnapshotCache _snapshotCache;
@@ -50,14 +39,12 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
     private readonly SynchronizationContext? _uiContext;
     private IDisposable? _watcherHandle;
     private CancellationTokenSource? _loadCts;
-    private volatile bool _identityProcessingEnabledForCurrentPath = true;
     private int _tabPathSyncVersion;
     private DateTimeOffset _lastLoadCompletedUtc = DateTimeOffset.MinValue;
 
     /// <summary>UTC timestamp of the last completed directory load or incremental refresh.</summary>
     public DateTimeOffset LastLoadCompletedUtc => _lastLoadCompletedUtc;
 
-    private sealed record AllowedProjectEntry(string CanonicalName, string NormalizedName, HashSet<string> Tokens);
 
     /// <summary>The underlying tab state.</summary>
     public TabState TabState { get; }
@@ -107,8 +94,6 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private bool _isAutoRefreshPaused;
 
-    [ObservableProperty]
-    private bool _isIdentityHydrationActive;
 
     /// <summary>Raised when navigation occurs (for tree sync).</summary>
     public event EventHandler<string>? Navigated;
@@ -125,8 +110,6 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
         IShellIntegrationService shellService,
         ICloudStatusService cloudStatusService,
         IPreviewService previewService,
-        IIdentityExtractionService identityExtractionService,
-        IIdentityCacheService identityCacheService,
         ITabPathStateService tabPathStateService,
         ISettingsService settingsService,
         IDirectorySnapshotCache snapshotCache,
@@ -137,8 +120,6 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
         _shellService = shellService;
         _cloudStatusService = cloudStatusService;
         _previewService = previewService;
-        _identityExtractionService = identityExtractionService;
-        _identityCacheService = identityCacheService;
         _tabPathStateService = tabPathStateService;
         _settingsService = settingsService;
         _snapshotCache = snapshotCache;
@@ -155,8 +136,6 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
     partial void OnCurrentPathChanged(string value)
     {
         TabState.CurrentPath = value;
-        _identityProcessingEnabledForCurrentPath = ShouldEnableIdentityProcessing(value, Items.Count);
-
         var fallbackTitle = BuildFriendlyTabTitle(value);
         if (!string.Equals(TabTitle, fallbackTitle, StringComparison.Ordinal))
         {
@@ -278,8 +257,6 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
             System.Diagnostics.Debug.WriteLine($"[Navigate] scan done  {snapshot.Count} items  {navSw.ElapsedMilliseconds} ms  path={path}");
             var items = snapshot.Select(entry => new FileItemViewModel(entry)).ToList();
 
-            _identityProcessingEnabledForCurrentPath = ShouldEnableIdentityProcessing(path, items.Count);
-
             ApplyFolderSortPreference(path);
 
             // Stage 2: apply full sorted list over the partial first-batch already shown.
@@ -288,10 +265,6 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
             _lastLoadCompletedUtc = DateTimeOffset.UtcNow;
             System.Diagnostics.Debug.WriteLine($"[Navigate] items shown  {navSw.ElapsedMilliseconds} ms  path={path}");
 
-            if (_identityProcessingEnabledForCurrentPath)
-            {
-                _ = HydrateIdentityColumnsAsync(ct);
-            }
 
             IsEmpty = Items.Count == 0;
             UpdateStatusText();
@@ -821,8 +794,6 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
             var latestEntries = await LoadDirectorySnapshotAsync(path, CancellationToken.None);
             System.Diagnostics.Debug.WriteLine($"[Refresh] LoadDirectorySnapshot: {refreshSw.ElapsedMilliseconds} ms  ({latestEntries.Count} entries)  path={path}");
 
-            _identityProcessingEnabledForCurrentPath = ShouldEnableIdentityProcessing(path, latestEntries.Count);
-
             var comparer = StringComparer.OrdinalIgnoreCase;
             var latestByPath = new Dictionary<string, FileSystemEntry>(comparer);
             foreach (var entry in latestEntries)
@@ -865,7 +836,6 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
                 if (!latestByPath.ContainsKey(item.Entry.FullPath))
                 {
                     Items.Remove(item);
-                    _ = _identityCacheService.DeleteByNormalizedPathAsync(item.Entry.FullPath);
                     hasChanges = true;
                     removedCount++;
 
@@ -948,18 +918,6 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
                     }
                 }
 
-                if (_identityProcessingEnabledForCurrentPath)
-                {
-                    foreach (var item in affectedItems)
-                    {
-                        if (!item.Entry.IsDirectory &&
-                            _identityExtractionService.SupportsExtension(item.Entry.Extension) &&
-                            !ShouldSkipIndexing(item.Entry))
-                        {
-                            _ = RefreshIdentityForSingleFileAsync(item);
-                        }
-                    }
-                }
             }
         }
         catch (OperationCanceledException)
@@ -1020,9 +978,6 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
     private static void PreserveComputedFields(FileSystemEntry source, FileSystemEntry target)
     {
         target.CloudStatus = source.CloudStatus;
-        target.ExtractedProject = source.ExtractedProject;
-        target.ExtractedRevision = source.ExtractedRevision;
-        target.ExtractedDocumentName = source.ExtractedDocumentName;
         target.TypeDescription = source.TypeDescription;
         target.IconIndex = source.IconIndex;
     }
@@ -1070,21 +1025,7 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
             "Type" => SortAscending
                 ? items.OrderByDescending(i => i.Entry.IsDirectory).ThenBy(i => i.Entry.TypeDescription, StringComparer.OrdinalIgnoreCase)
                 : items.OrderByDescending(i => i.Entry.IsDirectory).ThenByDescending(i => i.Entry.TypeDescription, StringComparer.OrdinalIgnoreCase),
-            "ExtractedProject" => SortAscending
-                ? items.OrderByDescending(i => i.Entry.IsDirectory)
-                    .ThenBy(i => i.ExtractedProject, StringComparer.OrdinalIgnoreCase)
-                    .ThenBy(i => i.Entry.Name, StringComparer.OrdinalIgnoreCase)
-                : items.OrderByDescending(i => i.Entry.IsDirectory)
-                    .ThenByDescending(i => i.ExtractedProject, StringComparer.OrdinalIgnoreCase)
-                    .ThenBy(i => i.Entry.Name, StringComparer.OrdinalIgnoreCase),
-            "ExtractedRevision" => SortAscending
-                ? items.OrderByDescending(i => i.Entry.IsDirectory)
-                    .ThenBy(i => i.ExtractedRevision, StringComparer.OrdinalIgnoreCase)
-                    .ThenBy(i => i.Entry.Name, StringComparer.OrdinalIgnoreCase)
-                : items.OrderByDescending(i => i.Entry.IsDirectory)
-                    .ThenByDescending(i => i.ExtractedRevision, StringComparer.OrdinalIgnoreCase)
-                    .ThenBy(i => i.Entry.Name, StringComparer.OrdinalIgnoreCase),
-            "Size" => SortAscending
+                                    "Size" => SortAscending
                 ? items.OrderByDescending(i => i.Entry.IsDirectory).ThenBy(i => i.Entry.Size)
                 : items.OrderByDescending(i => i.Entry.IsDirectory).ThenByDescending(i => i.Entry.Size),
             _ => items.OrderByDescending(i => i.Entry.IsDirectory).ThenBy(i => i.Entry.Name, StringComparer.OrdinalIgnoreCase)
@@ -1261,20 +1202,6 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
                             _ = RefreshSingleCloudStatusAsync(vm);
                         }
 
-                        if (!isDir &&
-                            _identityProcessingEnabledForCurrentPath &&
-                            _identityExtractionService.SupportsExtension(entry.Extension) &&
-                            !ShouldSkipIndexing(entry))
-                        {
-                            _ = RefreshIdentityForSingleFileAsync(vm);
-                        }
-
-                        if (_identityProcessingEnabledForCurrentPath &&
-                            Items.Count >= IdentitySkipLargeFolderThreshold)
-                        {
-                            _identityProcessingEnabledForCurrentPath = false;
-                            _logger.LogDebug("Identity processing suspended for high-volume folder {Path}", CurrentPath);
-                        }
 
                         UpdateStatusText();
                     }
@@ -1289,14 +1216,6 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
                     _ = RefreshSingleCloudStatusAsync(changed);
                 }
 
-                if (changed is not null &&
-                    _identityProcessingEnabledForCurrentPath &&
-                    !changed.Entry.IsDirectory &&
-                    _identityExtractionService.SupportsExtension(changed.Entry.Extension) &&
-                    !ShouldSkipIndexing(changed.Entry))
-                {
-                    _ = RefreshIdentityForSingleFileAsync(changed);
-                }
                 break;
 
             case WatcherChangeTypes.Deleted:
@@ -1307,7 +1226,6 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
                     UpdateStatusText();
                 }
 
-                _ = _identityCacheService.DeleteByNormalizedPathAsync(change.FullPath);
                 break;
 
             case WatcherChangeTypes.Renamed:
@@ -1324,16 +1242,6 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
                     renamed.NotifyNameChanged();
                     renamed.NotifyRenamed();
 
-                    _ = _identityCacheService.DeleteByNormalizedPathAsync(previousPath);
-                    _ = _identityCacheService.DeleteByNormalizedPathAsync(change.FullPath);
-
-                    if (!renamed.Entry.IsDirectory &&
-                        _identityProcessingEnabledForCurrentPath &&
-                        _identityExtractionService.SupportsExtension(renamed.Entry.Extension) &&
-                        !ShouldSkipIndexing(renamed.Entry))
-                    {
-                        _ = RefreshIdentityForSingleFileAsync(renamed);
-                    }
                 }
                 break;
         }
@@ -1360,568 +1268,23 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
         }
     }
 
-    private async Task HydrateIdentityColumnsAsync(CancellationToken ct)
-    {
-        if (!_identityProcessingEnabledForCurrentPath)
-            return;
 
-        try
-        {
-            IsIdentityHydrationActive = true;
 
-            var candidates = Items
-                .Where(item =>
-                    !item.Entry.IsDirectory &&
-                    _identityExtractionService.SupportsExtension(item.Entry.Extension) &&
-                    !ShouldSkipIndexing(item.Entry))
-                .ToList();
 
-            if (candidates.Count == 0)
-                return;
 
-            var parentPath = _identityCacheService.NormalizePath(CurrentPath);
-            var cacheEntries = await _identityCacheService
-                .GetEntriesByParentPathAsync(parentPath, ct);
 
-            var liveEntries = new List<(FileItemViewModel Item, string FileKey, long Size, long LastWriteTicksUtc)>(candidates.Count);
-            var liveKeySet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-            foreach (var candidate in candidates)
-            {
-                var fileKey = _identityCacheService.BuildFileKey(
-                    candidate.Entry.FullPath,
-                    candidate.Entry.Size,
-                    candidate.Entry.DateModified);
 
-                liveEntries.Add((
-                    candidate,
-                    fileKey,
-                    candidate.Entry.Size,
-                    candidate.Entry.DateModified.UtcTicks));
 
-                liveKeySet.Add(fileKey);
-            }
 
-            var orphanKeys = cacheEntries.Keys
-                .Where(key => !liveKeySet.Contains(key))
-                .ToList();
 
-            if (orphanKeys.Count > 0)
-            {
-                await _identityCacheService.DeleteByFileKeysAsync(orphanKeys, ct);
-            }
 
-            var cacheApplyQueue = new List<(FileItemViewModel Item, DocumentIdentity Identity)>(liveEntries.Count);
-            var extractionQueue = new List<(FileItemViewModel Item, string FileKey, long Size, long LastWriteTicksUtc)>(liveEntries.Count);
 
-            foreach (var liveEntry in liveEntries)
-            {
-                var revisionFromFileName = ExtractRevisionFromFileName(liveEntry.Item.Entry.Name);
-                var isPdf = string.Equals(liveEntry.Item.Entry.Extension, ".pdf", StringComparison.OrdinalIgnoreCase);
 
-                if (cacheEntries.TryGetValue(liveEntry.FileKey, out var cached))
-                {
-                    var identity = cached.ToDocumentIdentity();
 
-                    if (!string.IsNullOrWhiteSpace(revisionFromFileName) &&
-                        (!isPdf || string.IsNullOrWhiteSpace(identity.Revision)))
-                    {
-                        identity = identity with { Revision = revisionFromFileName };
-                    }
 
-                    identity = SanitizeIdentity(identity);
 
-                    if (identity.HasAnyValue && NeedsIdentityUpdate(liveEntry.Item, identity))
-                    {
-                        cacheApplyQueue.Add((liveEntry.Item, identity));
-                    }
 
-                    continue;
-                }
-
-                extractionQueue.Add(liveEntry);
-            }
-
-            if (cacheApplyQueue.Count > 0)
-            {
-                await ApplyIdentityUpdatesBufferedAsync(cacheApplyQueue, ct);
-            }
-
-            if (extractionQueue.Count == 0)
-            {
-                return;
-            }
-
-            var filePaths = extractionQueue
-                .Select(entry => entry.Item.Entry.FullPath)
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToList();
-
-            var stopwatch = Stopwatch.StartNew();
-            var identities = await _identityExtractionService.ExtractIdentityBatchAsync(filePaths, ct);
-            stopwatch.Stop();
-
-            var applyQueue = new List<(FileItemViewModel Item, DocumentIdentity Identity)>(extractionQueue.Count);
-            var upsertQueue = new List<FileIdentityCacheRecord>(extractionQueue.Count);
-
-            foreach (var extractionEntry in extractionQueue)
-            {
-                var item = extractionEntry.Item;
-                var revisionFromFileName = ExtractRevisionFromFileName(item.Entry.Name);
-                var isPdf = string.Equals(item.Entry.Extension, ".pdf", StringComparison.OrdinalIgnoreCase);
-
-                DocumentIdentity identity = DocumentIdentity.Empty;
-                if (identities.TryGetValue(item.Entry.FullPath, out var extractedIdentity))
-                {
-                    identity = extractedIdentity;
-                }
-
-                if (!string.IsNullOrWhiteSpace(revisionFromFileName) &&
-                    (!isPdf || string.IsNullOrWhiteSpace(identity.Revision)))
-                {
-                    identity = identity with { Revision = revisionFromFileName };
-                }
-
-                identity = SanitizeIdentity(identity);
-
-                if (!identity.HasAnyValue)
-                    continue;
-
-                if (NeedsIdentityUpdate(item, identity))
-                {
-                    applyQueue.Add((item, identity));
-                }
-
-                upsertQueue.Add(new FileIdentityCacheRecord
-                {
-                    FileKey = extractionEntry.FileKey,
-                    ParentPath = parentPath,
-                    ProjectTitle = identity.ProjectTitle,
-                    Revision = identity.Revision,
-                    DocumentName = identity.DocumentName,
-                    LastWriteTime = extractionEntry.LastWriteTicksUtc,
-                    FileSize = extractionEntry.Size
-                });
-            }
-
-            if (applyQueue.Count > 0)
-            {
-                await ApplyIdentityUpdatesBufferedAsync(applyQueue, ct);
-            }
-
-            if (upsertQueue.Count > 0)
-            {
-                await _identityCacheService.UpsertEntriesAsync(upsertQueue, ct);
-            }
-
-            _logger.LogInformation(
-                "Identity hydration elapsed: {ElapsedMs} ms for {Count} candidate files in {Path}",
-                stopwatch.ElapsedMilliseconds,
-                candidates.Count,
-                CurrentPath);
-        }
-        catch (OperationCanceledException)
-        {
-            // Navigation changed; ignore stale identity work.
-        }
-        catch (Exception ex)
-        {
-            _logger.LogDebug(ex, "Identity hydration failed for {Path}", CurrentPath);
-        }
-        finally
-        {
-            IsIdentityHydrationActive = false;
-        }
-    }
-
-    private async Task ApplyIdentityUpdatesBufferedAsync(
-        IReadOnlyList<(FileItemViewModel Item, DocumentIdentity Identity)> updates,
-        CancellationToken ct)
-    {
-        for (var index = 0; index < updates.Count; index += IdentityApplyBatchSize)
-        {
-            ct.ThrowIfCancellationRequested();
-            await Task.Delay(IdentityApplyDebounce, ct);
-
-            var count = Math.Min(IdentityApplyBatchSize, updates.Count - index);
-            for (var offset = 0; offset < count; offset++)
-            {
-                var update = updates[index + offset];
-                update.Item.ApplyIdentity(update.Identity);
-            }
-        }
-    }
-
-    private async Task RefreshIdentityForSingleFileAsync(FileItemViewModel item)
-    {
-        if (!_identityProcessingEnabledForCurrentPath)
-            return;
-
-        if (item.Entry.IsDirectory || ShouldSkipIndexing(item.Entry))
-            return;
-
-        try
-        {
-            var fileInfo = new FileInfo(item.Entry.FullPath);
-            if (!fileInfo.Exists)
-                return;
-
-            var fileKey = _identityCacheService.BuildFileKey(
-                item.Entry.FullPath,
-                fileInfo.Length,
-                fileInfo.LastWriteTimeUtc);
-
-            var cached = await _identityCacheService.GetEntryByFileKeyAsync(fileKey);
-            if (cached is not null)
-            {
-                var cachedIdentity = cached.ToDocumentIdentity();
-                if (cachedIdentity.HasAnyValue && NeedsIdentityUpdate(item, cachedIdentity))
-                {
-                    item.ApplyIdentity(cachedIdentity);
-                }
-
-                return;
-            }
-
-            var identity = await _identityExtractionService.ExtractIdentityAsync(item.Entry.FullPath);
-            var revisionFromFileName = ExtractRevisionFromFileName(item.Entry.Name);
-            var isPdf = string.Equals(item.Entry.Extension, ".pdf", StringComparison.OrdinalIgnoreCase);
-
-            if (!string.IsNullOrWhiteSpace(revisionFromFileName) &&
-                (!isPdf || string.IsNullOrWhiteSpace(identity.Revision)))
-            {
-                identity = identity with { Revision = revisionFromFileName };
-            }
-
-            identity = SanitizeIdentity(identity);
-
-            if (!identity.HasAnyValue)
-            {
-                await _identityCacheService.DeleteByNormalizedPathAsync(item.Entry.FullPath);
-                return;
-            }
-
-            if (NeedsIdentityUpdate(item, identity))
-            {
-                item.ApplyIdentity(identity);
-            }
-
-            await _identityCacheService.UpsertEntriesAsync(
-                [
-                    new FileIdentityCacheRecord
-                    {
-                        FileKey = fileKey,
-                        ParentPath = _identityCacheService.NormalizePath(Path.GetDirectoryName(item.Entry.FullPath) ?? string.Empty),
-                        ProjectTitle = identity.ProjectTitle,
-                        Revision = identity.Revision,
-                        DocumentName = identity.DocumentName,
-                        LastWriteTime = fileInfo.LastWriteTimeUtc.Ticks,
-                        FileSize = fileInfo.Length
-                    }
-                ]);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogDebug(ex, "Single-file identity refresh failed for {Path}", item.Entry.FullPath);
-        }
-    }
-
-    private static bool NeedsIdentityUpdate(FileItemViewModel item, DocumentIdentity identity)
-    {
-        return !string.Equals(item.ExtractedProject, identity.ProjectTitle, StringComparison.Ordinal) ||
-            !string.Equals(item.ExtractedRevision, identity.Revision, StringComparison.Ordinal) ||
-            !string.Equals(item.ExtractedDocumentName, identity.DocumentName, StringComparison.Ordinal);
-    }
-
-    private static DocumentIdentity SanitizeIdentity(DocumentIdentity identity)
-    {
-        if (!identity.HasAnyValue)
-            return identity;
-
-        var matchedProject = MatchAllowedProjectName(identity.ProjectTitle);
-        var revision = NormalizeRevision(identity.Revision);
-
-        return identity with
-        {
-            ProjectTitle = matchedProject,
-            Revision = revision
-        };
-    }
-
-    private static string NormalizeRevision(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-            return string.Empty;
-
-        var normalized = value.Trim();
-        return StrictRevisionRegex.IsMatch(normalized) ? normalized : string.Empty;
-    }
-
-    private static string MatchAllowedProjectName(string? extractedProject)
-    {
-        if (string.IsNullOrWhiteSpace(extractedProject))
-            return string.Empty;
-
-        EnsureAllowedProjectsLoaded();
-        var entries = _allowedProjectEntries;
-        if (entries.Count == 0)
-            return string.Empty;
-
-        var normalizedInput = NormalizeForProjectMatch(extractedProject);
-        if (string.IsNullOrWhiteSpace(normalizedInput))
-            return string.Empty;
-
-        var inputTokens = TokenizeForMatch(normalizedInput);
-        AllowedProjectEntry? bestEntry = null;
-        var bestScore = 0d;
-
-        foreach (var entry in entries)
-        {
-            if (string.Equals(entry.NormalizedName, normalizedInput, StringComparison.Ordinal))
-                return entry.CanonicalName;
-
-            var score = ComputeProjectMatchScore(normalizedInput, inputTokens, entry);
-            if (score > bestScore)
-            {
-                bestScore = score;
-                bestEntry = entry;
-            }
-        }
-
-        return bestEntry is not null && bestScore >= ProjectMatchThreshold
-            ? bestEntry.CanonicalName
-            : string.Empty;
-    }
-
-    private static double ComputeProjectMatchScore(
-        string normalizedInput,
-        HashSet<string> inputTokens,
-        AllowedProjectEntry candidate)
-    {
-        var levenshtein = ComputeLevenshteinSimilarity(normalizedInput, candidate.NormalizedName);
-        var tokenScore = ComputeTokenSimilarity(inputTokens, candidate.Tokens);
-        var containment = candidate.NormalizedName.Contains(normalizedInput, StringComparison.Ordinal) ||
-            normalizedInput.Contains(candidate.NormalizedName, StringComparison.Ordinal)
-            ? 1d
-            : 0d;
-
-        return (levenshtein * 0.6d) + (tokenScore * 0.3d) + (containment * 0.1d);
-    }
-
-    private static double ComputeLevenshteinSimilarity(string left, string right)
-    {
-        if (left.Length == 0 && right.Length == 0)
-            return 1d;
-
-        var distance = ComputeLevenshteinDistance(left, right);
-        var maxLength = Math.Max(left.Length, right.Length);
-        if (maxLength == 0)
-            return 1d;
-
-        return 1d - (distance / (double)maxLength);
-    }
-
-    private static int ComputeLevenshteinDistance(string left, string right)
-    {
-        if (left.Length == 0)
-            return right.Length;
-
-        if (right.Length == 0)
-            return left.Length;
-
-        var costs = new int[right.Length + 1];
-        for (var index = 0; index <= right.Length; index++)
-        {
-            costs[index] = index;
-        }
-
-        for (var i = 1; i <= left.Length; i++)
-        {
-            var diagonal = costs[0];
-            costs[0] = i;
-
-            for (var j = 1; j <= right.Length; j++)
-            {
-                var oldDiagonal = costs[j];
-                var substitutionCost = left[i - 1] == right[j - 1] ? 0 : 1;
-
-                costs[j] = Math.Min(
-                    Math.Min(costs[j] + 1, costs[j - 1] + 1),
-                    diagonal + substitutionCost);
-
-                diagonal = oldDiagonal;
-            }
-        }
-
-        return costs[right.Length];
-    }
-
-    private static double ComputeTokenSimilarity(HashSet<string> left, HashSet<string> right)
-    {
-        if (left.Count == 0 || right.Count == 0)
-            return 0d;
-
-        var intersection = left.Count(token => right.Contains(token));
-        return (2d * intersection) / (left.Count + right.Count);
-    }
-
-    private static HashSet<string> TokenizeForMatch(string normalized)
-    {
-        return normalized
-            .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .ToHashSet(StringComparer.Ordinal);
-    }
-
-    private static string NormalizeForProjectMatch(string value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-            return string.Empty;
-
-        var formD = value.Normalize(NormalizationForm.FormD);
-        var builder = new StringBuilder(formD.Length);
-
-        foreach (var character in formD)
-        {
-            var category = CharUnicodeInfo.GetUnicodeCategory(character);
-            if (category == UnicodeCategory.NonSpacingMark)
-                continue;
-
-            if (char.IsLetterOrDigit(character))
-            {
-                builder.Append(char.ToLowerInvariant(character));
-            }
-            else
-            {
-                builder.Append(' ');
-            }
-        }
-
-        return Regex.Replace(builder.ToString(), @"\s+", " ").Trim();
-    }
-
-    private static void EnsureAllowedProjectsLoaded()
-    {
-        var csvPath = ResolveAllowedProjectsCsvPath();
-
-        if (string.IsNullOrWhiteSpace(csvPath) || !File.Exists(csvPath))
-        {
-            lock (AllowedProjectsLock)
-            {
-                _allowedProjectsCsvPath = csvPath;
-                _allowedProjectsCsvWriteUtc = DateTime.MinValue;
-                _allowedProjectEntries = [];
-            }
-
-            return;
-        }
-
-        var writeUtc = File.GetLastWriteTimeUtc(csvPath);
-
-        lock (AllowedProjectsLock)
-        {
-            if (string.Equals(_allowedProjectsCsvPath, csvPath, StringComparison.OrdinalIgnoreCase) &&
-                _allowedProjectsCsvWriteUtc == writeUtc &&
-                _allowedProjectEntries.Count > 0)
-            {
-                return;
-            }
-
-            var lines = File.ReadAllLines(csvPath);
-            var entries = new List<AllowedProjectEntry>(lines.Length);
-            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-            foreach (var line in lines)
-            {
-                var value = ParseProjectCsvValue(line);
-                if (string.IsNullOrWhiteSpace(value))
-                    continue;
-
-                if (value.Equals("project", StringComparison.OrdinalIgnoreCase))
-                    continue;
-
-                var normalized = NormalizeForProjectMatch(value);
-                if (string.IsNullOrWhiteSpace(normalized))
-                    continue;
-
-                if (!seen.Add(normalized))
-                    continue;
-
-                entries.Add(new AllowedProjectEntry(value, normalized, TokenizeForMatch(normalized)));
-            }
-
-            _allowedProjectsCsvPath = csvPath;
-            _allowedProjectsCsvWriteUtc = writeUtc;
-            _allowedProjectEntries = entries;
-        }
-    }
-
-    private static string ParseProjectCsvValue(string line)
-    {
-        if (string.IsNullOrWhiteSpace(line))
-            return string.Empty;
-
-        var trimmed = line.Trim();
-        if (trimmed.Length >= 2 && trimmed[0] == '"' && trimmed[^1] == '"')
-        {
-            trimmed = trimmed[1..^1].Replace("\"\"", "\"");
-        }
-
-        return trimmed.Trim();
-    }
-
-    private static string ResolveAllowedProjectsCsvPath()
-    {
-        var envPath = Environment.GetEnvironmentVariable("FILEEXPLORER_ALLOWED_PROJECTS_CSV");
-        if (!string.IsNullOrWhiteSpace(envPath))
-        {
-            var expanded = Environment.ExpandEnvironmentVariables(envPath);
-            if (File.Exists(expanded))
-                return Path.GetFullPath(expanded);
-        }
-
-        var repoRoot = FindRepositoryRoot();
-        if (!string.IsNullOrWhiteSpace(repoRoot))
-        {
-            var fromRepo = Path.Combine(repoRoot, "Development", "allowed_project_names.csv");
-            if (File.Exists(fromRepo))
-                return fromRepo;
-        }
-
-        var fromBaseDev = Path.Combine(AppContext.BaseDirectory, "Development", "allowed_project_names.csv");
-        if (File.Exists(fromBaseDev))
-            return fromBaseDev;
-
-        var fromBase = Path.Combine(AppContext.BaseDirectory, "allowed_project_names.csv");
-        return File.Exists(fromBase) ? fromBase : string.Empty;
-    }
-
-    private static string? FindRepositoryRoot()
-    {
-        var current = new DirectoryInfo(AppContext.BaseDirectory);
-        for (var i = 0; i < 12 && current is not null; i++)
-        {
-            if (File.Exists(Path.Combine(current.FullName, "FileExplorer.sln")))
-                return current.FullName;
-
-            current = current.Parent;
-        }
-
-        return null;
-    }
-
-    private static bool ShouldSkipIndexing(FileSystemEntry entry)
-    {
-        if (entry.IsDirectory)
-            return true;
-
-        if (entry.Name.StartsWith("~$", StringComparison.OrdinalIgnoreCase))
-            return true;
-
-        if (entry.IsHidden || entry.IsSystem)
-            return true;
-
-        return false;
-    }
 
     private static string GetTypeDescriptionFast(FileSystemEntry entry)
     {
@@ -1934,22 +1297,6 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
         return $"{entry.Extension.TrimStart('.').ToUpperInvariant()} File";
     }
 
-    private static string ExtractRevisionFromFileName(string fileName)
-    {
-        if (string.IsNullOrWhiteSpace(fileName))
-            return string.Empty;
-
-        var nameWithoutExtension = Path.GetFileNameWithoutExtension(fileName);
-        if (string.IsNullOrWhiteSpace(nameWithoutExtension))
-            return string.Empty;
-
-        var matches = RevisionFromFileNameRegex.Matches(nameWithoutExtension);
-        if (matches.Count == 0)
-            return string.Empty;
-
-        var value = matches[^1].Groups["rev"].Value;
-        return string.IsNullOrWhiteSpace(value) ? string.Empty : value;
-    }
 
     private async Task RefreshSingleCloudStatusAsync(FileItemViewModel item)
     {
@@ -2023,38 +1370,6 @@ public sealed partial class TabContentViewModel : ObservableObject, IDisposable
     /// <summary>Returns the current tab title as a fallback header text.</summary>
     public override string ToString() => TabTitle;
 
-    private static bool ShouldEnableIdentityProcessing(string currentPath, int itemCount)
-    {
-        if (itemCount >= IdentitySkipLargeFolderThreshold)
-            return false;
-
-        if (string.IsNullOrWhiteSpace(currentPath))
-            return true;
-
-        string normalizedCurrentPath;
-        try
-        {
-            normalizedCurrentPath = NormalizeNavigationPath(currentPath);
-        }
-        catch
-        {
-            return true;
-        }
-
-        var downloadsPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
-        try
-        {
-            var normalizedDownloadsPath = NormalizeNavigationPath(downloadsPath);
-            if (string.Equals(normalizedCurrentPath, normalizedDownloadsPath, StringComparison.OrdinalIgnoreCase))
-                return false;
-        }
-        catch
-        {
-            // Keep indexing enabled when Downloads path normalization is unavailable.
-        }
-
-        return true;
-    }
 }
 
 /// <summary>
