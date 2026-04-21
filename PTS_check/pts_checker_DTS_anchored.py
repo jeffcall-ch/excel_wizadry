@@ -1,0 +1,941 @@
+"""
+PTS Activity Matcher Script
+Matches activities from project plan with important activities from general file
+using fuzzy string matching and adds category markers.
+"""
+
+import pandas as pd
+from pathlib import Path
+from datetime import datetime, timedelta
+from thefuzz import fuzz
+import sys
+
+
+def find_rightmost_used_column(df):
+    """Find the index of the rightmost column with data."""
+    for i in range(len(df.columns) - 1, -1, -1):
+        if df.iloc[:, i].notna().sum() > 1:  # More than 1 non-null value
+            return i
+    return len(df.columns) - 1
+
+
+def match_activity(activity_name, important_activities, threshold=90):
+    """
+    Match an activity name against a list of important activities using fuzzy matching.
+    Returns a list of tuples (activity, score, categories) for matches above threshold.
+    """
+    if pd.isna(activity_name):
+        return []
+    
+    activity_name_lower = str(activity_name).lower().strip()
+    matches = []
+    
+    for _, row in important_activities.iterrows():
+        important_activity = str(row['Activity']).lower().strip()
+        
+        # Calculate similarity score
+        score = fuzz.ratio(activity_name_lower, important_activity)
+        
+        if score >= threshold:
+            # Extract categories where value is 'x' (case insensitive)
+            categories = {}
+            for col in ['Important for GP', 'Piping', 'Hangers', 'Additional Material', 'Valves']:
+                if pd.notna(row[col]) and str(row[col]).lower().strip() == 'x':
+                    categories[col] = 'X'
+                else:
+                    categories[col] = ''
+            
+            matches.append((row['Activity'], score, categories))
+    
+    return matches
+
+
+def format_date_swiss(date_value):
+    """
+    Convert date to Swiss format dd/mm/yyyy, removing any extra text like 'A'.
+    Handles both datetime objects and strings.
+    Handles 2-digit years with asterisk (e.g., '26*' means 2026).
+    """
+    if pd.isna(date_value):
+        return ''
+    
+    date_str = str(date_value).strip()
+    
+    # Remove trailing ' A' or similar letters (but preserve asterisks for now)
+    date_str = date_str.rstrip(' ABCDEFGHIJKLMNOPQRSTUVWXYZ')
+    
+    try:
+        # Try parsing as datetime if it's a timestamp string
+        if isinstance(date_value, pd.Timestamp):
+            return date_value.strftime('%d/%m/%Y')
+        
+        # Try parsing common formats
+        # Format: dd.mm.yy or dd.mm.yy*
+        if '.' in date_str and len(date_str.split('.')) == 3:
+            parts = date_str.split('.')
+            day, month, year = parts[0], parts[1], parts[2]
+            
+            # Handle asterisk in year (e.g., '26*')
+            year = year.rstrip('*')
+            
+            # Handle 2-digit year
+            if len(year) == 2:
+                year = '20' + year if int(year) < 50 else '19' + year
+            return f"{day.zfill(2)}/{month.zfill(2)}/{year}"
+        
+        # Try pandas datetime parsing
+        dt = pd.to_datetime(date_value, errors='coerce')
+        if pd.notna(dt):
+            return dt.strftime('%d/%m/%Y')
+    except:
+        pass
+    
+    return date_str
+
+
+def parse_holiday_periods(df_holidays, year):
+    """
+    Parse holiday periods from text descriptions to actual date ranges.
+    
+    Args:
+        df_holidays: DataFrame with columns ['From', 'To', 'Length adder weeks']
+        year: Year to apply the holiday periods to
+    
+    Returns:
+        List of tuples: (start_date, end_date, adder_weeks, description)
+    """
+    periods = []
+    
+    month_map = {
+        'january': 1, 'february': 2, 'march': 3, 'april': 4,
+        'may': 5, 'june': 6, 'july': 7, 'august': 8,
+        'september': 9, 'october': 10, 'november': 11, 'december': 12
+    }
+    
+    for _, row in df_holidays.iterrows():
+        from_text = str(row['From']).lower()
+        to_text = str(row['To']).lower()
+        adder_weeks = int(row['Length adder weeks'])
+        
+        # Parse "middle of Month" or "end of Month"
+        from_month = None
+        from_day = 1
+        to_month = None
+        to_day = 1
+        
+        for month_name, month_num in month_map.items():
+            if month_name in from_text:
+                from_month = month_num
+                if 'middle' in from_text:
+                    from_day = 15
+                elif 'end' in from_text:
+                    from_day = 28 if month_num == 2 else (30 if month_num in [4, 6, 9, 11] else 31)
+                break
+        
+        for month_name, month_num in month_map.items():
+            if month_name in to_text:
+                to_month = month_num
+                if 'middle' in to_text:
+                    to_day = 15
+                elif 'end' in to_text:
+                    to_day = 28 if month_num == 2 else (30 if month_num in [4, 6, 9, 11] else 31)
+                break
+        
+        if from_month and to_month:
+            start_date = datetime(year, from_month, from_day)
+            end_date = datetime(year, to_month, to_day)
+            description = f"{row['From']} to {row['To']} holiday period"
+            periods.append((start_date, end_date, adder_weeks, description))
+    
+    return periods
+
+
+def check_holiday_conflict(start_date, end_date, holiday_periods):
+    """
+    Check if an activity execution period overlaps with a holiday period or within 1 week after.
+    
+    Args:
+        start_date: datetime object - activity start date
+        end_date: datetime object - activity end date
+        holiday_periods: List of tuples (start_date, end_date, adder_weeks, description)
+    
+    Returns:
+        Tuple (has_conflict, adder_weeks, description) or (False, 0, None)
+    """
+    for holiday_start, holiday_end, adder_weeks, description in holiday_periods:
+        # Extend holiday period by 1 week after
+        extended_holiday_end = holiday_end + timedelta(weeks=1)
+        
+        # Check if activity execution period overlaps with holiday period (including 1 week after)
+        # Activity overlaps if: activity_start <= extended_holiday_end AND activity_end >= holiday_start
+        if start_date <= extended_holiday_end and end_date >= holiday_start:
+            return (True, adder_weeks, description)
+    
+    return (False, 0, None)
+
+
+def calculate_requested_dates(df_plan, df_general, df_constraints, matched_activities, df_holidays=None):
+    """
+    Calculate requested dates by working backwards AND forwards from a DTS-derived anchor date.
+    The anchor is the latest Finish date among:
+      - Lot General Piping Pipe Material DTS(S) [fallback: DTS(T)]
+      - Lot General Piping Hangers DTS(S) [fallback: DTS(T)]
+    Detects and reports conflicts when multiple dependencies try to set different dates.
+    Ensures all calculated dates fall on weekdays (Monday-Friday).
+    Applies holiday adjustments if holiday periods are provided.
+
+    Args:
+        df_plan: Project plan dataframe
+        df_general: General activities dataframe
+        df_constraints: Constraints/relationships dataframe (uses 'Anchor' as virtual node)
+        matched_activities: Dictionary mapping important activity names to their row indices in df_plan
+        df_holidays: Optional DataFrame with holiday periods
+
+    Returns:
+        Tuple of (conflicts list, dependency_map, anchor_info) where
+        anchor_info = {'source_activity': name_of_winning_DTS_activity}
+    """
+    
+    def ensure_weekday(date):
+        """Adjust date to next weekday if it falls on weekend."""
+        # 5 = Saturday, 6 = Sunday
+        if date.weekday() == 5:  # Saturday
+            return date + timedelta(days=2)  # Move to Monday
+        elif date.weekday() == 6:  # Sunday
+            return date + timedelta(days=1)  # Move to Monday
+        return date
+    
+    def get_finish_date(activity_name):
+        """Return the Finish date of a matched activity as a datetime, or None if unavailable."""
+        if activity_name not in matched_activities:
+            return None
+        idx = matched_activities[activity_name]
+        finish_val = df_plan.at[idx, 'Finish']
+        if pd.isna(finish_val) or finish_val == '':
+            return None
+        dt = pd.to_datetime(finish_val, format='%d/%m/%Y', dayfirst=True, errors='coerce')
+        return dt if pd.notna(dt) else None
+
+    # Anchor candidate activity names (must match names in Important Activities sheet exactly)
+    PIPE_MAT_DTS_S = "Lot General Piping Pipe Material  - DTS (S)"
+    PIPE_MAT_DTS_T = "Lot General Piping Pipe Material  - DTS (T)"
+    HANGERS_DTS_S = "Lot General Piping Hangers - DTS (S)"
+    HANGERS_DTS_T = "Lot General Piping Hangers - DTS (T)"
+
+    # Resolve pipe material date: prefer DTS(S), fallback to DTS(T)
+    pipe_date = get_finish_date(PIPE_MAT_DTS_S)
+    pipe_source_name = PIPE_MAT_DTS_S if pipe_date is not None else None
+    pipe_label = "DTS(S)"
+    if pipe_date is None:
+        pipe_date = get_finish_date(PIPE_MAT_DTS_T)
+        pipe_source_name = PIPE_MAT_DTS_T if pipe_date is not None else None
+        pipe_label = "DTS(T) [fallback]"
+
+    # Resolve hangers date: prefer DTS(S), fallback to DTS(T)
+    hangers_date = get_finish_date(HANGERS_DTS_S)
+    hangers_source_name = HANGERS_DTS_S if hangers_date is not None else None
+    hangers_label = "DTS(S)"
+    if hangers_date is None:
+        hangers_date = get_finish_date(HANGERS_DTS_T)
+        hangers_source_name = HANGERS_DTS_T if hangers_date is not None else None
+        hangers_label = "DTS(T) [fallback]"
+
+    # Determine anchor: latest of the two resolved dates
+    anchor_date = None
+    anchor_source_name = None
+    anchor_reason = ""
+
+    pipe_str = pipe_date.strftime('%d/%m/%Y') if pipe_date is not None else 'N/A'
+    hangers_str = hangers_date.strftime('%d/%m/%Y') if hangers_date is not None else 'N/A'
+
+    if pipe_date is not None and hangers_date is not None:
+        if pipe_date >= hangers_date:
+            anchor_date = pipe_date
+            anchor_source_name = pipe_source_name
+            anchor_reason = (f"Anchor = Pipe Material {pipe_label} [{pipe_str}] "
+                             f"(later than Hangers {hangers_label} [{hangers_str}])")
+        else:
+            anchor_date = hangers_date
+            anchor_source_name = hangers_source_name
+            anchor_reason = (f"Anchor = Hangers {hangers_label} [{hangers_str}] "
+                             f"(later than Pipe Material {pipe_label} [{pipe_str}])")
+    elif pipe_date is not None:
+        anchor_date = pipe_date
+        anchor_source_name = pipe_source_name
+        anchor_reason = f"Anchor = Pipe Material {pipe_label} [{pipe_str}] (only pipe material date available)"
+    elif hangers_date is not None:
+        anchor_date = hangers_date
+        anchor_source_name = hangers_source_name
+        anchor_reason = f"Anchor = Hangers {hangers_label} [{hangers_str}] (only hangers date available)"
+    else:
+        print("Error: No DTS Finish dates found for any anchor candidate. Cannot calculate requested dates.")
+        return [], {}, None
+
+    anchor_date = ensure_weekday(anchor_date)
+    anchor_info = {'source_activity': anchor_source_name}
+
+    print(f"\nAnchor determination:")
+    print(f"  Pipe Material ({pipe_label}): {pipe_source_name} -> {pipe_str}")
+    print(f"  Hangers ({hangers_label}): {hangers_source_name} -> {hangers_str}")
+    print(f"  {anchor_reason}")
+    print(f"  Anchor date (weekday-adjusted): {anchor_date.strftime('%d/%m/%Y')}")
+
+    # Parse holiday periods if provided
+    holiday_periods = []
+    if df_holidays is not None:
+        anchor_year = anchor_date.year
+        # Generate holiday periods for anchor year and adjacent years
+        for year in [anchor_year - 1, anchor_year, anchor_year + 1]:
+            holiday_periods.extend(parse_holiday_periods(df_holidays, year))
+        print(f"  Loaded {len(holiday_periods) // 3} holiday period(s) for years {anchor_year-1} to {anchor_year+1}")
+
+    # Build a dictionary to store calculated dates and their sources.
+    # 'Anchor' is a virtual node - not a real df_plan row - seeded with the computed DTS date.
+    # Structure: {activity_name: {'date': datetime, 'sources': [list of calculation sources]}}
+    activity_dates = {
+        'Anchor': {
+            'date': anchor_date,
+            'sources': [anchor_reason]
+        }
+    }
+
+    # Track dependency relationships for formula building
+    # Structure: {activity_name: {'reference': name, 'weeks': num, 'direction': 'before'/'after'}}
+    # 'Anchor' is a sentinel - resolved to anchor_source_name during formula building.
+    dependency_map = {}
+    dependency_map['Anchor'] = {'reference': 'self', 'source_activity': anchor_source_name}
+
+    # Track conflicts
+    conflicts = []
+    
+    # Process constraints - work both backwards and forwards
+    max_iterations = 100  # Prevent infinite loops
+    iteration = 0
+    
+    while iteration < max_iterations:
+        iteration += 1
+        progress_made = False
+        
+        for _, constraint in df_constraints.iterrows():
+            from_activity = constraint['From']
+            to_activity = constraint['To']
+            duration_weeks = constraint['Duration weeks']
+            comment = constraint['Comments']
+            
+            # Skip if duration is not valid
+            if pd.isna(duration_weeks):
+                continue
+            
+            # Build comment description
+            comment_suffix = f". {comment}" if pd.notna(comment) and str(comment).strip() else ""
+            
+            # BACKWARD calculation: if "To" date is known but "From" date needs to be calculated/verified
+            if to_activity in activity_dates and from_activity in matched_activities:
+                to_date = activity_dates[to_activity]['date']
+                from_date_initial = to_date - timedelta(weeks=duration_weeks)
+                from_date_initial = ensure_weekday(from_date_initial)  # Ensure weekday
+                
+                # Check if activity execution period (from_date_initial TO to_date) overlaps with holidays
+                has_conflict, adder_weeks, holiday_desc = check_holiday_conflict(from_date_initial, to_date, holiday_periods)
+                if has_conflict:
+                    # For backward calculation, add adder to duration (start earlier)
+                    total_weeks = duration_weeks + adder_weeks
+                    from_date = to_date - timedelta(weeks=total_weeks)
+                    from_date = ensure_weekday(from_date)
+                    reason = f"{int(total_weeks)}W before '{to_activity}'{comment_suffix}. Originally {from_date_initial.strftime('%d/%m/%Y')} (based on {int(duration_weeks)}W), shifted by {adder_weeks}W due to {holiday_desc}"
+                else:
+                    from_date = from_date_initial
+                    total_weeks = duration_weeks
+                    reason = f"{int(duration_weeks)}W before '{to_activity}'{comment_suffix}"
+                
+                if from_activity in activity_dates:
+                    # Check for conflict
+                    existing_date = activity_dates[from_activity]['date']
+                    if abs((existing_date - from_date).days) > 0:  # Different dates
+                        conflict_msg = (
+                            f"CONFLICT: '{from_activity}'\n"
+                            f"  Existing: {existing_date.strftime('%d/%m/%Y')} from {activity_dates[from_activity]['sources'][-1]}\n"
+                            f"  New calc: {from_date.strftime('%d/%m/%Y')} from {reason}"
+                        )
+                        conflicts.append(conflict_msg)
+                        print(f"⚠️  {conflict_msg}")
+                    else:
+                        # Same date from different path - just add source
+                        activity_dates[from_activity]['sources'].append(reason)
+                else:
+                    # New calculation
+                    activity_dates[from_activity] = {
+                        'date': from_date,
+                        'sources': [reason]
+                    }
+                    # Store dependency for formula building
+                    if from_activity not in dependency_map:
+                        dependency_map[from_activity] = {
+                            'reference': to_activity,
+                            'weeks': total_weeks,
+                            'direction': 'before'
+                        }
+                    progress_made = True
+            
+            # FORWARD calculation: if "From" date is known but "To" date needs to be calculated/verified
+            if from_activity in activity_dates and to_activity in matched_activities:
+                from_date = activity_dates[from_activity]['date']
+                to_date_initial = from_date + timedelta(weeks=duration_weeks)
+                to_date_initial = ensure_weekday(to_date_initial)  # Ensure weekday
+                
+                # Check if activity execution period (from_date TO to_date_initial) overlaps with holidays
+                has_conflict, adder_weeks, holiday_desc = check_holiday_conflict(from_date, to_date_initial, holiday_periods)
+                if has_conflict:
+                    # For forward calculation, add adder to duration (end later)
+                    total_weeks = duration_weeks + adder_weeks
+                    to_date = from_date + timedelta(weeks=total_weeks)
+                    to_date = ensure_weekday(to_date)
+                    reason = f"{int(total_weeks)}W after '{from_activity}'{comment_suffix}. Originally {to_date_initial.strftime('%d/%m/%Y')} (based on {int(duration_weeks)}W), shifted by {adder_weeks}W due to {holiday_desc}"
+                else:
+                    to_date = to_date_initial
+                    total_weeks = duration_weeks
+                    reason = f"{int(duration_weeks)}W after '{from_activity}'{comment_suffix}"
+                
+                if to_activity in activity_dates:
+                    # Check for conflict
+                    existing_date = activity_dates[to_activity]['date']
+                    if abs((existing_date - to_date).days) > 0:  # Different dates
+                        conflict_msg = (
+                            f"CONFLICT: '{to_activity}'\n"
+                            f"  Existing: {existing_date.strftime('%d/%m/%Y')} from {activity_dates[to_activity]['sources'][-1]}\n"
+                            f"  New calc: {to_date.strftime('%d/%m/%Y')} from {reason}"
+                        )
+                        conflicts.append(conflict_msg)
+                        print(f"⚠️  {conflict_msg}")
+                    else:
+                        # Same date from different path - just add source
+                        activity_dates[to_activity]['sources'].append(reason)
+                else:
+                    # New calculation
+                    activity_dates[to_activity] = {
+                        'date': to_date,
+                        'sources': [reason]
+                    }
+                    # Store dependency for formula building
+                    if to_activity not in dependency_map:
+                        dependency_map[to_activity] = {
+                            'reference': from_activity,
+                            'weeks': total_weeks,
+                            'direction': 'after'
+                        }
+                    progress_made = True
+        
+        # If no progress was made, we're done
+        if not progress_made:
+            break
+    
+    print(f"\nCalculated dates for {len(activity_dates)} activities")
+    if conflicts:
+        print(f"⚠️  Found {len(conflicts)} conflict(s) - see details above")
+    
+    # Now update the df_plan with calculated dates
+    for activity_name, date_info in activity_dates.items():
+        if activity_name in matched_activities:
+            row_idx = matched_activities[activity_name]
+            
+            # Set requested date
+            df_plan.at[row_idx, 'Requested date'] = date_info['date'].strftime('%d/%m/%Y')
+            
+            # Set comment (use the first source); mark the effective anchor activity
+            if activity_name == anchor_source_name:
+                df_plan.at[row_idx, 'Comment'] = f"[EFFECTIVE ANCHOR: {anchor_source_name}] {anchor_reason}"
+            else:
+                df_plan.at[row_idx, 'Comment'] = date_info['sources'][0]
+    
+    return conflicts, dependency_map, anchor_info
+
+
+def calculate_current_lengths(df_plan, df_constraints, matched_activities):
+    """
+    Calculate the current length in weeks between dependent activities based on their actual dates in the plan.
+    Uses Finish dates for all real activities. Constraints involving the virtual 'Anchor' node are skipped
+    because 'Anchor' is not in matched_activities.
+
+    Args:
+        df_plan: Project plan dataframe
+        df_constraints: Constraints/relationships dataframe
+        matched_activities: Dictionary mapping important activity names to their row indices in df_plan
+    """
+    # Dictionary to track current lengths for each activity
+    current_lengths = {}
+    
+    for _, constraint in df_constraints.iterrows():
+        from_activity = constraint['From']
+        to_activity = constraint['To']
+        duration_weeks = constraint['Duration weeks']
+        comment = constraint['Comments']
+        
+        # Skip if duration is not valid or activities not matched
+        if pd.isna(duration_weeks) or from_activity not in matched_activities or to_activity not in matched_activities:
+            continue
+        
+        # Get the row indices
+        from_idx = matched_activities[from_activity]
+        to_idx = matched_activities[to_activity]
+        
+        # Get Finish dates for both activities
+        from_date_value = df_plan.at[from_idx, 'Finish']
+        to_date_value = df_plan.at[to_idx, 'Finish']
+        
+        # Parse dates - skip if either is missing
+        if pd.isna(from_date_value) or pd.isna(to_date_value) or from_date_value == '' or to_date_value == '':
+            continue
+        
+        try:
+            from_date = pd.to_datetime(from_date_value, format='%d/%m/%Y', dayfirst=True)
+            to_date = pd.to_datetime(to_date_value, format='%d/%m/%Y', dayfirst=True)
+            
+            # Calculate actual duration in weeks
+            actual_duration = (to_date - from_date).days / 7
+            
+            # Build description matching the comment format
+            comment_suffix = f". {comment}" if pd.notna(comment) and str(comment).strip() else ""
+            
+            # BACKWARD relationship: Add to "From" activity (it comes BEFORE "To")
+            backward_desc = f"{actual_duration:.1f}W (planned: {int(duration_weeks)}W) before '{to_activity}'{comment_suffix}"
+            if from_activity not in current_lengths:
+                current_lengths[from_activity] = []
+            current_lengths[from_activity].append(backward_desc)
+            
+            # FORWARD relationship: Add to "To" activity (it comes AFTER "From")
+            forward_desc = f"{actual_duration:.1f}W (planned: {int(duration_weeks)}W) after '{from_activity}'{comment_suffix}"
+            if to_activity not in current_lengths:
+                current_lengths[to_activity] = []
+            current_lengths[to_activity].append(forward_desc)
+            
+        except Exception as e:
+            print(f"Warning: Could not parse dates for '{from_activity}' -> '{to_activity}': {e}")
+            continue
+    
+    # Update the dataframe with current lengths
+    for activity_name, length_list in current_lengths.items():
+        if activity_name in matched_activities:
+            row_idx = matched_activities[activity_name]
+            # Join multiple lengths with line breaks
+            df_plan.at[row_idx, 'Current length'] = '\n'.join(length_list)
+    
+    print(f"Calculated current lengths for {len(current_lengths)} activities")
+
+
+def process_pts_file(project_plan_path, general_file_path, similarity_threshold=95):
+    """
+    Process the PTS project plan file and add category markers for important activities.
+    """
+    print(f"Loading project plan: {project_plan_path}")
+    df_plan = pd.read_excel(project_plan_path)
+    
+    print(f"Loading general file: {general_file_path}")
+    df_general = pd.read_excel(general_file_path, sheet_name=0)
+    df_constraints = pd.read_excel(general_file_path, sheet_name=1)  # Load constraints sheet
+    
+    print(f"\nProject plan shape: {df_plan.shape}")
+    print(f"Important activities: {len(df_general)}")
+    print(f"Constraints/relationships: {len(df_constraints)}")
+    
+    # Format date columns to Swiss format
+    if 'Start' in df_plan.columns:
+        df_plan['Start'] = df_plan['Start'].apply(format_date_swiss)
+    if 'Finish' in df_plan.columns:
+        df_plan['Finish'] = df_plan['Finish'].apply(format_date_swiss)
+    
+    # Find rightmost used column
+    rightmost_col_idx = find_rightmost_used_column(df_plan)
+    print(f"Rightmost used column: {df_plan.columns[rightmost_col_idx]} (index {rightmost_col_idx})")
+    
+    # Create new columns after the rightmost column
+    insert_position = rightmost_col_idx + 1
+    
+    # Add "Current length", "Requested date", "Requested dates editable" and "Comment" columns
+    df_plan.insert(insert_position, 'Current length', '')
+    df_plan.insert(insert_position + 1, 'Requested date', '')
+    df_plan.insert(insert_position + 2, 'Requested dates editable', '')
+    df_plan.insert(insert_position + 3, 'Comment', '')
+    df_plan.insert(insert_position + 4, 'Similarity Score %', '')
+    
+    # Add category columns
+    category_columns = ['Important for GP', 'Piping', 'Hangers', 'Additional Material', 'Valves']
+    for i, cat_col in enumerate(category_columns):
+        df_plan.insert(insert_position + 5 + i, cat_col, '')
+    
+    # Process each activity - NEW APPROACH: Find best match for each important activity
+    print(f"\nMatching activities (threshold: {similarity_threshold}%)...")
+    matched_count = 0
+    match_details = []
+    low_score_rows = []  # Track rows with score < 95%
+    matched_activities = {}  # Dictionary to store activity name -> row index mapping
+    unmatched_activities = []  # Track important activities that couldn't be matched
+    
+    # For each important activity, find the best matching project activity
+    for _, important_row in df_general.iterrows():
+        important_activity = important_row['Activity']
+        best_score = 0
+        best_plan_idx = None
+        
+        # Search through all project plan activities
+        for idx, plan_row in df_plan.iterrows():
+            if pd.notna(plan_row['Activity Name']):
+                activity_name_lower = str(plan_row['Activity Name']).lower().strip()
+                important_activity_lower = str(important_activity).lower().strip()
+                
+                # Calculate similarity score
+                score = fuzz.ratio(activity_name_lower, important_activity_lower)
+                
+                if score >= similarity_threshold and score > best_score:
+                    best_score = score
+                    best_plan_idx = idx
+        
+        # If a match was found, mark it
+        if best_plan_idx is not None:
+            # Store the mapping
+            matched_activities[important_activity] = best_plan_idx
+            
+            # Extract categories where value is 'x' (case insensitive)
+            categories = {}
+            for col in category_columns:
+                if pd.notna(important_row[col]) and str(important_row[col]).lower().strip() == 'x':
+                    categories[col] = 'X'
+                else:
+                    categories[col] = ''
+            
+            # Fill in category columns
+            for cat_col in category_columns:
+                df_plan.at[best_plan_idx, cat_col] = categories[cat_col]
+            
+            # Fill in similarity score
+            df_plan.at[best_plan_idx, 'Similarity Score %'] = best_score
+            
+            # Track low score matches
+            if best_score < 95:
+                low_score_rows.append(best_plan_idx)
+            
+            matched_count += 1
+            match_details.append({
+                'Activity ID': df_plan.at[best_plan_idx, 'Activity ID'],
+                'Activity Name': df_plan.at[best_plan_idx, 'Activity Name'],
+                'Matched To': important_activity,
+                'Score': best_score,
+                'Row': best_plan_idx
+            })
+        else:
+            # No match found - track it
+            unmatched_activities.append(important_activity)
+    
+    print(f"\nMatched {matched_count} activities out of {df_plan['Activity Name'].notna().sum()} total activities")
+
+    # Post-match correction: if a DTS (S) important activity was matched to a plan row
+    # that contains (T) (and not (S)), or vice versa, search for a better-suited plan row.
+    # This prevents the fuzzy matcher from swapping (S) and (T) activities when the names
+    # are nearly identical except for that one letter.
+    corrected_matches = []
+    for imp_name in list(matched_activities.keys()):
+        plan_idx = matched_activities[imp_name]
+        plan_act = str(df_plan.at[plan_idx, 'Activity Name'])
+
+        need_S = ' (S)' in imp_name and ' (T)' in plan_act and ' (S)' not in plan_act
+        need_T = ' (T)' in imp_name and ' (S)' in plan_act and ' (T)' not in plan_act
+
+        if need_S or need_T:
+            target_suffix = ' (S)' if need_S else ' (T)'
+            wrong_suffix  = ' (T)' if need_S else ' (S)'
+            best_alt_idx  = None
+            best_alt_score = 0
+
+            for idx, plan_row in df_plan.iterrows():
+                pname = str(plan_row.get('Activity Name', ''))
+                if target_suffix in pname and wrong_suffix not in pname:
+                    s = fuzz.ratio(imp_name.lower().strip(), pname.lower().strip())
+                    if s > best_alt_score:
+                        best_alt_score = s
+                        best_alt_idx = idx
+
+            if best_alt_idx is not None and best_alt_score >= 70:
+                old_name = plan_act
+                matched_activities[imp_name] = best_alt_idx
+                corrected_matches.append(
+                    f"  '{imp_name}'\n"
+                    f"    was -> '{old_name}'\n"
+                    f"    now -> '{df_plan.at[best_alt_idx, 'Activity Name']}' (score: {best_alt_score}%)"
+                )
+
+    if corrected_matches:
+        print(f"\nCorrected {len(corrected_matches)} S/T suffix mismatch(es):")
+        for msg in corrected_matches:
+            print(msg)
+
+    # Load holidays sheet if available
+    df_holidays = None
+    try:
+        df_holidays = pd.read_excel(general_file_path, sheet_name='Holidays')
+        print(f"Loaded {len(df_holidays)} holiday period(s)")
+    except Exception as e:
+        print(f"No Holidays sheet found or error loading: {e}")
+    
+    # Calculate requested dates based on constraints
+    print(f"\nCalculating requested dates based on dependencies...")
+    conflicts, dependency_map, anchor_info = calculate_requested_dates(df_plan, df_general, df_constraints, matched_activities, df_holidays)
+    
+    # Calculate current lengths between activities
+    print(f"\nCalculating current durations between activities...")
+    calculate_current_lengths(df_plan, df_constraints, matched_activities)
+    
+    # Print some match details
+    if match_details:
+        print("\nSample matches:")
+        for detail in match_details[:10]:
+            print(f"  {detail['Activity ID']}: {detail['Activity Name'][:60]}...")
+            print(f"    -> {detail['Matched To'][:60]}... (Score: {detail['Score']}%)")
+    
+    # Sort by Activity ID for better readability
+    df_plan_sorted = df_plan.sort_values('Activity ID').reset_index(drop=True)
+    
+    # Count important activities
+    matched_indices = list(matched_activities.values())
+    important_count = len(matched_indices)
+    
+    print(f"\nExporting all {len(df_plan_sorted)} rows with {important_count} important activities marked")
+    
+    # Generate output filename
+    input_path = Path(project_plan_path)
+    current_date = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+    output_filename = f"{input_path.stem}_process_{current_date}{input_path.suffix}"
+    output_path = input_path.parent / output_filename
+    
+    # Save to Excel with formatting
+    print(f"\nSaving output to: {output_path}")
+    
+    # Use openpyxl for formatting
+    from openpyxl import load_workbook
+    from openpyxl.utils import get_column_letter
+    from openpyxl.styles import Alignment, PatternFill, numbers
+    from openpyxl.worksheet.filters import FilterColumn, Filters
+    
+    # First save the full dataframe with pandas
+    df_plan_sorted.to_excel(output_path, index=False, engine='openpyxl')
+    
+    # Add conflicts sheet if there are any conflicts
+    if conflicts:
+        from openpyxl import load_workbook as load_wb_for_conflicts
+        wb_conflicts = load_wb_for_conflicts(output_path)
+        ws_conflicts = wb_conflicts.create_sheet(title='Conflicts')
+        
+        # Add header
+        ws_conflicts['A1'] = 'Conflict Description'
+        ws_conflicts.column_dimensions['A'].width = 100
+        
+        # Add conflicts
+        for idx, conflict in enumerate(conflicts, start=2):
+            ws_conflicts[f'A{idx}'] = conflict
+            ws_conflicts[f'A{idx}'].alignment = Alignment(wrap_text=True, vertical='top')
+        
+        wb_conflicts.save(output_path)
+        print(f"Added 'Conflicts' sheet with {len(conflicts)} conflict(s)")
+    
+    # Load workbook for formatting the main sheet
+    wb = load_workbook(output_path)
+    ws = wb.active
+    
+    # Find column indices for various columns
+    activity_name_col = None
+    similarity_score_col = None
+    important_for_gp_col = None
+    requested_date_col = None
+    requested_dates_editable_col = None
+    category_col_indices = []
+    
+    for idx, col in enumerate(df_plan_sorted.columns, 1):
+        if col == 'Activity Name':
+            activity_name_col = idx
+        if col == 'Similarity Score %':
+            similarity_score_col = idx
+        if col == 'Important for GP':
+            important_for_gp_col = idx
+        if col == 'Requested date':
+            requested_date_col = idx
+        if col == 'Requested dates editable':
+            requested_dates_editable_col = idx
+        if col in category_columns:
+            category_col_indices.append(idx)
+    
+    # Build formulas for "Requested dates editable" column
+    print(f"\nBuilding Excel formulas for editable date column...")
+
+    # Create a mapping of activity name to Excel row number
+    activity_row_map = {}
+    for idx, row in df_plan_sorted.iterrows():
+        for activity_name, plan_idx in matched_activities.items():
+            if df_plan_sorted.at[idx, 'Activity ID'] == df_plan.at[plan_idx, 'Activity ID']:
+                # Excel row = pandas index + 2 (1 for 0-indexing, 1 for header)
+                activity_row_map[activity_name] = idx + 2
+                break
+
+    # The DTS anchor source activity: its editable cell references its own Requested date cell.
+    # All other activities that reference 'Anchor' in dependency_map will chain through it.
+    anchor_source_name = anchor_info['source_activity'] if anchor_info else None
+
+    # Set formulas for each activity in "Requested dates editable" column
+    formula_count = 0
+    for activity_name, excel_row in activity_row_map.items():
+        cell = ws.cell(row=excel_row, column=requested_dates_editable_col)
+
+        if activity_name == anchor_source_name:
+            # DTS anchor source: reference its own "Requested date" cell (the computed anchor date)
+            ref_cell = get_column_letter(requested_date_col) + str(excel_row)
+            cell.value = f"={ref_cell}"
+            formula_count += 1
+        elif activity_name in dependency_map:
+            dep_info = dependency_map[activity_name]
+            reference_activity = dep_info['reference']
+            weeks = dep_info.get('weeks', 0)
+            direction = dep_info.get('direction', '')
+
+            if reference_activity == 'Anchor':
+                # Chain through the anchor source activity's "Requested dates editable" cell
+                if anchor_source_name and anchor_source_name in activity_row_map:
+                    ref_row = activity_row_map[anchor_source_name]
+                    ref_cell = get_column_letter(requested_dates_editable_col) + str(ref_row)
+                    if direction == 'before':
+                        cell.value = f"={ref_cell}-{weeks}*7"
+                    elif direction == 'after':
+                        cell.value = f"={ref_cell}+{weeks}*7"
+                    formula_count += 1
+            elif reference_activity in activity_row_map:
+                # Reference cell in the "Requested dates editable" column
+                ref_row = activity_row_map[reference_activity]
+                ref_cell = get_column_letter(requested_dates_editable_col) + str(ref_row)
+                if direction == 'before':
+                    cell.value = f"={ref_cell}-{weeks}*7"
+                elif direction == 'after':
+                    cell.value = f"={ref_cell}+{weeks}*7"
+                formula_count += 1
+
+        # Apply date format to the cell
+        cell.number_format = 'DD/MM/YYYY'
+    
+    print(f"Added {formula_count} formulas to 'Requested dates editable' column")
+    
+    # Apply date format to "Requested date" column
+    if requested_date_col:
+        for row in range(2, ws.max_row + 1):
+            cell = ws.cell(row=row, column=requested_date_col)
+            cell.number_format = 'DD/MM/YYYY'
+    
+    # Add autofilter to top row
+    ws.auto_filter.ref = ws.dimensions
+    
+    # Apply filter to show only important activities (rows with "X" in "Important for GP" column)
+    if important_for_gp_col:
+        # Filter to show only rows with "X" in Important for GP column
+        filter_col = FilterColumn(colId=important_for_gp_col - 1)  # 0-indexed
+        filter_col.filters = Filters()
+        filter_col.filters.filter.append('X')
+        ws.auto_filter.filterColumn.append(filter_col)
+    
+    # Auto-width all columns first
+    for column in ws.columns:
+        max_length = 0
+        column_letter = get_column_letter(column[0].column)
+        for cell in column:
+            try:
+                if len(str(cell.value)) > max_length:
+                    max_length = len(str(cell.value))
+            except:
+                pass
+        adjusted_width = min(max_length + 2, 100)  # Cap at 100
+        ws.column_dimensions[column_letter].width = adjusted_width
+    
+    # Set specific widths for columns A and B
+    ws.column_dimensions['A'].width = 20
+    ws.column_dimensions['B'].width = 75
+    
+    # Apply wrap text and alignment to all cells
+    for row_idx, row in enumerate(ws.iter_rows(), 1):
+        for cell_idx, cell in enumerate(row, 1):
+            # Center align category columns horizontally and vertically
+            if cell_idx in category_col_indices:
+                cell.alignment = Alignment(wrap_text=True, vertical='center', horizontal='center')
+            else:
+                # All other cells: wrap text and center vertically
+                cell.alignment = Alignment(wrap_text=True, vertical='center')
+    
+    # Highlight Activity Name cells with score < 95%
+    yellow_fill = PatternFill(start_color='FFFF00', end_color='FFFF00', fill_type='solid')
+    for low_score_idx in low_score_rows:
+        # Excel rows start at 1, and we have a header row, so add 2
+        excel_row = low_score_idx + 2
+        if activity_name_col:
+            cell = ws.cell(row=excel_row, column=activity_name_col)
+            cell.fill = yellow_fill
+    
+    # Auto-fit row heights
+    for row in ws.iter_rows():
+        ws.row_dimensions[row[0].row].auto_size = True
+    
+    # Freeze panes at C2 (freezes first row and columns A-B)
+    ws.freeze_panes = 'C2'
+    
+    # Save formatted workbook
+    wb.save(output_path)
+    
+    print(f"\n[OK] Successfully created {output_filename}")
+    print(f"  - Total rows exported: {len(df_plan_sorted)}")
+    print(f"  - Important activities: {important_count} (filtered by default)")
+    print(f"  - Activities with score < 95%: {len(low_score_rows)} (highlighted in yellow)")
+    print(f"  - Activities with calculated dates: {df_plan_sorted['Requested date'].notna().sum()}")
+    print(f"  - Formulas in 'Requested dates editable': {formula_count}")
+    if conflicts:
+        print(f"  - Conflicts detected: {len(conflicts)} (see 'Conflicts' sheet)")
+    print(f"  - Applied autofilter (showing important activities), column widths, wrap text, and freeze panes at C2")
+    
+    # Report unmatched important activities at the very end
+    if unmatched_activities:
+        print(f"\n{'='*80}")
+        print(f"⚠️  WARNING: {len(unmatched_activities)} IMPORTANT ACTIVITY(IES) NOT FOUND IN PROJECT PLAN")
+        print(f"{'='*80}")
+        print("These activities won't have calculated dates and may break dependency chains:")
+        for idx, activity in enumerate(unmatched_activities, 1):
+            print(f"  {idx}. {activity}")
+        print(f"\nThis will prevent date calculation for activities that depend on these!")
+        print(f"{'='*80}")
+    
+    return output_path, matched_count, match_details
+
+
+def main():
+    # File paths
+    project_plan_path = r'C:\Users\szil\Repos\excel_wizadry\PTS_check\PTS_project_specific.xlsx'
+    general_file_path = r'C:\Users\szil\Repos\excel_wizadry\PTS_check\PTS_General_input_data_DTS_anchored.xlsx'
+    
+    # Check if files exist
+    if not Path(project_plan_path).exists():
+        print(f"Error: Project plan file not found: {project_plan_path}")
+        sys.exit(1)
+    
+    if not Path(general_file_path).exists():
+        print(f"Error: General file not found: {general_file_path}")
+        sys.exit(1)
+    
+    # Process files
+    try:
+        output_path, matched_count, match_details = process_pts_file(
+            project_plan_path, 
+            general_file_path, 
+            similarity_threshold=90
+        )
+        print("\n" + "="*80)
+        print("Processing complete!")
+        print("="*80)
+        
+    except Exception as e:
+        print(f"\nError processing files: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
