@@ -151,14 +151,72 @@ C5 remapping: if `"C5"` appears in the `Coating` value, the base group (01–05)
 
 ```
 Price Sheet Sikla\
-├── price_sheet_db_tool.py      # Main script
-├── CALCULATION_RULES.md        # Full specification of all rules + validation checks
-├── README.md                   # This file
-├── _test_runs\                 # Auto-created; timestamped .sqlite + .xlsx outputs
-│   ├── 20260330_111839.sqlite
-│   └── 20260330_111839_AGGREGATED_DATA_REV0.xlsx
+├── price_sheet_db_tool.py          # Main aggregation script
+├── price_sheet_agg_compare.py      # Revision comparison script (see below)
+├── price_sheet_agg_compare_test.py # Validation test suite for compare script
+├── CALCULATION_RULES.md            # Full specification of all rules + validation checks
+├── README.md                       # This file
+├── _test_runs\                     # Auto-created; timestamped .sqlite + .xlsx outputs
+│   ├── 20260520_110103_REV0.0.sqlite
+│   ├── 20260520_110103_REV0.0.xlsx
+│   ├── 20260520_110103_REV1.0.sqlite
+│   ├── 20260520_110103_REV1.0.xlsx
+│   └── 20260520_130715_AGG_COMPARE.xlsx
 └── CA100-KVI-50296373_0.0 - BoM General Hangers and support material.xlsm   # Source
 ```
+
+---
+
+## Revision Comparison — `price_sheet_agg_compare.py`
+
+Compares the `AGGREGATED_DATA` tables from two SQLite databases (e.g. REV0 vs REV1) and writes a colour-coded Excel workbook.
+
+### Usage
+
+```
+python price_sheet_agg_compare.py --old _test_runs\REV0.sqlite --new _test_runs\REV1.sqlite
+```
+
+`--out` is optional; defaults to a timestamped `AGG_COMPARE.xlsx` in `_test_runs\`.
+
+If `--old` / `--new` are omitted, the script uses the most recently created `.sqlite` files found in `_test_runs\` whose names contain `REV0` and `REV1` respectively.
+
+### Output
+
+The output sheet mirrors the `AGGREGATED_DATA` sheet layout from `price_sheet_db_tool.py`:
+
+- Rows grouped by `Material_Type` with separator and per-group `SUBTOTAL` rows
+- Grand total row
+- Deleted rows section at the bottom, also grouped by `Material_Type`
+- Two extra columns appended: **Status** and **Order_Qty_Change**
+
+### Match key
+
+`Article_Number + Coating`. When the same key appears multiple times, rows are matched positionally (first-to-first, second-to-second).
+
+### Colour scheme (data rows only)
+
+| Colour | Meaning |
+|--------|---------|
+| Green | New row, or a cell value was added (was absent in OLD) |
+| Yellow | Value changed: increased, or non-numeric change |
+| Light blue | Numeric value decreased (NEW < OLD) |
+| Red | Cell value removed, or entire row deleted |
+
+### Console output
+
+```
+Results : 4 new  |  96 changed  |  2 deleted
+Output  : _test_runs\20260520_130715_AGG_COMPARE.xlsx
+```
+
+### Test suite
+
+```
+python price_sheet_agg_compare_test.py
+```
+
+Runs 51 checks across 15 scenarios (new row, deleted row, qty up/down, cell add/remove, key matching, column positions, etc.).  A clean run prints `ALL PASS — 51 passed 0 failed`.
 
 ---
 

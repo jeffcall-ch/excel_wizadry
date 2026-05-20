@@ -214,6 +214,25 @@ class PriceSheetComparator:
         ]
         header_excel_row = header_idx_new + 1   # convert to 1-based
 
+        # ── Find order quantity column (first QUANTITY column after Spare) ──────
+        qty_col_idx: Optional[int] = None
+        spare_idx: Optional[int] = None
+        for _i, _name in enumerate(col_names):
+            if "spare" in _name.lower():
+                spare_idx = _i
+                break
+        if spare_idx is not None:
+            # Order quantity is the first QUANTITY column to the right of Spare
+            for _i in range(spare_idx + 1, len(col_names)):
+                if "qty" in col_names[_i].lower() or "quantity" in col_names[_i].lower():
+                    qty_col_idx = _i
+                    break
+        if qty_col_idx is None:
+            # Fallback: last QUANTITY column in header
+            for _i, _name in enumerate(col_names):
+                if "qty" in _name.lower() or "quantity" in _name.lower():
+                    qty_col_idx = _i
+
         # ── Extract and pad data rows ────────────────────────────────────────
         def _padded(row: tuple) -> tuple:
             return tuple(row[i] if i < len(row) else None for i in range(n_cols))
@@ -264,7 +283,8 @@ class PriceSheetComparator:
             deleted_rows.extend(old_rows_list[old_cursor_4.get(key4, 0):])
 
         # ── Apply colour fills ────────────────────────────────────────────────
-        row_markers: Dict[int, str] = {}
+        row_markers:  Dict[int, str]   = {}
+        qty_changes:  Dict[int, float] = {}
 
         # Matched rows (pass 1 or pass 2): cell-by-cell comparison
         for excel_row, new_vals, old_vals in matched_pairs:
@@ -301,11 +321,24 @@ class PriceSheetComparator:
                 parts = [t for t in ("Deleted", "Smaller", "Changed", "Added") if t in change_types]
                 row_markers[excel_row] = ", ".join(parts)
 
+            if qty_col_idx is not None:
+                try:
+                    diff = float(new_vals[qty_col_idx] or 0) - float(old_vals[qty_col_idx] or 0)
+                    if diff != 0:
+                        qty_changes[excel_row] = diff
+                except (TypeError, ValueError):
+                    pass
+
         # ── New rows (compound key absent in OLD) — entire row yellow ─────────
         for excel_row, new_vals in unmatched_new:
             for col in range(n_cols):
                 ws_output.cell(row=excel_row, column=col + 1).fill = fill_yellow
             row_markers[excel_row] = "New Row"
+            if qty_col_idx is not None:
+                try:
+                    qty_changes[excel_row] = float(new_vals[qty_col_idx] or 0)
+                except (TypeError, ValueError):
+                    pass
 
         # ── Write 'Deleted Rows' section below all existing data ─────────────
         if deleted_rows:
@@ -331,6 +364,11 @@ class PriceSheetComparator:
                     cell.value  = del_vals[c_idx]
                     cell.fill   = fill_red
                 row_markers[del_excel_row] = "Deleted"
+                if qty_col_idx is not None:
+                    try:
+                        qty_changes[del_excel_row] = -float(del_vals[qty_col_idx] or 0)
+                    except (TypeError, ValueError):
+                        pass
 
         # ── Write change-marker column ────────────────────────────────────────
         marker_col    = n_cols + 2                  # one empty column gap after data
@@ -344,6 +382,20 @@ class PriceSheetComparator:
 
         for row_num, marker_text in row_markers.items():
             ws_output.cell(row=row_num, column=marker_col).value = marker_text
+
+        # ── Write qty-change column ───────────────────────────────────────────
+        if qty_col_idx is not None:
+            qty_col    = marker_col + 1
+            qty_letter = get_column_letter(qty_col)
+            ws_output.column_dimensions[qty_letter].width = 12
+
+            hdr_qty       = ws_output.cell(row=header_excel_row, column=qty_col)
+            hdr_qty.value = "Qty Change"
+            hdr_qty.font  = Font(bold=True)
+
+            for row_num, qty_val in qty_changes.items():
+                cell       = ws_output.cell(row=row_num, column=qty_col)
+                cell.value = int(qty_val) if float(qty_val).is_integer() else qty_val
 
         # ── Summary log ──────────────────────────────────────────────────────
         n_new     = len(unmatched_new)
