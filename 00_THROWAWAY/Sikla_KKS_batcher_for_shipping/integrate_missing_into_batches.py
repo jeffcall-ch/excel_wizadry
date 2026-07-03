@@ -27,6 +27,7 @@ ORIGINAL_SHEET = "Per_Support_Structure"
 DEFAULT_SECTION_ORDER = ["UHA", "UMA", "N/A"]
 DEFAULT_NA_WORKING_AREAS = {"NO_AREA", "BQ NOT EXIST"}
 DEFAULT_NA_SECTION_LABEL = "N/A"
+DEFAULT_MERGE_UNKNOWN_TO_NA = True
 
 SECTION_ORDER: list[str] = DEFAULT_SECTION_ORDER.copy()
 SECTION_ORDER_MAP: dict[str, int] = {
@@ -34,6 +35,7 @@ SECTION_ORDER_MAP: dict[str, int] = {
 }
 NA_WORKING_AREAS: set[str] = DEFAULT_NA_WORKING_AREAS.copy()
 NA_SECTION_LABEL = DEFAULT_NA_SECTION_LABEL
+MERGE_UNKNOWN_TO_NA = DEFAULT_MERGE_UNKNOWN_TO_NA
 
 
 def normalize_kks(value: object) -> str | None:
@@ -87,6 +89,11 @@ def set_na_handling(na_working_areas: list[str], na_section_label: str) -> None:
     NA_SECTION_LABEL = str(na_section_label).strip() or DEFAULT_NA_SECTION_LABEL
 
 
+def set_unknown_handling(merge_unknown_to_na: bool) -> None:
+    global MERGE_UNKNOWN_TO_NA
+    MERGE_UNKNOWN_TO_NA = merge_unknown_to_na
+
+
 def natural_sort_token(value: object) -> str:
     text = "" if pd.isna(value) else str(value).strip().upper()
     return re.sub(r"\d+", lambda m: f"{int(m.group()):06d}", text)
@@ -105,7 +112,9 @@ def derive_building_section(working_area: str) -> str:
         return NA_SECTION_LABEL
 
     match = re.search(r"U[A-Z]{2}", str(working_area).upper())
-    return match.group(0) if match else "UNKNOWN"
+    if match:
+        return match.group(0)
+    return NA_SECTION_LABEL if MERGE_UNKNOWN_TO_NA else "UNKNOWN"
 
 
 def find_column(columns: list[str], required_terms: list[str]) -> str | None:
@@ -218,6 +227,11 @@ def load_batched_detail(batched_file: Path) -> tuple[pd.DataFrame, dict[str, int
     detail.loc[detail["Building section"] == "", "Building section"] = detail["Working area"].map(
         derive_building_section
     )
+    if MERGE_UNKNOWN_TO_NA:
+        detail.loc[
+            detail["Building section"].astype(str).str.strip().str.upper() == "UNKNOWN",
+            "Building section",
+        ] = NA_SECTION_LABEL
 
     detail["KKS Total Weight [kg]"] = pd.to_numeric(
         detail["KKS Total Weight [kg]"], errors="coerce"
@@ -290,8 +304,12 @@ def pick_batch(
 
     section = str(building_section).strip()
     if section.upper() == NA_SECTION_LABEL.upper():
+        section_set = section_batches.get(section, set())
+        if section_set:
+            anchor_batch = min(section_set)
+            return int(anchor_batch), f"{NA_SECTION_LABEL} anchored section batch"
         batch = min(running_batch_weights, key=lambda b: (running_batch_weights[b], b))
-        return int(batch), f"{NA_SECTION_LABEL} fallback to lightest batch"
+        return int(batch), f"{NA_SECTION_LABEL} initial anchor on lightest batch"
 
     section_set = section_batches.get(section, set())
     if section_set:
@@ -313,6 +331,11 @@ def integrate_missing(
     integrated_rows: list[dict[str, object]] = []
 
     running_weights = {int(k): float(v) for k, v in batch_weights.items()}
+
+    na_section = NA_SECTION_LABEL
+    existing_na_batches = section_batches.get(na_section, set())
+    if existing_na_batches:
+        section_batches[na_section] = {min(existing_na_batches)}
 
     for _, row in included_missing.iterrows():
         kks = normalize_kks(row.get("KKS /SU"))
@@ -341,6 +364,10 @@ def integrate_missing(
 
         if weight_found:
             running_weights[batch_number] = running_weights.get(batch_number, 0.0) + weight_value
+
+        section_batches.setdefault(building_section, set()).add(batch_number)
+        if working_area not in wa_to_batch:
+            wa_to_batch[working_area] = batch_number
 
         integrated_rows.append(
             {
@@ -486,6 +513,11 @@ def parse_args() -> argparse.Namespace:
         help="Label used for outdoor/unassigned building section, for example N/A",
     )
     parser.add_argument(
+        "--merge-unknown-to-na",
+        default=str(DEFAULT_MERGE_UNKNOWN_TO_NA).lower(),
+        help="Whether to merge UNKNOWN building section into N/A (true/false)",
+    )
+    parser.add_argument(
         "--exclude-deleted",
         default="true",
         help="Whether to exclude deleted rows from integration (true/false)",
@@ -510,6 +542,7 @@ def main() -> None:
     na_working_areas = parse_csv_upper(args.na_working_areas)
     set_section_order(section_order)
     set_na_handling(na_working_areas, args.na_section_label)
+    set_unknown_handling(parse_bool(args.merge_unknown_to_na))
 
     exclude_deleted = parse_bool(args.exclude_deleted)
     exclude_bq_not_exist = parse_bool(args.exclude_bq_not_exist)

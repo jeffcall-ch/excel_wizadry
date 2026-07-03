@@ -8,6 +8,8 @@ Scope covered by this guide:
 - C5 deduction
 - Deleted and out-of-scope filtering
 - Reintegration of in-scope missing supports
+- UNKNOWN section normalization into N/A (configurable)
+- N/A anchoring into a single batch per run
 - Final arithmetic reconciliation
 - Configurable building section sequence via INI
 
@@ -63,11 +65,14 @@ Purpose:
 - Integrates remaining supports into batches.
 - Looks up support weight from ORIGINAL DATA file.
 - Assigns outdoor rows (NO_AREA and other configured aliases) to N/A section.
+- Can normalize UNKNOWN section rows into N/A.
+- Keeps N/A section concentrated in one batch (single-batch anchor behavior).
 
 Key configurable inputs:
 - section_order
 - na_working_areas
 - na_section_label
+- merge_unknown_to_na
 - exclude_deleted
 - exclude_bq_not_exist
 - exclude_solid_not_gp
@@ -153,6 +158,7 @@ Configured in integration section:
 - exclude_deleted
 - exclude_bq_not_exist
 - exclude_solid_not_gp
+- merge_unknown_to_na
 
 Meaning:
 - true: removed from integration scope
@@ -163,6 +169,12 @@ Configured outdoor aliases:
 - na_section_label
 
 If working area text matches any alias in na_working_areas, it is assigned to na_section_label during integration.
+
+If merge_unknown_to_na is true, rows with unknown/unmatched section are also normalized to na_section_label.
+
+N/A anchoring rule:
+- N/A (including merged UNKNOWN when enabled) is assigned to one anchor batch in each run.
+- This prevents N/A from being spread across multiple batches unless the code is intentionally changed.
 
 Current default includes:
 - NO_AREA
@@ -199,6 +211,7 @@ Required for clean run:
 Secondary checks:
 - Step 3 Overview sheet has expected integration counts.
 - Summary_Updated sheet weight shifts are reasonable.
+- N/A distribution is as intended (single batch by default in current implementation).
 
 ---
 
@@ -218,6 +231,7 @@ When user asks for sequence or scope changes, follow this order:
    - updated output file names
    - final reconciliation summary
    - any changed config keys
+   - N/A and UNKNOWN distribution summary
 
 Examples of configuration-only requests:
 - Change first two batch sections
@@ -289,3 +303,45 @@ For each new revision cycle:
 5. If mismatch exists, inspect Step 2 and Step 3 detail sheets.
 
 This keeps the process reproducible and auditable.
+
+---
+
+## 13. Mandatory Assistant Run Summary (After Every Execution)
+
+After each full run (or partial rerun), the assistant should always respond with this summary structure:
+
+1. Run context:
+- Config file used
+- Key section_order value
+- Integration policy switches used (deleted, BQ not exist, solid not GP)
+- UNKNOWN to N/A setting
+
+2. Output artifacts:
+- Step 1 file path
+- Step 2 file path
+- Step 3 final supplier file path
+- Step 4 reconciliation report path
+
+3. Numeric validation snapshot:
+- Status unique /SU
+- Final unique /SU
+- Deduction union
+- Expected after deduction
+- Expected minus final
+- Final minus expected
+- Set match (True/False)
+
+4. Integration snapshot:
+- Missing_Final rows
+- Excluded total and breakdown
+- Included for integration
+- Integrated rows added
+- Integrated with weight found / missing
+
+5. Section distribution checks:
+- UNKNOWN row count in final file
+- N/A row count in final file
+- N/A per-batch distribution
+
+6. Conclusion:
+- One-line statement whether result is communication-ready for supplier.

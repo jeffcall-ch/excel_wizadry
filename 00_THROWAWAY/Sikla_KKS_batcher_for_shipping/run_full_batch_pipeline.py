@@ -263,6 +263,9 @@ def main() -> None:
         "integration", "na_working_areas", fallback="NO_AREA,BQ NOT EXIST"
     )
     na_section_label = cfg.get("integration", "na_section_label", fallback="N/A")
+    merge_unknown_to_na = parse_bool(
+        cfg.get("integration", "merge_unknown_to_na", fallback="true")
+    )
 
     deduct_deleted = parse_bool(cfg.get("reconciliation", "deduct_deleted", fallback="true"))
     deduct_c5 = parse_bool(cfg.get("reconciliation", "deduct_c5", fallback="true"))
@@ -342,6 +345,8 @@ def main() -> None:
             na_working_areas,
             "--na-section-label",
             na_section_label,
+            "--merge-unknown-to-na",
+            str(merge_unknown_to_na).lower(),
             "--exclude-deleted",
             str(exclude_deleted).lower(),
             "--exclude-bq-not-exist",
