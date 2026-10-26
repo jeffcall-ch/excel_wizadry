@@ -1,0 +1,60 @@
+{
+  "source": "C:\\Users\\szil\\Repos\\excel_wizadry\\PTS_highlighter\\BE020-KVI-50270147 Update Files_12.0_Medworth_Programme Update DD25Sep2026.xlsx",
+  "output": "C:\\Users\\szil\\Repos\\excel_wizadry\\PTS_highlighter\\BE020-KVI-50270147 Update Files_12.0_Medworth_Programme Update DD25Sep2026_LS.xlsx",
+  "worksheet": "DD25Sep2026 Update",
+  "header_row": 1,
+  "counts": {
+    "Piping": 14,
+    "Hangers": 8,
+    "Valves": 9,
+    "ALL": 29
+  },
+  "ambiguous": [
+    {
+      "row": 3684,
+      "activity_id": "ETAB1060M0",
+      "activity_name": "Lot General Piping Engineering - BOM / BOQ-1 - Issue for RfQ GP Piping Material, Valves, Hangers",
+      "source_row": 6087
+    },
+    {
+      "row": 7726,
+      "activity_id": "ORBE1080A0",
+      "activity_name": "Lot 5 - Erection General Piping - Contractor On Site Mobilisation",
+      "source_row": 7357
+    }
+  ],
+  "unresolved_dates": [],
+  "manual_differences": [],
+  "missing_milestones": [],
+  "colours": {
+    "Lot General Piping Pipe Material": "FFE2F0D9",
+    "Lot General Piping Engineering": "FFD9EAF7",
+    "Lot General Piping Hangers": "FFFCE4D6",
+    "Lot General Piping Valves": "FFFFF2CC",
+    "Lot 5 - Erection General Piping": "FFE4DFEC"
+  },
+  "overrides": [
+    "Latest visible worksheet",
+    "_LS filename suffix"
+  ],
+  "sort_order": [
+    "Finish ascending",
+    "Activity Name ascending (case-insensitive)"
+  ],
+  "undated_rows": "Blank or unparseable Finish dates sort last",
+  "status": {
+    "worksheet": "PTS Status",
+    "missing": [
+      "Lot General Piping Pipe Material - DTS (S)",
+      "Lot General Piping Valves - DTS (S)"
+    ],
+    "found": 29
+  },
+  "calculator": {
+    "first_date": "F9926",
+    "second_date": "F9927",
+    "weeks": "F9928",
+    "formula": "=IF(COUNT(F9926:F9927)=2,(F9927-F9926)/7,\"\")"
+  },
+  "validated": true
+}

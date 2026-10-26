@@ -527,16 +527,28 @@ def main() -> None:
         epilog="""
 Examples:
   python price_sheet_agg_compare.py
+  python price_sheet_agg_compare.py old.sqlite new.sqlite
   python price_sheet_agg_compare.py --old rev0.sqlite --new rev1.sqlite
   python price_sheet_agg_compare.py --old rev0.sqlite --new rev1.sqlite --out compare.xlsx
         """,
     )
-    parser.add_argument("--old", default=_DEFAULT_OLD, help="Path to OLD SQLite database")
-    parser.add_argument("--new", default=_DEFAULT_NEW, help="Path to NEW SQLite database")
-    parser.add_argument("--out", default=None,         help="Output xlsx path (auto-named if omitted)")
+    parser.add_argument("old_pos", nargs="?", help="Positional path to OLD SQLite database")
+    parser.add_argument("new_pos", nargs="?", help="Positional path to NEW SQLite database")
+    parser.add_argument("--old", default=None, help="Path to OLD SQLite database")
+    parser.add_argument("--new", default=None, help="Path to NEW SQLite database")
+    parser.add_argument("--out", default=None, help="Output xlsx path (auto-named if omitted)")
     args = parser.parse_args()
 
-    run(Path(args.old), Path(args.new), Path(args.out) if args.out else None)
+    old_arg = args.old_pos or args.old or _DEFAULT_OLD
+    new_arg = args.new_pos or args.new or _DEFAULT_NEW
+    old_path = Path(old_arg)
+    new_path = Path(new_arg)
+
+    for label, p in (("OLD", old_path), ("NEW", new_path)):
+        if p.suffix.lower() != ".sqlite":
+            parser.error(f"{label} input must be a .sqlite file: {p}")
+
+    run(old_path, new_path, Path(args.out) if args.out else None)
 
 
 if __name__ == "__main__":

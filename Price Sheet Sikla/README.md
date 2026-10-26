@@ -143,6 +143,16 @@ Writes the raw + aggregated tables and the validation sheet to Excel.
 | 05 | Installation Material | 50% spare factor (glass fabric tape); 15% (end caps) |
 | 06–10 | C5 variants | Same rules as 01–05 |
 
+Important context:
+The spare rules in the table above are the original baseline rules and are kept as-is for normal projects without pre-fabrication.
+
+For projects with pre-fabrication, the current script applies the following operational rules:
+
+- 5% groups (01/02/06/07, and channel handling where applicable): spare is `0` when `Qty < 10`; otherwise `ceil(Qty × 0.05)`.
+- 15% groups (03/05 non-tape/08/10): spare is `ceil(Qty × 0.15)`.
+- Threaded rods and beam section ms/tp cut items: FFD packing plus 5% order buffer (`×1.05`), rounded to whole bars.
+- Glass fabric tape: 10m roll logic with a 30% factor in calculation (`×1.30`), rounded up to whole rolls.
+
 C5 remapping: if `"C5"` appears in the `Coating` value, the base group (01–05) is remapped to the corresponding C5 group (06–10).
 
 ---

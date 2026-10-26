@@ -58,6 +58,16 @@ Each raw row is routed to one of six paths before quantity/weight summation:
 
 ## Spare Rules by Group
 
+Important context:
+The spare rules documented in this section are the original baseline rules for normal projects without pre-fabrication.
+
+For projects with pre-fabrication, the current script applies these operational rules:
+
+- 5% groups (01/02/06/07, plus channel handling where applicable): spare is `0` when `Qty < 10`; otherwise `ceil(Qty × 0.05)`.
+- 15% groups (03/05 non-tape/08/10): spare is `ceil(Qty × 0.15)`.
+- Threaded rods and beam section ms/tp cut items: FFD packing plus 5% order buffer (`×1.05`), rounded to whole bars.
+- Glass fabric tape: 10m roll logic with a 30% factor in calculation (`×1.30`), rounded up to whole rolls.
+
 ### 01 Primary Supports — Threaded Rods
 
 Cut-length items with `"threaded rod"` in description. Uses **First Fit Decreasing (FFD) packing** algorithm.

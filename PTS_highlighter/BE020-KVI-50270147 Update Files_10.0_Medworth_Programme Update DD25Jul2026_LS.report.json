@@ -1,0 +1,187 @@
+{
+  "source": "C:\\Users\\szil\\Repos\\excel_wizadry\\PTS_highlighter\\BE020-KVI-50270147 Update Files_10.0_Medworth_Programme Update DD25Jul2026.xlsx",
+  "output": "C:\\Users\\szil\\Repos\\excel_wizadry\\PTS_highlighter\\BE020-KVI-50270147 Update Files_10.0_Medworth_Programme Update DD25Jul2026_LS.xlsx",
+  "worksheet": "DD25Jul2026 Update",
+  "header_row": 1,
+  "counts": {
+    "Piping": 14,
+    "Hangers": 8,
+    "Valves": 9,
+    "ALL": 29
+  },
+  "ambiguous": [
+    {
+      "row": 3632,
+      "activity_id": "ETAB1060M0",
+      "activity_name": "Lot General Piping Engineering - BOM / BOQ-1 - Issue for RfQ GP Piping Material, Valves, Hangers",
+      "source_row": 179
+    },
+    {
+      "row": 8174,
+      "activity_id": "ORBE1080A0",
+      "activity_name": "Lot 5 - Erection General Piping - Contractor On Site Mobilisation",
+      "source_row": 4689
+    }
+  ],
+  "unresolved_dates": [],
+  "manual_differences": [
+    {
+      "row": 3632,
+      "activity_id": "ETAB1060M0",
+      "activity_name": "Lot General Piping Engineering - BOM / BOQ-1 - Issue for RfQ GP Piping Material, Valves, Hangers",
+      "discipline": "Piping",
+      "manual": true,
+      "automatic": false,
+      "source_row": 179
+    },
+    {
+      "row": 3810,
+      "activity_id": "ETAD1020M0",
+      "activity_name": "Lot General Piping Pipe Material - TSD Documents complete / RFQ",
+      "discipline": "Piping",
+      "manual": true,
+      "automatic": false,
+      "source_row": 344
+    },
+    {
+      "row": 4015,
+      "activity_id": "ETAD1045M0",
+      "activity_name": "Lot General Piping Pipe Material - Technical & Commercial Comparison Pre-TCC",
+      "discipline": "Piping",
+      "manual": false,
+      "automatic": true,
+      "source_row": 548
+    },
+    {
+      "row": 4247,
+      "activity_id": "ETAB1120M0",
+      "activity_name": "Lot General Piping Engineering - BOM / BOQ-2 - Issue for for PO General Piping Material",
+      "discipline": "Hangers",
+      "manual": false,
+      "automatic": true,
+      "source_row": 782
+    },
+    {
+      "row": 4511,
+      "activity_id": "ETAB1140M0",
+      "activity_name": "Lot General Piping Engineering - BOM and ISO and arrangement Drawings for PO General Piping Erection",
+      "discipline": "Piping",
+      "manual": false,
+      "automatic": true,
+      "source_row": 1051
+    },
+    {
+      "row": 4511,
+      "activity_id": "ETAB1140M0",
+      "activity_name": "Lot General Piping Engineering - BOM and ISO and arrangement Drawings for PO General Piping Erection",
+      "discipline": "Hangers",
+      "manual": false,
+      "automatic": true,
+      "source_row": 1051
+    },
+    {
+      "row": 4790,
+      "activity_id": "ETAB1160M0",
+      "activity_name": "Lot General Piping Engineering - Detail Engineering - ISO and BOM for Erection - Issued",
+      "discipline": "Piping",
+      "manual": true,
+      "automatic": false,
+      "source_row": 1316
+    },
+    {
+      "row": 7038,
+      "activity_id": "ETAD1170A0",
+      "activity_name": "Lot General Piping Pipe Material - Engineering & Manufacturing (by Supplier)",
+      "discipline": "Piping",
+      "manual": true,
+      "automatic": false,
+      "source_row": 3563
+    },
+    {
+      "row": 7802,
+      "activity_id": "ETAD1190A0",
+      "activity_name": "Lot General Piping Pipe Material - Shipment",
+      "discipline": "Piping",
+      "manual": false,
+      "automatic": true,
+      "source_row": 4306
+    },
+    {
+      "row": 7800,
+      "activity_id": "ETAE1190A0",
+      "activity_name": "Lot General Piping Hangers - Shipment",
+      "discipline": "Hangers",
+      "manual": false,
+      "automatic": true,
+      "source_row": 4308
+    },
+    {
+      "row": 7799,
+      "activity_id": "ETAE1200M0",
+      "activity_name": "Lot General Piping Hangers - DTS (T)",
+      "discipline": "Hangers",
+      "manual": false,
+      "automatic": true,
+      "source_row": 4309
+    },
+    {
+      "row": 8174,
+      "activity_id": "ORBE1080A0",
+      "activity_name": "Lot 5 - Erection General Piping - Contractor On Site Mobilisation",
+      "discipline": "Piping",
+      "manual": true,
+      "automatic": false,
+      "source_row": 4689
+    },
+    {
+      "row": 8174,
+      "activity_id": "ORBE1080A0",
+      "activity_name": "Lot 5 - Erection General Piping - Contractor On Site Mobilisation",
+      "discipline": "Hangers",
+      "manual": true,
+      "automatic": false,
+      "source_row": 4689
+    },
+    {
+      "row": 8175,
+      "activity_id": "ORBE1090M0",
+      "activity_name": "Lot 5 - Erection General Piping - Contractor On Site Mobilisation Completed",
+      "discipline": "Piping",
+      "manual": false,
+      "automatic": true,
+      "source_row": 4690
+    }
+  ],
+  "missing_milestones": [],
+  "colours": {
+    "Lot General Piping Pipe Material": "FFE2F0D9",
+    "Lot General Piping Engineering": "FFD9EAF7",
+    "Lot General Piping Hangers": "FFFCE4D6",
+    "Lot General Piping Valves": "FFFFF2CC",
+    "Lot 5 - Erection General Piping": "FFE4DFEC"
+  },
+  "overrides": [
+    "Latest visible worksheet",
+    "_LS filename suffix"
+  ],
+  "sort_order": [
+    "Finish ascending",
+    "Activity Name ascending (case-insensitive)"
+  ],
+  "undated_rows": "Blank or unparseable Finish dates sort last",
+  "status": {
+    "worksheet": "PTS Status",
+    "missing": [
+      "Lot General Piping Pipe Material - DTS (S)",
+      "Lot General Piping Valves - DTS (S)"
+    ],
+    "found": 29
+  },
+  "calculator": {
+    "first_date": "F9905",
+    "second_date": "F9906",
+    "weeks": "F9907",
+    "formula": "=IF(COUNT(F9905:F9906)=2,(F9906-F9905)/7,\"\")"
+  },
+  "validated": true
+}

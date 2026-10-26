@@ -8,10 +8,15 @@ Private Const FILE_PREFIX As String = "CommonMeetingSlots_KVI"
 Private Const CSV_DELIMITER As String = ","   ' Comma delimiter as requested.
 
 Private Const SLOT_GRANULARITY_MIN As Long = 30
-Private Const EARLIEST_START_HOUR As Long = 8
+Private Const EARLIEST_START_HOUR As Long = 9
 Private Const LUNCH_START_HOUR As Long = 12
 Private Const LUNCH_END_HOUR As Long = 14
-Private Const LATEST_ALLOWED_START_HOUR As Long = 16
+Private Const LATEST_ALLOWED_START_HOUR As Long = 15
+
+Private Const RECURRING_ANCHOR_DATE As String = "2026-09-15"
+Private Const SEARCH_WEEKS_AHEAD As Long = 10
+Private Const REQUIRED_SLOT_DURATION_MIN As Long = 60
+Private Const ENABLE_IMMEDIATE_LOG As Boolean = True
 
 Private mIndicatorInitialized As Boolean
 Private mOriginalStatusBar As Variant
@@ -23,14 +28,20 @@ Public Sub ExportCommonMeetingSlotsToCsv()
     On Error GoTo EH
 
     StartRunningIndicator "Initializing"
+    LogInfo "Macro started"
 
     Dim queryTimestamp As Date
     queryTimestamp = Now
 
+    Dim anchorDate As Date
+    anchorDate = CDate(RECURRING_ANCHOR_DATE)
+
     Dim startDate As Date
     Dim endDate As Date
-    startDate = Date
-    endDate = DateSerial(2026, 6, 23)
+    startDate = StartOfWeekMonday(anchorDate)
+    endDate = DateAdd("d", (SEARCH_WEEKS_AHEAD * 7) - 1, startDate)
+
+    LogInfo "Search window: " & Format$(startDate, "yyyy-mm-dd") & " to " & Format$(endDate, "yyyy-mm-dd")
 
     If DateValue(startDate) > DateValue(endDate) Then
         StopRunningIndicator
@@ -47,6 +58,11 @@ Public Sub ExportCommonMeetingSlotsToCsv()
     lunchStart = TimeSerial(LUNCH_START_HOUR, 0, 0)
     lunchEnd = TimeSerial(LUNCH_END_HOUR, 0, 0)
     latestAllowedStart = TimeSerial(LATEST_ALLOWED_START_HOUR, 0, 0)
+
+    ' Only Tue/Thu days in the 10-week window are needed for free/busy checks.
+    Dim relevantDates As Collection
+    Set relevantDates = BuildRelevantSearchDates(startDate, endDate)
+    LogInfo "Candidate weekdays to query: " & CStr(relevantDates.Count)
 
     Dim requiredAttendees As Variant
     requiredAttendees = BuildRequiredAttendees()
@@ -77,9 +93,11 @@ Public Sub ExportCommonMeetingSlotsToCsv()
             Exit Sub
         End If
 
+        LogInfo "Resolved required attendee: " & CStr(requiredAttendees(i, 1))
+
         Dim reqMap As Object
         Dim reqErr As String
-        If Not TryBuildFreeBusyMap(reqRecipient, startDate, endDate, SLOT_GRANULARITY_MIN, reqMap, reqErr) Then
+        If Not TryBuildFreeBusyMap(reqRecipient, SLOT_GRANULARITY_MIN, relevantDates, reqMap, reqErr) Then
             StopRunningIndicator
             MsgBox "Free/busy could not be read for required attendee: " & CStr(requiredAttendees(i, 1)) & " <" & CStr(requiredAttendees(i, 2)) & ">" & vbCrLf & _
                    reqErr & vbCrLf & _
@@ -88,6 +106,7 @@ Public Sub ExportCommonMeetingSlotsToCsv()
         End If
 
         requiredMaps.Add reqMap
+        LogInfo "Loaded free/busy for required attendee: " & CStr(requiredAttendees(i, 1))
     Next i
 
     Dim optionalName As String
@@ -99,49 +118,52 @@ Public Sub ExportCommonMeetingSlotsToCsv()
     Dim optionalAvailable As Boolean
     optionalAvailable = False
 
+    Dim optionalConfigured As Boolean
+    optionalConfigured = (Len(Trim$(optionalEmail)) > 0)
+
     Dim optionalWarning As String
     optionalWarning = ""
 
-    Dim optRecipient As Outlook.Recipient
-    Set optRecipient = ResolveRecipient(ns, optionalEmail)
-
-    UpdateRunningIndicator "Reading optional free/busy", 1, 1
-
-    If optRecipient Is Nothing Then
-        optionalWarning = "Optional attendee could not be resolved. OptionalAttendeeFree is FALSE for all exported rows."
+    If Not optionalConfigured Then
+        LogInfo "Optional attendee is not configured"
     Else
-        Dim optErr As String
-        If TryBuildFreeBusyMap(optRecipient, startDate, endDate, SLOT_GRANULARITY_MIN, optionalMap, optErr) Then
-            optionalAvailable = True
+        Dim optRecipient As Outlook.Recipient
+        Set optRecipient = ResolveRecipient(ns, optionalEmail)
+
+        UpdateRunningIndicator "Reading optional free/busy", 1, 1
+
+        If optRecipient Is Nothing Then
+            optionalWarning = "Optional attendee could not be resolved. OptionalAttendeeFree is FALSE for all exported rows."
         Else
-            optionalWarning = "Optional attendee free/busy could not be read. OptionalAttendeeFree is FALSE for all exported rows. " & optErr
+            Dim optErr As String
+            If TryBuildFreeBusyMap(optRecipient, SLOT_GRANULARITY_MIN, relevantDates, optionalMap, optErr) Then
+                optionalAvailable = True
+            Else
+                optionalWarning = "Optional attendee free/busy could not be read. OptionalAttendeeFree is FALSE for all exported rows. " & optErr
+            End If
         End If
     End If
 
-    Dim durations As Variant
-    durations = Array(60, 30)  ' Preferred first, fallback second.
-
-    Dim queryStartDateTime As Date
-    queryStartDateTime = Now
-
     UpdateRunningIndicator "Finding common slots", 0, DateDiff("d", DateValue(startDate), DateValue(endDate)) + 1
+    LogInfo "Starting slot scan"
 
     Dim slots As Collection
-    Set slots = FindCommonSlots( _
+    Set slots = FindCommonSlotsInWindow( _
         requiredMaps:=requiredMaps, _
         optionalMap:=optionalMap, _
+        optionalConfigured:=optionalConfigured, _
         optionalAvailable:=optionalAvailable, _
         optionalName:=optionalName, _
         queryTimestamp:=queryTimestamp, _
-        queryStartDateTime:=queryStartDateTime, _
         startDate:=startDate, _
         endDate:=endDate, _
         earliestStart:=earliestStart, _
         lunchStart:=lunchStart, _
         lunchEnd:=lunchEnd, _
-        latestAllowedStart:=latestAllowedStart, _
-        durations:=durations _
+        latestAllowedStart:=latestAllowedStart _
     )
+
+    LogInfo "Slot scan completed. Found slots: " & CStr(slots.Count)
 
     Dim csvPath As String
     Dim writeErr As String
@@ -159,16 +181,24 @@ Public Sub ExportCommonMeetingSlotsToCsv()
           "File: " & csvPath & vbCrLf & _
           "Candidate slots exported: " & CStr(slots.Count)
 
+    If slots.Count = 0 Then
+        msg = msg & vbCrLf & _
+              "No 60-minute common slot matched the configured rules in the 10-week window." & vbCrLf & _
+              "Checked Tuesday/Thursday from week of " & Format$(anchorDate, "yyyy-mm-dd") & "."
+    End If
+
     If Len(optionalWarning) > 0 Then
         msg = msg & vbCrLf & vbCrLf & optionalWarning
     End If
 
     StopRunningIndicator
+    LogInfo "Macro finished successfully"
     MsgBox msg, vbInformation, "Common Meeting Slots"
     Exit Sub
 
 EH:
     StopRunningIndicator
+    LogInfo "Macro failed: " & CStr(Err.Number) & " - " & Err.Description
     MsgBox "Unexpected error " & CStr(Err.Number) & ": " & Err.Description, vbCritical, "Common Meeting Slots"
 End Sub
 
@@ -178,28 +208,28 @@ End Sub
 Private Function BuildRequiredAttendees() As Variant
     Dim attendees(1 To 5, 1 To 2) As String
 
-    attendees(1, 1) = "Sziva, Laszlo"
-    attendees(1, 2) = "Laszlo.Sziva@kanadevia-inova.com"
+    attendees(1, 1) = "Lorenzoni, Enrico"
+    attendees(1, 2) = "Enrico.Lorenzoni@kanadevia-inova.com"
 
-    attendees(2, 1) = "Maties, Oana"
-    attendees(2, 2) = "Oana.Maties@kanadevia-inova.com"
+    attendees(2, 1) = "Trautvetter, Ina"
+    attendees(2, 2) = "Ina.Trautvetter@kanadevia-inova.com"
 
-    attendees(3, 1) = "Chavlisek, Georgios"
-    attendees(3, 2) = "Georgios.Chavlisek@kanadevia-inova.com"
+    attendees(3, 1) = "Zöller, Martin"
+    attendees(3, 2) = "Martin.Zoeller@kanadevia-inova.com"
 
-    attendees(4, 1) = "Zelem, David"
-    attendees(4, 2) = "David.Zelem@kanadevia-inova.com"
+    attendees(4, 1) = "Wunderlich, Reinhard"
+    attendees(4, 2) = "Reinhard.Wunderlich@kanadevia-inova.com"
 
-    attendees(5, 1) = "Balla, Andrej"
-    attendees(5, 2) = "Andrej.Balla@kanadevia-inova.com"
+    attendees(5, 1) = "Sziva, Laszlo"
+    attendees(5, 2) = "Laszlo.Sziva@kanadevia-inova.com"
 
     BuildRequiredAttendees = attendees
 End Function
 
 Private Function BuildOptionalAttendee() As Variant
     Dim attendee(1 To 2) As String
-    attendee(1) = "Lorenzoni, Enrico"
-    attendee(2) = "Enrico.Lorenzoni@kanadevia-inova.com"
+    attendee(1) = ""
+    attendee(2) = ""
     BuildOptionalAttendee = attendee
 End Function
 
@@ -231,9 +261,8 @@ End Function
 
 Private Function TryBuildFreeBusyMap( _
     ByVal recipient As Outlook.Recipient, _
-    ByVal startDate As Date, _
-    ByVal endDate As Date, _
     ByVal intervalMinutes As Long, _
+    ByVal relevantDates As Collection, _
     ByRef dayMap As Object, _
     ByRef errorText As String _
 ) As Boolean
@@ -245,10 +274,29 @@ Private Function TryBuildFreeBusyMap( _
 
     Set dayMap = CreateObject("Scripting.Dictionary")
 
-    Dim d As Date
-    For d = DateValue(startDate) To DateValue(endDate)
+    If relevantDates Is Nothing Or relevantDates.Count = 0 Then
+        errorText = "No candidate dates were generated for free/busy lookup."
+        Set dayMap = Nothing
+        TryBuildFreeBusyMap = False
+        Exit Function
+    End If
+
+    Dim totalDates As Long
+    totalDates = relevantDates.Count
+
+    Dim dateIndex As Long
+    dateIndex = 0
+
+    Dim dayItem As Variant
+    For Each dayItem In relevantDates
+        dateIndex = dateIndex + 1
+
         Dim dayStart As Date
-        dayStart = DateSerial(Year(d), Month(d), Day(d))
+        dayStart = DateValue(CDate(dayItem))
+
+        If dateIndex = 1 Or dateIndex = totalDates Or (dateIndex Mod 5 = 0) Then
+            LogInfo "FreeBusy " & recipient.Name & " " & CStr(dateIndex) & "/" & CStr(totalDates) & " - " & Format$(dayStart, "yyyy-mm-dd")
+        End If
 
         Dim freeBusyRaw As String
         freeBusyRaw = recipient.FreeBusy(dayStart, intervalMinutes, True)
@@ -264,7 +312,8 @@ Private Function TryBuildFreeBusyMap( _
         End If
 
         dayMap(Format$(dayStart, "yyyymmdd")) = normalized
-    Next d
+        DoEvents
+    Next dayItem
 
     TryBuildFreeBusyMap = True
     Exit Function
@@ -292,23 +341,58 @@ Private Function NormalizeDailyFreeBusy(ByVal freeBusyRaw As String, ByVal inter
     End If
 End Function
 
+Private Function BuildRelevantSearchDates(ByVal startDate As Date, ByVal endDate As Date) As Collection
+    Dim results As New Collection
+    Dim seen As Object
+    Set seen = CreateObject("Scripting.Dictionary")
+
+    AddWeekdayDatesInRange results, seen, DateValue(startDate), DateValue(endDate), vbTuesday
+    AddWeekdayDatesInRange results, seen, DateValue(startDate), DateValue(endDate), vbThursday
+
+    Set BuildRelevantSearchDates = results
+End Function
+
+Private Sub AddWeekdayDatesInRange( _
+    ByRef results As Collection, _
+    ByRef seen As Object, _
+    ByVal startDate As Date, _
+    ByVal endDate As Date, _
+    ByVal targetWeekday As VbDayOfWeek _
+)
+    Dim d As Date
+    d = DateValue(startDate)
+
+    Do While DateValue(d) <= DateValue(endDate)
+        If Weekday(DateValue(d), vbSunday) = targetWeekday Then
+            Dim dayKey As String
+            dayKey = Format$(DateValue(d), "yyyymmdd")
+
+            If Not seen.Exists(dayKey) Then
+                seen(dayKey) = True
+                results.Add DateValue(d)
+            End If
+        End If
+
+        d = DateAdd("d", 1, d)
+    Loop
+End Sub
+
 ' =============================
 ' Slot Search
 ' =============================
-Private Function FindCommonSlots( _
+Private Function FindCommonSlotsInWindow( _
     ByVal requiredMaps As Collection, _
     ByVal optionalMap As Object, _
+    ByVal optionalConfigured As Boolean, _
     ByVal optionalAvailable As Boolean, _
     ByVal optionalName As String, _
     ByVal queryTimestamp As Date, _
-    ByVal queryStartDateTime As Date, _
     ByVal startDate As Date, _
     ByVal endDate As Date, _
     ByVal earliestStart As Date, _
     ByVal lunchStart As Date, _
     ByVal lunchEnd As Date, _
-    ByVal latestAllowedStart As Date, _
-    ByVal durations As Variant _
+    ByVal latestAllowedStart As Date _
 ) As Collection
 
     Dim results As New Collection
@@ -316,51 +400,53 @@ Private Function FindCommonSlots( _
     Dim totalDays As Long
     totalDays = DateDiff("d", DateValue(startDate), DateValue(endDate)) + 1
 
-    Dim dayCounter As Long
-    dayCounter = 0
+    Dim dayIndex As Long
+    dayIndex = 0
 
     Dim d As Date
     For d = DateValue(startDate) To DateValue(endDate)
-        dayCounter = dayCounter + 1
-        UpdateRunningIndicator "Finding common slots", dayCounter, totalDays
+        dayIndex = dayIndex + 1
+        UpdateRunningIndicator "Finding common slots", dayIndex, totalDays
 
-        Dim dayStart As Date
-        dayStart = DateSerial(Year(d), Month(d), Day(d))
+        If Weekday(DateValue(d), vbMonday) = 2 Or Weekday(DateValue(d), vbMonday) = 4 Then
+            LogInfo "Scanning day " & CStr(dayIndex) & "/" & CStr(totalDays) & " - " & Format$(d, "yyyy-mm-dd")
 
-        Dim minuteOffset As Long
-        For minuteOffset = 0 To (24 * 60 - SLOT_GRANULARITY_MIN) Step SLOT_GRANULARITY_MIN
-            Dim slotStart As Date
-            slotStart = DateAdd("n", minuteOffset, dayStart)
+            Dim dayStart As Date
+            dayStart = DateSerial(Year(d), Month(d), Day(d))
 
-            If slotStart >= queryStartDateTime Then
-                Dim durationItem As Variant
-                For Each durationItem In durations
-                    Dim durationMinutes As Long
-                    durationMinutes = CLng(durationItem)
+            Dim minuteOffset As Long
+            For minuteOffset = 0 To (24 * 60 - SLOT_GRANULARITY_MIN) Step SLOT_GRANULARITY_MIN
+                Dim slotStart As Date
+                slotStart = DateAdd("n", minuteOffset, dayStart)
 
-                    If IsSlotAllowedByTimeRules(slotStart, durationMinutes, earliestStart, lunchStart, lunchEnd, latestAllowedStart) Then
-                        If AreAllRequiredAttendeesFree(requiredMaps, slotStart, durationMinutes, SLOT_GRANULARITY_MIN) Then
-                            Dim optionalFree As Boolean
-                            optionalFree = False
+                If IsSlotAllowedByTimeRules(slotStart, REQUIRED_SLOT_DURATION_MIN, earliestStart, lunchStart, lunchEnd, latestAllowedStart) Then
+                    If AreAllRequiredAttendeesFree(requiredMaps, slotStart, REQUIRED_SLOT_DURATION_MIN, SLOT_GRANULARITY_MIN) Then
+                        Dim optionalFree As Boolean
+                        optionalFree = False
 
-                            If optionalAvailable Then
-                                optionalFree = IsAttendeeFreeForSlot(optionalMap, slotStart, durationMinutes, SLOT_GRANULARITY_MIN)
-                            End If
-
-                            Dim noteText As String
-                            noteText = BuildNote(durationMinutes, optionalFree)
-
-                            Dim rowData As Variant
-                            rowData = BuildRow(queryTimestamp, slotStart, durationMinutes, optionalFree, optionalName, noteText)
-                            results.Add rowData
+                        If optionalAvailable Then
+                            optionalFree = IsAttendeeFreeForSlot(optionalMap, slotStart, REQUIRED_SLOT_DURATION_MIN, SLOT_GRANULARITY_MIN)
                         End If
+
+                        Dim noteText As String
+                        noteText = BuildRecurringNote(Weekday(DateValue(d), vbSunday), optionalConfigured, optionalFree)
+
+                        Dim rowData As Variant
+                        rowData = BuildRow(queryTimestamp, slotStart, REQUIRED_SLOT_DURATION_MIN, optionalConfigured, optionalFree, optionalName, noteText)
+                        results.Add rowData
                     End If
-                Next durationItem
-            End If
-        Next minuteOffset
+                End If
+            Next minuteOffset
+
+            DoEvents
+        End If
     Next d
 
-    Set FindCommonSlots = results
+    Set FindCommonSlotsInWindow = results
+End Function
+
+Private Function StartOfWeekMonday(ByVal anyDate As Date) As Date
+    StartOfWeekMonday = DateAdd("d", 1 - Weekday(DateValue(anyDate), vbMonday), DateValue(anyDate))
 End Function
 
 Private Function IsSlotAllowedByTimeRules( _
@@ -374,14 +460,17 @@ Private Function IsSlotAllowedByTimeRules( _
 
     IsSlotAllowedByTimeRules = False
 
-    ' Weekend is not allowed (Saturday/Sunday).
-    If Weekday(DateValue(slotStart), vbMonday) > 5 Then Exit Function
+    Dim weekdayNo As Long
+    weekdayNo = Weekday(DateValue(slotStart), vbMonday)
+
+    ' Only Tuesday and Thursday are valid days for this search.
+    If weekdayNo <> 2 And weekdayNo <> 4 Then Exit Function
 
     Dim t As Date
     t = TimeValue(slotStart)
 
     If t < earliestStart Then Exit Function
-    If t >= latestAllowedStart Then Exit Function
+    If t > latestAllowedStart Then Exit Function
 
     Dim slotEnd As Date
     slotEnd = DateAdd("n", durationMinutes, slotStart)
@@ -451,9 +540,9 @@ Private Function IsAttendeeFreeForSlot( _
         Dim statusChar As String
         statusChar = Mid$(dailyBusy, startIndex + i, 1)
 
-        ' Mapping: 0 (free) and 1 (tentative) are considered usable.
-        ' Busy/OOF/unknown values remain blocked.
-        If statusChar <> "0" And statusChar <> "1" Then Exit Function
+        ' Conservative mapping: only 0 is free.
+        ' Tentative (1), Busy (2), OOF (3), and any other value are blocked.
+        If statusChar <> "0" Then Exit Function
     Next i
 
     IsAttendeeFreeForSlot = True
@@ -561,6 +650,7 @@ Private Function BuildRow( _
     ByVal queryTimestamp As Date, _
     ByVal slotStart As Date, _
     ByVal durationMinutes As Long, _
+    ByVal optionalConfigured As Boolean, _
     ByVal optionalFree As Boolean, _
     ByVal optionalName As String, _
     ByVal notes As String _
@@ -573,7 +663,9 @@ Private Function BuildRow( _
     rowValues(3) = CStr(durationMinutes)
     rowValues(4) = "TRUE"
 
-    If optionalFree Then
+    If Not optionalConfigured Then
+        rowValues(5) = "N/A"
+    ElseIf optionalFree Then
         rowValues(5) = "TRUE"
     Else
         rowValues(5) = "FALSE"
@@ -620,28 +712,31 @@ Private Function FormatDateTimeSortable(ByVal dt As Date) As String
     FormatDateTimeSortable = Format$(dt, "yyyy-mm-dd HH:nn")
 End Function
 
-Private Function BuildNote(ByVal durationMinutes As Long, ByVal optionalFree As Boolean) As String
-    Select Case durationMinutes
-        Case 60
-            If optionalFree Then
-                BuildNote = "Preferred 60 min slot; optional attendee free"
-            Else
-                BuildNote = "Preferred 60 min slot; optional attendee blocked"
-            End If
-        Case 30
-            If optionalFree Then
-                BuildNote = "Fallback 30 min slot; optional attendee free"
-            Else
-                BuildNote = "Fallback 30 min slot; optional attendee blocked"
-            End If
-        Case Else
-            If optionalFree Then
-                BuildNote = "Slot; optional attendee free"
-            Else
-                BuildNote = "Slot; optional attendee blocked"
-            End If
-    End Select
+Private Function BuildRecurringNote(ByVal targetWeekday As VbDayOfWeek, ByVal optionalConfigured As Boolean, ByVal optionalFree As Boolean) As String
+    Dim weekdayName As String
+
+    If targetWeekday = vbThursday Then
+        weekdayName = "Thursday"
+    ElseIf targetWeekday = vbTuesday Then
+        weekdayName = "Tuesday"
+    Else
+        weekdayName = "Selected weekday"
+    End If
+
+    If Not optionalConfigured Then
+        BuildRecurringNote = "Common 60 min slot (" & weekdayName & "); no optional attendee configured"
+    ElseIf optionalFree Then
+        BuildRecurringNote = "Common 60 min slot (" & weekdayName & "); optional attendee free"
+    Else
+        BuildRecurringNote = "Common 60 min slot (" & weekdayName & "); optional attendee blocked"
+    End If
 End Function
+
+Private Sub LogInfo(ByVal message As String)
+    If ENABLE_IMMEDIATE_LOG Then
+        Debug.Print Format$(Now, "yyyy-mm-dd HH:nn:ss"); " | "; message
+    End If
+End Sub
 
 Private Sub StartRunningIndicator(ByVal phase As String)
     On Error Resume Next

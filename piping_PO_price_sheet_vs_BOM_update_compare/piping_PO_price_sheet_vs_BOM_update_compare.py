@@ -1,3 +1,4 @@
+import sys
 import pandas as pd
 import numpy as np
 from datetime import datetime
@@ -14,29 +15,39 @@ except Exception:
     get_column_letter = None
     Alignment = None
 
-def compare_po_vs_bom(po_file_path, bom_file_path, output_dir=None):
+def compare_po_vs_bom(input_file_path, output_dir=None):
     """
-    Compare PO and BOM files and generate a comprehensive comparison report.
-    
+    Compare PO and BOM data from a single workbook and generate a comprehensive comparison report.
+
+    The workbook must contain the PO (baseline) in its left-most sheet and the
+    updated BOM in the sheet immediately to its right.
+
     Args:
-        po_file_path (str): Path to the PO CSV file
-        bom_file_path (str): Path to the BOM CSV file
+        input_file_path (str): Path to the input .xlsx workbook containing the PO and BOM sheets
         output_dir (str): Directory to save the output file (optional)
     
     Returns:
         str: Path to the generated output file
     """
     
-    # Read the CSV files
-    print("Reading PO file...")
-    po_df = pd.read_csv(po_file_path)
-    
-    print("Reading BOM file...")
-    bom_df = pd.read_csv(bom_file_path)
+    # Read the PO (left sheet) and BOM (next sheet to the right) from the workbook
+    print("Reading input workbook...")
+    xl = pd.ExcelFile(input_file_path, engine='openpyxl')
+    if len(xl.sheet_names) < 2:
+        raise ValueError(
+            f"Expected at least 2 sheets (PO and BOM) in {input_file_path}, found {len(xl.sheet_names)}: {xl.sheet_names}"
+        )
+
+    po_sheet_name, bom_sheet_name = xl.sheet_names[0], xl.sheet_names[1]
+    print(f"PO sheet (left): '{po_sheet_name}'")
+    print(f"BOM sheet (right): '{bom_sheet_name}'")
+
+    po_df = xl.parse(po_sheet_name)
+    bom_df = xl.parse(bom_sheet_name)
     
     # Display basic info about the files
-    print(f"PO file contains {len(po_df)} rows")
-    print(f"BOM file contains {len(bom_df)} rows")
+    print(f"PO sheet contains {len(po_df)} rows")
+    print(f"BOM sheet contains {len(bom_df)} rows")
     
     # Create a copy of PO dataframe to work with
     result_df = po_df.copy()
@@ -54,40 +65,62 @@ def compare_po_vs_bom(po_file_path, bom_file_path, output_dir=None):
     # Step 2: Match PO lines with BOM lines and populate BOM data
     print("Step 2: Matching PO lines with BOM data...")
     
-    # Create a mapping dictionary for faster lookup
+    # Create a mapping dictionary for faster lookup, keyed by description + material
+    # (description alone isn't unique - different materials can share the same description text)
     bom_mapping = {}
     duplicate_count = 0
     for idx, row in bom_df.iterrows():
         pipe_component = str(row['Pipe Component']).strip()
-        if pipe_component in bom_mapping:
+        material = str(row.get('Material', '')).strip()
+        key = (pipe_component, material)
+
+        qty = pd.to_numeric(row['QTY [pcs/m]'], errors='coerce')
+        weight_raw = row['Total weight [kg]']
+        weight = pd.to_numeric(weight_raw, errors='coerce')
+
+        if key in bom_mapping:
             duplicate_count += 1
-            # For duplicates, keep the first occurrence but update the tracking
+            # Same description + material appears more than once - sum the quantities/weights
+            existing = bom_mapping[key]
+            existing_qty = pd.to_numeric(existing['QTY [pcs/m]'], errors='coerce')
+            existing['QTY [pcs/m]'] = (0 if pd.isna(existing_qty) else existing_qty) + (0 if pd.isna(qty) else qty)
+
+            existing_weight = pd.to_numeric(existing['Total weight [kg]'], errors='coerce')
+            if pd.isna(existing_weight) and pd.isna(weight):
+                existing['Total weight [kg]'] = weight_raw
+            else:
+                existing['Total weight [kg]'] = (0 if pd.isna(existing_weight) else existing_weight) + (0 if pd.isna(weight) else weight)
             continue
-        bom_mapping[pipe_component] = {
-            'Total weight [kg]': row['Total weight [kg]'],
+
+        bom_mapping[key] = {
+            'pipe_component': pipe_component,
+            'material': material,
+            'Total weight [kg]': weight_raw,
             'QTY [pcs/m]': row['QTY [pcs/m]'],
             'matched': False  # Track which BOM items have been matched
         }
     
     if duplicate_count > 0:
-        print(f"Note: Found {duplicate_count} duplicate pipe components in BOM, keeping first occurrence of each")
+        print(f"Note: Found {duplicate_count} duplicate BOM rows (same description + material), summing their quantities/weights")
     
     matched_bom_items = set()
     
     for idx, row in result_df.iterrows():
         po_description = str(row['DESCRIPTION/ Pipe Component']).strip()
+        po_material = str(row.get('MATERIAL', '')).strip()
+        key = (po_description, po_material)
         
-        if po_description in bom_mapping:
+        if key in bom_mapping:
             # Found a match
-            bom_data = bom_mapping[po_description]
+            bom_data = bom_mapping[key]
             
             # Populate BOM data
             result_df.at[idx, 'BOM QTY [pcs/m]'] = bom_data['QTY [pcs/m]']
             result_df.at[idx, 'BOM Total weight [kg]'] = bom_data['Total weight [kg]']
             
             # Mark this BOM item as matched
-            matched_bom_items.add(po_description)
-            bom_mapping[po_description]['matched'] = True
+            matched_bom_items.add(key)
+            bom_mapping[key]['matched'] = True
             
             # Step 3: Calculate differences
             # Handle PO quantities - they might be in different columns
@@ -161,12 +194,18 @@ def compare_po_vs_bom(po_file_path, bom_file_path, output_dir=None):
     po_snapshot = result_df.copy()
     po_len = len(po_snapshot)
 
-    for pipe_component, bom_data in bom_mapping.items():
+    for key, bom_data in bom_mapping.items():
         if not bom_data['matched']:
-            # Find the original BOM row for this item
-            bom_rows = bom_df[bom_df['Pipe Component'] == pipe_component]
+            pipe_component = bom_data['pipe_component']
+            material = bom_data['material']
+
+            # Find the original BOM row(s) for this description + material
+            bom_rows = bom_df[
+                (bom_df['Pipe Component'].astype(str).str.strip() == pipe_component) &
+                (bom_df['Material'].astype(str).str.strip() == material)
+            ]
             if bom_rows.empty:
-                print(f"Warning: Could not find BOM row for component: {pipe_component}")
+                print(f"Warning: Could not find BOM row for component: {pipe_component} ({material})")
                 continue
 
             bom_row = bom_rows.iloc[0]  # Take the first match if there are duplicates
@@ -448,29 +487,46 @@ def compare_po_vs_bom(po_file_path, bom_file_path, output_dir=None):
 def main():
     """
     Main function to run the PO vs BOM comparison.
+
+    Pass the path to the input .xlsx workbook as a command-line argument, e.g.:
+        python piping_PO_price_sheet_vs_BOM_update_compare.py "PO_vs_BOM.xlsx"
+    If omitted, the script looks for a single candidate .xlsx file in its own directory
+    (excluding previously generated comparison reports).
     """
     # Get the script directory
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    
-    # Define file paths
-    po_file = os.path.join(script_dir, "PO.csv")
-    bom_file = os.path.join(script_dir, "BOM.csv")
-    
-    # Check if files exist
-    if not os.path.exists(po_file):
-        print(f"Error: PO.csv not found at {po_file}")
+
+    if len(sys.argv) > 1:
+        input_file = sys.argv[1]
+    else:
+        candidates = [
+            f for f in os.listdir(script_dir)
+            if f.lower().endswith('.xlsx')
+            and not f.startswith('~$')
+            and 'Comparison_Report' not in f
+        ]
+        if len(candidates) == 1:
+            input_file = os.path.join(script_dir, candidates[0])
+        elif len(candidates) == 0:
+            print(f"Error: No input .xlsx file found in {script_dir}")
+            print("Pass the path to the PO/BOM workbook as a command-line argument.")
+            return
+        else:
+            print(f"Error: Multiple candidate .xlsx files found in {script_dir}:")
+            for c in candidates:
+                print(f"  - {c}")
+            print("Pass the path to the correct workbook as a command-line argument.")
+            return
+
+    if not os.path.exists(input_file):
+        print(f"Error: Input file not found at {input_file}")
         return
-    
-    if not os.path.exists(bom_file):
-        print(f"Error: BOM.csv not found at {bom_file}")
-        return
-    
+
     print("Starting PO vs BOM Comparison...")
-    print(f"PO file: {po_file}")
-    print(f"BOM file: {bom_file}")
-    
+    print(f"Input workbook: {input_file}")
+
     try:
-        output_path = compare_po_vs_bom(po_file, bom_file, script_dir)
+        output_path = compare_po_vs_bom(input_file, script_dir)
         print(f"\nComparison completed successfully!")
         print(f"Report saved to: {output_path}")
         

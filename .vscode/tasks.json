@@ -9,6 +9,25 @@
 			"problemMatcher": [
 				"$pytest"
 			]
+		},
+		{
+			"label": "PTS inspect reference workbooks",
+			"type": "shell",
+			"command": "${workspaceFolder}/.venv/Scripts/python.exe ${workspaceFolder}/PTS_highlighter/pts_highlighter.py --inspect",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "PTS focused tests",
+			"type": "shell",
+			"command": "${workspaceFolder}/.venv/Scripts/python.exe ${workspaceFolder}/PTS_highlighter/test_pts_highlighter.py",
+			"problemMatcher": []
+		},
+		{
+			"label": "PTS process schedules",
+			"type": "shell",
+			"command": "${workspaceFolder}/.venv/Scripts/python.exe ${workspaceFolder}/PTS_highlighter/pts_highlighter.py --overwrite",
+			"problemMatcher": []
 		}
 	]
 }
