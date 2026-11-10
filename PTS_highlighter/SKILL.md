@@ -54,6 +54,8 @@ Hide all other original columns, not delete them, unless the user asks to keep a
 
 ### 5. Add classification columns
 Insert immediately to the right of Finish, shifting later columns right:
+- Proposed date LS (initially blank, DD.MM.YYYY)
+- Remarks LS (initially blank text cells, wrap text)
 - Piping
 - Hangers
 - Valves
@@ -84,11 +86,11 @@ Set `Piping = X` for confirmed matches to the following family and milestone com
 - Technical & Commercial Comparison TCC
 - Purchase Order
 - Ready for Shipment
-- Shipment
 - DTS (T) [optional]
 - DTS (S) [optional]
 
 #### Family: Lot General Piping Engineering
+- Purchase Order
 - BOM / BOQ-2 - Issue for for PO General Piping Material
 - BOM and ISO and arrangement Drawings for PO General Piping Erection
 
@@ -99,12 +101,13 @@ Set `Piping = X` for confirmed matches to the following family and milestone com
 
 ### Hangers
 Set `Hangers = X` for confirmed matches to:
+- Lot General Piping Engineering - Purchase Order
 - Lot General Piping Engineering - BOM / BOQ-2 - Issue for for PO General Piping Material
 - Lot General Piping Hangers - TSD / BANF RFQ
 - Lot General Piping Engineering - BOM and ISO and arrangement Drawings for PO General Piping Erection
 - Lot General Piping Hangers - Purchase Order
+	- Exact approved alias: Purchase Order - Base on BOQ1. Do not generalize to arbitrary suffixes or PO adjustments.
 - Lot General Piping Hangers - Ready for Shipment
-- Lot General Piping Hangers - Shipment
 - Lot General Piping Hangers - DTS (T) [optional]
 - Lot General Piping Hangers - DTS (S) [optional]
 
@@ -117,12 +120,11 @@ Set `Valves = X` for confirmed matches to:
 - Lot General Piping Valves - Technical & Commercial Comparison TCC
 - Lot General Piping Valves - Purchase Order
 - Lot General Piping Valves - Ready for Shipment
-- Lot General Piping Valves - Shipment
 - Lot General Piping Valves - DTS (T) [optional]
 - Lot General Piping Valves - DTS (S) [optional]
 
 ### Shared classifications and guardrails
-- The two listed Lot General Piping Engineering milestones receive X in both Piping and Hangers.
+- The three listed Lot General Piping Engineering milestones receive X in both Piping and Hangers.
 - `Lot 5 - Erection General Piping` is fixed. Do not generalize the lot number.
 - The approved family prefix alone is insufficient.
 - Do not mark unrelated activities from an approved family.
@@ -130,6 +132,16 @@ Set `Valves = X` for confirmed matches to:
 
 ### 7. Fill ALL
 Set `ALL = X` if Piping, Hangers, or Valves contains X. Otherwise leave ALL blank.
+
+Store confirmed and near-match activities in one editable status table keyed by
+unique Activity ID. Prefill discipline marks for confirmed matches; leave review
+marks blank. Let users enter X or clear discipline marks and calculate ALL with a
+formula. Main schedule classification cells use exact-match VLOOKUP formulas by
+Activity ID, returning blanks for missing or unmarked entries. Preserve saved
+table marks before rebuilding generated views, including deliberately cleared
+marks. Reject duplicate IDs and invalid marks rather than silently selecting one.
+Use conditional formatting for family colours and automatic Excel calculation.
+Users must reapply the schedule filter after changing marks to update visibility.
 
 ### 8. Final view
 - Apply AutoFilter to the complete schedule range including the new columns.
@@ -142,7 +154,7 @@ Set `ALL = X` if Piping, Hangers, or Valves contains X. Otherwise leave ALL blan
 - Never overwrite the uploaded workbook.
 - Save as `<original filename without extension>_Piping_Filtered.xlsx` unless the user requests another name.
 - Reopen and validate the output.
-- Verify that classification columns appear exactly once in the order Piping, Hangers, Valves, ALL immediately after Finish.
+- Verify that Proposed date LS, Remarks LS, Piping, Hangers, Valves, ALL appear exactly once in that order immediately after Finish. Reuse existing LS columns without losing their entries when processing an annotated workbook.
 - Verify every discipline X produces ALL X, and ALL X never appears with all disciplines blank.
 - Verify the filter covers the complete schedule and is saved with ALL = X selected.
 - Verify the freeze pane is immediately below the header.
@@ -154,6 +166,7 @@ Return the created workbook and briefly report:
 - processed worksheet and detected header row;
 - Piping, Hangers, and Valves match counts;
 - ambiguous matches;
+- near matches to approved milestones within recognized families, with reasons and source/output row references; omit unrelated milestones, unrecognized families and family-only headings from Needs Review;
 - unresolved date cells;
 - nonoptional approved milestones not found;
 - temporary overrides used.

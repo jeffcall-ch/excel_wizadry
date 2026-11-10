@@ -1,0 +1,82 @@
+{
+  "source": "C:\\Users\\szil\\Repos\\excel_wizadry\\PTS_highlighter\\Budapest - PTS L3 Extract Gantt.xlsx",
+  "output": "C:\\Users\\szil\\Repos\\excel_wizadry\\PTS_highlighter\\Budapest - PTS L3 Extract Gantt_LS.xlsx",
+  "worksheet": "Budapest GP Gantt",
+  "header_row": 1,
+  "counts": {
+    "Piping": 11,
+    "Hangers": 7,
+    "Valves": 8,
+    "ALL": 23
+  },
+  "ambiguous": [
+    {
+      "row": 154,
+      "activity_id": "ETAB1090M0",
+      "activity_name": "Lot General Piping Engineering - BOM / BOQ-1 - Issue for RfQ GP - Piping Material, Valves, Hangers",
+      "source_row": 197
+    }
+  ],
+  "unresolved_dates": [],
+  "manual_differences": [],
+  "missing_milestones": [
+    "Lot 5 - Erection General Piping - BOQ 1 (Doc's for RfQ) - Issued from Engineering",
+    "Lot 5 - Erection General Piping - BOQ 2 (Doc's for PO) - Issued from Engineering",
+    "Lot 5 - Erection General Piping - Contractor On Site Mobilisation Completed"
+  ],
+  "excluded": [
+    {
+      "row": 154,
+      "activity_id": "ETAB1090M0",
+      "activity_name": "Lot General Piping Engineering - BOM / BOQ-1 - Issue for RfQ GP - Piping Material, Valves, Hangers",
+      "family": "Lot General Piping Engineering",
+      "reason": "Ambiguous milestone",
+      "source_row": 197
+    }
+  ],
+  "colours": {
+    "Lot General Piping Pipe Material": "FFE2F0D9",
+    "Lot General Piping Engineering": "FFD9EAF7",
+    "Lot General Piping Hangers": "FFFCE4D6",
+    "Lot General Piping Valves": "FFFFF2CC",
+    "Lot 5 - Erection General Piping": "FFE4DFEC"
+  },
+  "overrides": [
+    "Latest visible worksheet",
+    "_LS filename suffix"
+  ],
+  "sort_order": [
+    "Finish ascending",
+    "Activity Name ascending (case-insensitive)"
+  ],
+  "undated_rows": "Blank or unparseable Finish dates sort last",
+  "status": {
+    "worksheet": "PTS Status",
+    "missing": [
+      "Lot General Piping Pipe Material - DTS (S)",
+      "Lot General Piping Hangers - DTS (S)",
+      "Lot General Piping Valves - DTS (S)",
+      "Lot 5 - Erection General Piping - BOQ 1 (Doc's for RfQ) - Issued from Engineering",
+      "Lot 5 - Erection General Piping - BOQ 2 (Doc's for PO) - Issued from Engineering",
+      "Lot 5 - Erection General Piping - Contractor On Site Mobilisation Completed"
+    ],
+    "found": 23,
+    "excluded": 1,
+    "table": "PTS_Classifications",
+    "header_row": 15,
+    "last_row": 39
+  },
+  "calculator": {
+    "first_date": "D281",
+    "second_date": "D282",
+    "weeks": "D283",
+    "formula": "=IF(COUNT(D281:D282)=2,(D282-D281)/7,\"\")",
+    "date_shift": {
+      "date": "D287",
+      "weeks": "D288",
+      "result": "D289",
+      "formula": "=IF(OR(D287=\"\",NOT(ISNUMBER(D288))),\"\",IFERROR(WORKDAY(ROUND(IF(ISNUMBER(D287),INT(D287),IF(AND(LEN(TRIM(SUBSTITUTE(D287,CHAR(160),\" \")))=10,TEXT(DATE(VALUE(RIGHT(TRIM(SUBSTITUTE(D287,CHAR(160),\" \")),4)),VALUE(MID(TRIM(SUBSTITUTE(D287,CHAR(160),\" \")),4,2)),VALUE(LEFT(TRIM(SUBSTITUTE(D287,CHAR(160),\" \")),2))),\"dd.mm.yyyy\")=SUBSTITUTE(TRIM(SUBSTITUTE(D287,CHAR(160),\" \")),\"/\",\".\")),DATE(VALUE(RIGHT(TRIM(SUBSTITUTE(D287,CHAR(160),\" \")),4)),VALUE(MID(TRIM(SUBSTITUTE(D287,CHAR(160),\" \")),4,2)),VALUE(LEFT(TRIM(SUBSTITUTE(D287,CHAR(160),\" \")),2))),NA()))+D288*7,0)-1,1),\"Invalid date\"))"
+    }
+  },
+  "validated": true
+}
