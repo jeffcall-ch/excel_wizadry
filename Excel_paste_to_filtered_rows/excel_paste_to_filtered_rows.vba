@@ -1,317 +1,306 @@
-Sub PasteAndRestoreFilter()
-    Dim targetSelection As Range
-    Dim visibleTarget As Range
-    Dim ws As Worksheet
-    Dim prevScreenUpdating As Boolean
-    Dim prevEnableEvents As Boolean
-    Dim infoMessage As String
-    Dim targetAddresses As Collection
-    Dim copiedValues As Collection
-    Dim targetCount As Long
-    Dim copiedCount As Long
-    Dim mismatch As Long
-    Dim i As Long
-    Dim hadAutoFilter As Boolean
-    Dim hadFilteredRows As Boolean
-    Dim filterOn() As Boolean
-    Dim criteria1() As Variant
-    Dim criteria2() As Variant
-    Dim filterOp() As Variant
+Option Explicit
 
-    prevScreenUpdating = Application.ScreenUpdating
-    prevEnableEvents = Application.EnableEvents
+Private Const MAX_TARGET_CELLS As Long = 100000
 
-    On Error GoTo HandleFailure
+Public Sub PasteAndRestoreFilter()
+    On Error GoTo Failed
 
     If TypeName(Selection) <> "Range" Then
-        infoMessage = "Please select target cells first."
-        GoTo HandleMissing
+        Err.Raise vbObjectError + 2100, , "Please select target cells first."
     End If
 
+    PasteVisibleValues Selection
+    Exit Sub
+
+Failed:
+    MsgBox Err.Description, vbExclamation, "Paste To Filtered Rows"
+End Sub
+
+Public Function PasteVisibleValues(ByVal targetSelection As Range) As Long
+    Dim visibleTarget As Range
+    Dim targetCells() As Range
+    Dim cellKeys() As Double
+    Dim originalValues() As Variant
+    Dim originalFormulas() As Variant
+    Dim originalFormats() As Variant
+    Dim originalColors() As Variant
+    Dim originalColorIndexes() As Variant
+    Dim originalThemes() As Variant
+    Dim originalTints() As Variant
+    Dim sourceValues As Variant
+    Dim sourceValue As Variant
+    Dim scratchBook As Workbook
+    Dim scratchSheet As Worksheet
+    Dim pastedRange As Range
+    Dim targetCell As Range
+    Dim targetSheet As Worksheet
+    Dim targetCount As Long
+    Dim sourceCount As Double
+    Dim sourceColumns As Long
+    Dim cellIndex As Long
+    Dim writtenCount As Long
+    Dim previousScreenUpdating As Boolean
+    Dim previousEnableEvents As Boolean
+    Dim failureNumber As Long
+    Dim failureDescription As String
+    Dim rollbackFailed As Boolean
+
+    previousScreenUpdating = Application.ScreenUpdating
+    previousEnableEvents = Application.EnableEvents
+    On Error GoTo Failed
+
+    If targetSelection Is Nothing Then
+        Err.Raise vbObjectError + 2101, , "Please select target cells first."
+    End If
     If Application.CutCopyMode <> xlCopy Then
-        infoMessage = "No copied data found. Copy source cells first (Ctrl+C)."
-        GoTo HandleMissing
+        Err.Raise vbObjectError + 2102, , "Copy source cells in Excel first (Ctrl+C). Cut and external clipboard data are not supported."
     End If
-
-    Set targetSelection = Selection
-    Set ws = targetSelection.Worksheet
-
-    On Error Resume Next
-    Set visibleTarget = targetSelection.SpecialCells(xlCellTypeVisible)
-    On Error GoTo HandleFailure
-    If visibleTarget Is Nothing Then
-        infoMessage = "No visible target cells found in your current selection."
-        GoTo HandleMissing
-    End If
-
-    Set copiedValues = GetClipboardValues(ws.Parent)
-    If copiedValues Is Nothing Then
-        infoMessage = "Could not read copied values from clipboard."
-        GoTo HandleMissing
-    End If
-
-    Set targetAddresses = GetVisibleCellAddresses(visibleTarget)
-    targetCount = targetAddresses.Count
-    copiedCount = copiedValues.Count
-
-    If copiedCount <> targetCount Then
-        mismatch = copiedCount - targetCount
-        infoMessage = "Source/target cell count mismatch." & vbCrLf & _
-                      "Copied cells: " & copiedCount & vbCrLf & _
-                      "Selected visible target cells: " & targetCount & vbCrLf & _
-                      "Mismatch: " & mismatch & " (copied - selected)"
-        GoTo HandleMissing
+    Set targetSheet = targetSelection.Worksheet
+    If targetSheet.ProtectContents Then
+        Err.Raise vbObjectError + 2103, , "The target sheet is protected. Unprotect it before pasting."
     End If
 
     Application.ScreenUpdating = False
     Application.EnableEvents = False
 
-    hadAutoFilter = ws.AutoFilterMode
-    hadFilteredRows = ws.FilterMode
+    Set scratchBook = Application.Workbooks.Add(xlWBATWorksheet)
+    Set scratchSheet = scratchBook.Worksheets(1)
+    scratchSheet.Range("A1").PasteSpecial Paste:=xlPasteValues
+    Set pastedRange = Application.Selection
+    If Not (pastedRange.Parent Is scratchSheet) Then
+        Err.Raise vbObjectError + 2108, , "Excel could not read the copied cell range."
+    End If
+    If pastedRange.Areas.Count <> 1 Then
+        Err.Raise vbObjectError + 2109, , "The copied data must paste as one rectangular range."
+    End If
+    sourceCount = pastedRange.CountLarge
+    If sourceCount > MAX_TARGET_CELLS Then
+        Err.Raise vbObjectError + 2105, , "Select a smaller source range (maximum 100,000 copied cells)."
+    End If
+    sourceColumns = pastedRange.Columns.Count
+    sourceValues = pastedRange.Value2
 
-    If hadAutoFilter Then
-        CaptureFilterState ws, filterOn, criteria1, criteria2, filterOp
-        If hadFilteredRows Then
-            On Error Resume Next
-            ws.ShowAllData
-            On Error GoTo HandleFailure
+    If targetSelection.CountLarge = 1 Then
+        Set visibleTarget = GetAnchorTargets(targetSelection, pastedRange.Rows.Count, sourceColumns)
+    Else
+        On Error Resume Next
+        Set visibleTarget = targetSelection.SpecialCells(xlCellTypeVisible)
+        Set visibleTarget = Application.Intersect(targetSelection, visibleTarget)
+        On Error GoTo Failed
+    End If
+    scratchBook.Close SaveChanges:=False
+    Set scratchBook = Nothing
+
+    If visibleTarget Is Nothing Then
+        Err.Raise vbObjectError + 2104, , "No visible target cells found."
+    End If
+    If visibleTarget.CountLarge > MAX_TARGET_CELLS Then
+        Err.Raise vbObjectError + 2105, , "Select a smaller target range (maximum 100,000 visible cells)."
+    End If
+
+    targetCount = CLng(visibleTarget.CountLarge)
+    ReDim targetCells(1 To targetCount)
+    ReDim cellKeys(1 To targetCount)
+    cellIndex = 0
+    For Each targetCell In visibleTarget.Cells
+        If targetCell.MergeCells Or targetCell.HasArray Or HasSpillCells(targetCell) Then
+            Err.Raise vbObjectError + 2106, , "Merged cells, array formulas and spill ranges are not supported: " & targetCell.Address(False, False)
         End If
-    End If
+        cellIndex = cellIndex + 1
+        Set targetCells(cellIndex) = targetCell
+        cellKeys(cellIndex) = CDbl(targetCell.Row) * targetSheet.Columns.Count + targetCell.Column
+    Next targetCell
+    SortTargetCells targetCells, cellKeys, 1, targetCount
+    For cellIndex = 2 To targetCount
+        If cellKeys(cellIndex) = cellKeys(cellIndex - 1) Then
+            Err.Raise vbObjectError + 2107, , "The target selection contains overlapping areas."
+        End If
+    Next cellIndex
 
-    For i = 1 To targetCount
-        With ws.Range(CStr(targetAddresses(i)))
-            .Value = copiedValues(i)
-            .Font.Color = vbRed
+    If sourceCount <> targetCount Then
+        Err.Raise vbObjectError + 2110, , "Source/target cell count mismatch." & vbCrLf & _
+                  "Copied cells: " & sourceCount & vbCrLf & _
+                  "Selected visible target cells: " & targetCount & vbCrLf & _
+                  "Mismatch: " & (sourceCount - targetCount) & " (copied - selected)"
+    End If
+    ReDim originalValues(1 To targetCount)
+    ReDim originalFormulas(1 To targetCount)
+    ReDim originalFormats(1 To targetCount)
+    ReDim originalColors(1 To targetCount)
+    ReDim originalColorIndexes(1 To targetCount)
+    ReDim originalThemes(1 To targetCount)
+    ReDim originalTints(1 To targetCount)
+    For cellIndex = 1 To targetCount
+        With targetCells(cellIndex)
+            originalValues(cellIndex) = .Value2
+            If .HasFormula Then originalFormulas(cellIndex) = .Formula
+            originalFormats(cellIndex) = .NumberFormat
+            originalColors(cellIndex) = .Font.Color
+            originalColorIndexes(cellIndex) = .Font.ColorIndex
+            originalTints(cellIndex) = .Font.TintAndShade
+            On Error Resume Next
+            originalThemes(cellIndex) = .Font.ThemeColor
+            On Error GoTo Failed
         End With
-    Next i
+    Next cellIndex
 
-    If hadAutoFilter Then
-        RestoreFilterState ws, filterOn, criteria1, criteria2, filterOp
-    End If
-
+    For cellIndex = 1 To targetCount
+        If targetCount = 1 Then
+            sourceValue = sourceValues
+        Else
+            sourceValue = sourceValues(((cellIndex - 1) \ sourceColumns) + 1, ((cellIndex - 1) Mod sourceColumns) + 1)
+        End If
+        writtenCount = cellIndex
+        SetCellValue targetCells(cellIndex), sourceValue, originalFormats(cellIndex)
+        targetCells(cellIndex).Font.Color = vbRed
+    Next cellIndex
+    PasteVisibleValues = targetCount
     Application.CutCopyMode = False
     GoTo Cleanup
 
-HandleMissing:
-    MsgBox infoMessage, vbExclamation, "Paste To Filtered Rows"
-    GoTo Cleanup
-
-HandleFailure:
-    MsgBox "Paste failed: " & Err.Description, vbCritical, "Paste To Filtered Rows"
+Failed:
+    failureNumber = Err.Number
+    failureDescription = Err.Description
+    On Error Resume Next
+    For cellIndex = writtenCount To 1 Step -1
+        Err.Clear
+        SetCellValue targetCells(cellIndex), originalValues(cellIndex), originalFormats(cellIndex)
+        With targetCells(cellIndex)
+            If Not IsEmpty(originalFormulas(cellIndex)) Then .Formula = originalFormulas(cellIndex)
+            If Not IsEmpty(originalThemes(cellIndex)) Then
+                .Font.ThemeColor = originalThemes(cellIndex)
+            ElseIf originalColorIndexes(cellIndex) = xlColorIndexAutomatic Then
+                .Font.ColorIndex = xlColorIndexAutomatic
+            Else
+                .Font.Color = originalColors(cellIndex)
+            End If
+            .Font.TintAndShade = originalTints(cellIndex)
+        End With
+        If Err.Number <> 0 Then rollbackFailed = True
+    Next cellIndex
+    If rollbackFailed Then failureDescription = failureDescription & vbCrLf & "Some original cells could not be restored. Check the target range."
 
 Cleanup:
-    Application.EnableEvents = prevEnableEvents
-    Application.ScreenUpdating = prevScreenUpdating
-End Sub
-
-Private Function GetVisibleCellAddresses(ByVal visibleTarget As Range) As Collection
-    Dim result As Collection
-    Dim c As Range
-
-    Set result = New Collection
-    For Each c In visibleTarget.Cells
-        result.Add c.Address(False, False)
-    Next c
-
-    Set GetVisibleCellAddresses = result
-End Function
-
-Private Function GetClipboardValues(ByVal wb As Workbook) As Collection
-    Dim htmlDoc As Object
-    Dim clipText As String
-    Dim lineParts As Variant
-    Dim rowParts As Variant
-    Dim rowIdx As Long
-    Dim colIdx As Long
-    Dim result As Collection
-
-    On Error GoTo ClipboardTextFailed
-
-    Set result = New Collection
-
-    Set htmlDoc = CreateObject("htmlfile")
-    clipText = CStr(htmlDoc.ParentWindow.ClipboardData.GetData("Text"))
-    If Len(clipText) = 0 Then GoTo ClipboardFailed
-
-    clipText = Replace(clipText, vbCrLf, vbLf)
-    clipText = Replace(clipText, vbCr, vbLf)
-    If Right$(clipText, 1) = vbLf Then clipText = Left$(clipText, Len(clipText) - 1)
-    If Len(clipText) = 0 Then GoTo ClipboardFailed
-
-    lineParts = Split(clipText, vbLf)
-    For rowIdx = LBound(lineParts) To UBound(lineParts)
-        rowParts = Split(CStr(lineParts(rowIdx)), vbTab)
-        For colIdx = LBound(rowParts) To UBound(rowParts)
-            result.Add rowParts(colIdx)
-        Next colIdx
-    Next rowIdx
-
-    If result.Count = 0 Then GoTo ClipboardFailed
-
-    Set GetClipboardValues = result
-    Exit Function
-
-ClipboardTextFailed:
-    On Error GoTo ClipboardFailed
-    Set result = GetClipboardValuesFromTempPaste(wb)
-    If Not result Is Nothing Then
-        Set GetClipboardValues = result
-        Exit Function
-    End If
-
-ClipboardFailed:
-    Set GetClipboardValues = Nothing
-End Function
-
-Private Function GetClipboardValuesFromTempPaste(ByVal wb As Workbook) As Collection
-    Dim tempWs As Worksheet
-    Dim usedRng As Range
-    Dim r As Long
-    Dim c As Long
-    Dim result As Collection
-    Dim firstCellRow As Long
-    Dim firstCellCol As Long
-    Dim prevScreenUpdating As Boolean
-    Dim prevEnableEvents As Boolean
-    Dim prevDisplayAlerts As Boolean
-    Dim originalWs As Worksheet
-    Dim originalSel As Range
-
-    On Error GoTo FallbackFailed
-
-    prevScreenUpdating = Application.ScreenUpdating
-    prevEnableEvents = Application.EnableEvents
-    prevDisplayAlerts = Application.DisplayAlerts
-
     On Error Resume Next
-    Set originalWs = ActiveSheet
-    Set originalSel = Selection
-    On Error GoTo FallbackFailed
+    If Not scratchBook Is Nothing Then scratchBook.Close SaveChanges:=False
+    If Not targetSheet Is Nothing Then
+        targetSheet.Parent.Activate
+        targetSheet.Activate
+        targetSelection.Select
+    End If
+    Application.EnableEvents = previousEnableEvents
+    Application.ScreenUpdating = previousScreenUpdating
+    On Error GoTo 0
+    If failureNumber <> 0 Then Err.Raise failureNumber, "PasteVisibleValues", failureDescription
+End Function
 
-    Application.ScreenUpdating = False
-    Application.EnableEvents = False
-    Application.DisplayAlerts = False
+Private Function GetAnchorTargets(ByVal anchor As Range, ByVal sourceRows As Long, ByVal sourceColumns As Long) As Range
+    Dim targetSheet As Worksheet
+    Dim table As ListObject
+    Dim boundary As Range
+    Dim rowScan As Range
+    Dim visibleRows As Range
+    Dim visibleArea As Range
+    Dim rowLimit As Long
+    Dim columnLimit As Long
+    Dim lastRow As Long
+    Dim lastColumn As Long
+    Dim remainingRows As Long
+    Dim remainingColumns As Long
 
-    Set tempWs = wb.Worksheets.Add(After:=wb.Worksheets(wb.Worksheets.Count))
-    tempWs.Range("A1").PasteSpecial Paste:=xlPasteValues
+    Set targetSheet = anchor.Worksheet
+    If anchor.EntireRow.Hidden Or anchor.EntireColumn.Hidden Then
+        Err.Raise vbObjectError + 2104, , "No visible target cells found at the starting cell."
+    End If
+    rowLimit = targetSheet.Rows.Count
+    columnLimit = targetSheet.Columns.Count
+    For Each table In targetSheet.ListObjects
+        If Not Application.Intersect(anchor, table.Range) Is Nothing Then
+            Set boundary = table.DataBodyRange
+            If Not boundary Is Nothing Then
+                If Application.Intersect(anchor, boundary) Is Nothing Then Set boundary = Nothing
+            End If
+            If boundary Is Nothing Then Err.Raise vbObjectError + 2111, , "Select a starting cell in the table's data rows, not its header or totals."
+            Exit For
+        End If
+    Next table
+    If boundary Is Nothing And targetSheet.AutoFilterMode Then
+        If Not targetSheet.AutoFilter Is Nothing Then
+            If Not Application.Intersect(anchor, targetSheet.AutoFilter.Range) Is Nothing Then
+                Set boundary = targetSheet.AutoFilter.Range
+                If anchor.Row = boundary.Row Then Err.Raise vbObjectError + 2111, , "Select a starting cell below the filter header."
+            End If
+        End If
+    End If
+    If Not boundary Is Nothing Then
+        rowLimit = boundary.Row + boundary.Rows.Count - 1
+        columnLimit = boundary.Column + boundary.Columns.Count - 1
+    End If
 
-    Set usedRng = tempWs.UsedRange
-    If usedRng Is Nothing Then GoTo FallbackFailed
+    remainingColumns = sourceColumns
+    For lastColumn = anchor.Column To columnLimit
+        If Not targetSheet.Columns(lastColumn).Hidden Then remainingColumns = remainingColumns - 1
+        If remainingColumns = 0 Then Exit For
+    Next lastColumn
+    If remainingColumns <> 0 Then Err.Raise vbObjectError + 2112, , "Not enough visible target columns from the starting cell."
 
-    firstCellRow = usedRng.Row
-    firstCellCol = usedRng.Column
-    Set result = New Collection
+    Set rowScan = targetSheet.Range(anchor, targetSheet.Cells(rowLimit, anchor.Column))
+    Set visibleRows = Application.Intersect(rowScan, rowScan.SpecialCells(xlCellTypeVisible))
+    remainingRows = sourceRows
+    For Each visibleArea In visibleRows.Areas
+        If remainingRows <= visibleArea.Rows.Count Then
+            lastRow = visibleArea.Row + remainingRows - 1
+            remainingRows = 0
+            Exit For
+        End If
+        remainingRows = remainingRows - visibleArea.Rows.Count
+    Next visibleArea
+    If remainingRows <> 0 Then Err.Raise vbObjectError + 2113, , "Not enough visible target rows from the starting cell."
 
-    For r = 1 To usedRng.Rows.Count
-        For c = 1 To usedRng.Columns.Count
-            result.Add tempWs.Cells(firstCellRow + r - 1, firstCellCol + c - 1).Value
-        Next c
-    Next r
+    Set rowScan = targetSheet.Range(anchor, targetSheet.Cells(lastRow, lastColumn))
+    Set GetAnchorTargets = Application.Intersect(rowScan, rowScan.SpecialCells(xlCellTypeVisible))
+End Function
 
-    If result.Count = 0 Then GoTo FallbackFailed
+Private Sub SetCellValue(ByVal targetCell As Range, ByVal cellValue As Variant, ByVal originalFormat As Variant)
+    If VarType(cellValue) = vbString Then targetCell.NumberFormat = "@"
+    targetCell.Value2 = cellValue
+    targetCell.NumberFormat = originalFormat
+End Sub
 
-    tempWs.Delete
-    If Not originalWs Is Nothing Then originalWs.Activate
-    If Not originalSel Is Nothing Then originalSel.Select
-
-    Application.DisplayAlerts = prevDisplayAlerts
-    Application.EnableEvents = prevEnableEvents
-    Application.ScreenUpdating = prevScreenUpdating
-
-    Set GetClipboardValuesFromTempPaste = result
-    Exit Function
-
-FallbackFailed:
+Private Function HasSpillCells(ByVal targetCell As Range) As Boolean
     On Error Resume Next
-    If Not tempWs Is Nothing Then tempWs.Delete
-    If Not originalWs Is Nothing Then originalWs.Activate
-    If Not originalSel Is Nothing Then originalSel.Select
-    Application.DisplayAlerts = prevDisplayAlerts
-    Application.EnableEvents = prevEnableEvents
-    Application.ScreenUpdating = prevScreenUpdating
-    Set GetClipboardValuesFromTempPaste = Nothing
+    HasSpillCells = CallByName(targetCell, "HasSpill", VbGet)
+    On Error GoTo 0
 End Function
 
-Private Sub CaptureFilterState(ByVal ws As Worksheet, _
-                               ByRef filterOn() As Boolean, _
-                               ByRef criteria1() As Variant, _
-                               ByRef criteria2() As Variant, _
-                               ByRef filterOp() As Variant)
-    Dim af As AutoFilter
-    Dim i As Long
+Private Sub SortTargetCells(ByRef targetCells() As Range, ByRef cellKeys() As Double, ByVal firstIndex As Long, ByVal lastIndex As Long)
+    Dim leftIndex As Long
+    Dim rightIndex As Long
+    Dim pivotKey As Double
+    Dim swapKey As Double
+    Dim swapCell As Range
 
-    Set af = ws.AutoFilter
-    ReDim filterOn(1 To af.Filters.Count)
-    ReDim criteria1(1 To af.Filters.Count)
-    ReDim criteria2(1 To af.Filters.Count)
-    ReDim filterOp(1 To af.Filters.Count)
-
-    For i = 1 To af.Filters.Count
-        If af.Filters(i).On Then
-            filterOn(i) = True
-            criteria1(i) = af.Filters(i).Criteria1
-            filterOp(i) = af.Filters(i).Operator
-            On Error Resume Next
-            criteria2(i) = af.Filters(i).Criteria2
-            On Error GoTo 0
+    leftIndex = firstIndex
+    rightIndex = lastIndex
+    pivotKey = cellKeys(firstIndex + (lastIndex - firstIndex) \ 2)
+    Do While leftIndex <= rightIndex
+        Do While cellKeys(leftIndex) < pivotKey
+            leftIndex = leftIndex + 1
+        Loop
+        Do While cellKeys(rightIndex) > pivotKey
+            rightIndex = rightIndex - 1
+        Loop
+        If leftIndex <= rightIndex Then
+            swapKey = cellKeys(leftIndex)
+            cellKeys(leftIndex) = cellKeys(rightIndex)
+            cellKeys(rightIndex) = swapKey
+            Set swapCell = targetCells(leftIndex)
+            Set targetCells(leftIndex) = targetCells(rightIndex)
+            Set targetCells(rightIndex) = swapCell
+            leftIndex = leftIndex + 1
+            rightIndex = rightIndex - 1
         End If
-    Next i
+    Loop
+    If firstIndex < rightIndex Then SortTargetCells targetCells, cellKeys, firstIndex, rightIndex
+    If leftIndex < lastIndex Then SortTargetCells targetCells, cellKeys, leftIndex, lastIndex
 End Sub
-
-Private Sub RestoreFilterState(ByVal ws As Worksheet, _
-                               ByRef filterOn() As Boolean, _
-                               ByRef criteria1() As Variant, _
-                               ByRef criteria2() As Variant, _
-                               ByRef filterOp() As Variant)
-    Dim afRange As Range
-    Dim i As Long
-    Dim hasOperator As Boolean
-    Dim hasCriteria2 As Boolean
-
-    If Not ws.AutoFilterMode Then Exit Sub
-
-    Set afRange = ws.AutoFilter.Range
-    For i = LBound(filterOn) To UBound(filterOn)
-        If filterOn(i) Then
-            hasOperator = HasValidFilterOperator(filterOp(i))
-            hasCriteria2 = HasFilterCriteriaValue(criteria2(i))
-
-            On Error Resume Next
-            If hasCriteria2 And hasOperator Then
-                afRange.AutoFilter Field:=i, Criteria1:=criteria1(i), Operator:=filterOp(i), Criteria2:=criteria2(i)
-            ElseIf hasOperator Then
-                afRange.AutoFilter Field:=i, Criteria1:=criteria1(i), Operator:=filterOp(i)
-            Else
-                afRange.AutoFilter Field:=i, Criteria1:=criteria1(i)
-            End If
-
-            If Err.Number <> 0 Then
-                Err.Clear
-                afRange.AutoFilter Field:=i, Criteria1:=criteria1(i)
-            End If
-            On Error GoTo 0
-        End If
-    Next i
-End Sub
-
-Private Function HasValidFilterOperator(ByVal opValue As Variant) As Boolean
-    If IsEmpty(opValue) Or IsNull(opValue) Then Exit Function
-    If VarType(opValue) = vbError Then Exit Function
-
-    If IsNumeric(opValue) Then
-        HasValidFilterOperator = (CLng(opValue) <> 0)
-    Else
-        HasValidFilterOperator = True
-    End If
-End Function
-
-Private Function HasFilterCriteriaValue(ByVal criteriaValue As Variant) As Boolean
-    If IsEmpty(criteriaValue) Or IsNull(criteriaValue) Then Exit Function
-    If VarType(criteriaValue) = vbError Then Exit Function
-
-    If VarType(criteriaValue) = vbString Then
-        HasFilterCriteriaValue = (Len(criteriaValue) > 0)
-    Else
-        HasFilterCriteriaValue = True
-    End If
-End Function

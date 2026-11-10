@@ -28,6 +28,14 @@
 			"type": "shell",
 			"command": "${workspaceFolder}/.venv/Scripts/python.exe ${workspaceFolder}/PTS_highlighter/pts_highlighter.py --overwrite",
 			"problemMatcher": []
+},
+{
+"label": "Filtered paste VBA integration tests",
+"type": "shell",
+"command": "& '${workspaceFolder}/Excel_paste_to_filtered_rows/Test-PasteToFilteredRows.ps1'",
+"isBackground": false,
+"problemMatcher": [],
+"group": "test"
 		}
 	]
 }
