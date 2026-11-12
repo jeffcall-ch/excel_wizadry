@@ -12,14 +12,11 @@ Private mMenuSheet As Worksheet
 Private mPopupOpen As Boolean
 Private mTestMode As Boolean
 Private mCurrentStep As String
+Private mReport As String
 
 Public Sub ShowActiveFiltersMenu()
     Dim ws As Worksheet
     Dim popup As CommandBar
-    Dim button As CommandBarButton
-    Dim target As AF_FilterTarget
-    Dim targetIndex As Long
-    Dim caption As String
     Dim errorText As String
 
     On Error GoTo Failed
@@ -34,13 +31,34 @@ Public Sub ShowActiveFiltersMenu()
     End If
 
     Set ws = Application.ActiveSheet
-    Set mTargets = AF_GetActiveFilterTargets(ws)
-    If mTargets Is Nothing Then Exit Sub
-    Set mMenuSheet = ws
+    Set popup = AF_BuildPopup(ws)
+    If popup Is Nothing Then Exit Sub
+    mPopupOpen = True
+    popup.ShowPopup
+CleanUp:
     AF_DeletePopup
+    If Len(errorText) > 0 Then AF_Notify errorText
+    Exit Sub
+Failed:
+    errorText = "Could not show active filters: " & Err.Description
+    Resume CleanUp
+End Sub
+
+Private Function AF_BuildPopup(ws As Worksheet) As CommandBar
+    Dim popup As CommandBar
+    Dim button As CommandBarButton
+    Dim target As AF_FilterTarget
+    Dim targetIndex As Long
+    Dim caption As String
+
+    On Error GoTo Failed
+    AF_DeletePopup
+    If Not AF_IsActiveWorksheet(ws) Then Err.Raise vbObjectError + 2003, , STALE_MESSAGE
+    Set mTargets = AF_GetActiveFilterTargets(ws)
+    If mTargets Is Nothing Then Err.Raise vbObjectError + 2004, , "Could not read filter targets."
+    Set mMenuSheet = ws
     Set popup = Application.CommandBars.Add(Name:=POPUP_NAME, _
         Position:=msoBarPopup, Temporary:=True)
-    mPopupOpen = True
 
     For targetIndex = 1 To mTargets.Count
         Set target = mTargets(targetIndex)
@@ -72,30 +90,33 @@ Public Sub ShowActiveFiltersMenu()
         End If
     End If
 
-    popup.ShowPopup
-CleanUp:
-    AF_DeletePopup
-    Set mTargets = Nothing
-    Set mMenuSheet = Nothing
-    mPopupOpen = False
-    If Len(errorText) > 0 Then AF_Notify errorText
-    Exit Sub
+    Set AF_BuildPopup = popup
+    Exit Function
 Failed:
-    errorText = "Could not show active filters: " & Err.Description
-    Resume CleanUp
-End Sub
+    AF_Notify "Could not build the filter menu: " & Err.Description
+    AF_DeletePopup
+End Function
 
 Public Sub ActiveFilters_OnClick()
     Dim parameter As String
+
+    On Error GoTo Failed
+    parameter = Application.CommandBars.ActionControl.Parameter
+    AF_HandleClick parameter
+    Exit Sub
+Failed:
+    AF_Notify "Could not process the filter menu: " & Err.Description
+End Sub
+
+Private Sub AF_HandleClick(ByVal parameter As String)
     Dim targetIndex As Long
     Dim target As AF_FilterTarget
     Dim cleared As Boolean
 
-    On Error GoTo Failed
+    On Error GoTo Stale
     If mTargets Is Nothing Then GoTo Stale
     If mMenuSheet Is Nothing Then GoTo Stale
     If Not AF_IsActiveWorksheet(mMenuSheet) Then GoTo Stale
-    parameter = Application.CommandBars.ActionControl.Parameter
     If parameter = "ALL" Then
         AF_ClearAllFilters mMenuSheet
     Else
@@ -107,9 +128,6 @@ Public Sub ActiveFilters_OnClick()
     Exit Sub
 Stale:
     AF_Notify STALE_MESSAGE
-    Exit Sub
-Failed:
-    AF_Notify "Could not process the filter menu: " & Err.Description
 End Sub
 
 Private Function AF_GetActiveFilterTargets(ws As Worksheet) As Collection
@@ -226,6 +244,13 @@ Private Sub AF_ClearAllFilters(ws As Worksheet)
     scrollColumn = window.ScrollColumn
     scrollSaved = True
     If ws.FilterMode Then ws.ShowAllData
+    If ws.AutoFilterMode Then
+        If Not ws.AutoFilter Is Nothing Then
+            If Not AF_IsTableRange(ws, ws.AutoFilter.Range) Then
+                If AF_HasActiveFilters(ws.AutoFilter) Then ws.AutoFilter.ShowAllData
+            End If
+        End If
+    End If
     For Each table In ws.ListObjects
         If AF_HasActiveFilters(table.AutoFilter) Then table.AutoFilter.ShowAllData
     Next table
@@ -332,7 +357,7 @@ Private Function AF_HasActiveFilters(autoFilter As AutoFilter) As Boolean
     Next fieldIndex
 End Function
 
-Private Function AF_ColumnLetters(columnNumber As Long) As String
+Private Function AF_ColumnLetters(ByVal columnNumber As Long) As String
     Dim remainder As Long
 
     Do While columnNumber > 0
@@ -342,7 +367,7 @@ Private Function AF_ColumnLetters(columnNumber As Long) As String
     Loop
 End Function
 
-Private Function AF_CleanHeader(headerText As String) As String
+Private Function AF_CleanHeader(ByVal headerText As String) As String
     headerText = Replace(headerText, vbCrLf, " ")
     headerText = Replace(headerText, vbCr, " ")
     headerText = Replace(headerText, vbLf, " ")
@@ -350,10 +375,29 @@ Private Function AF_CleanHeader(headerText As String) As String
 End Function
 
 Private Sub AF_DeletePopup()
+    Dim popup As CommandBar
     On Error Resume Next
-    Application.CommandBars(POPUP_NAME).Delete
+    For Each popup In Application.CommandBars
+        If popup.Name = POPUP_NAME Then
+            popup.Delete
+            Exit For
+        End If
+    Next popup
+    Set mTargets = Nothing
+    Set mMenuSheet = Nothing
+    mPopupOpen = False
     On Error GoTo 0
 End Sub
+
+Private Function AF_PopupExists() As Boolean
+    Dim popup As CommandBar
+    For Each popup In Application.CommandBars
+        If popup.Name = POPUP_NAME Then
+            AF_PopupExists = True
+            Exit Function
+        End If
+    Next popup
+End Function
 
 Private Sub AF_RestoreScroll(window As Window, scrollRow As Long, scrollColumn As Long)
     On Error Resume Next
@@ -391,12 +435,16 @@ Public Sub ActiveFilters_SelfTest()
     Dim scrollColumn As Long
     Dim failureText As String
     Dim failureNumber As Long
+    Dim popup As CommandBar
+    Dim bindingsMatch As Boolean
+    Dim controlIndex As Long
 
     On Error GoTo FailedTest
+    mReport = vbNullString
     mCurrentStep = "initialize self-test"
     originalTestMode = mTestMode
     mTestMode = True
-    Debug.Print "ActiveFilters self-test"
+    AF_ReportLine "ActiveFilters self-test"
     mCurrentStep = "create temporary workbook"
     Set testWorkbook = Application.Workbooks.Add(xlWBATWorksheet)
     mCurrentStep = "get test worksheet"
@@ -409,7 +457,7 @@ Public Sub ActiveFilters_SelfTest()
     For columnIndex = LBound(data, 2) To UBound(data, 2)
         data(1, columnIndex) = "Header " & AF_ColumnLetters(columnIndex)
     Next columnIndex
-    data(1, 3) = "Category"
+    data(1, 3) = "Category & Type"
     data(1, 20) = "State"
     data(1, 24) = "Shade"
     For rowIndex = LBound(data, 1) + 1 To UBound(data, 1)
@@ -492,7 +540,7 @@ Public Sub ActiveFilters_SelfTest()
     mCurrentStep = "assert exactly five active targets"
     AF_CheckTest targets.Count = 5, "Exactly five active targets", passed, failed
     mCurrentStep = "assert C sheet value filter"
-    AF_CheckTest AF_TargetMatches(targets, 1, "C", "Category", "", 3, 3, ws), _
+    AF_CheckTest AF_TargetMatches(targets, 1, "C", "Category & Type", "", 3, 3, ws), _
         "C: sheet value filter", passed, failed
     mCurrentStep = "assert T off-screen array filter"
     AF_CheckTest AF_TargetMatches(targets, 2, "T", "State", "", 20, 20, ws), _
@@ -506,6 +554,33 @@ Public Sub ActiveFilters_SelfTest()
     mCurrentStep = "assert TblB target metadata"
     AF_CheckTest AF_TargetMatches(targets, 5, "AF", "Status", "TblB", 2, 32, ws), _
         "AF: TblB duplicate Status header", passed, failed
+
+    mCurrentStep = "build five-filter popup without showing UI"
+    Set popup = AF_BuildPopup(ws)
+    mCurrentStep = "assert five targets plus clear-all control"
+    AF_CheckTest popup.Controls.Count = 6, "Popup: five targets plus clear all", passed, failed
+    mCurrentStep = "assert popup captions and escaped ampersand"
+    AF_CheckTest popup.Controls(1).Caption = "Col C - Category && Type" _
+        And popup.Controls(2).Caption = "Col T - State" _
+        And popup.Controls(3).Caption = "Col X - Shade" _
+        And popup.Controls(4).Caption = "Col AB - Status [TblA]" _
+        And popup.Controls(5).Caption = "Col AF - Status [TblB]", _
+        "Popup: column/header/table captions and escaped ampersand", passed, failed
+    mCurrentStep = "assert multi-filter clear-all control"
+    AF_CheckTest popup.Controls(6).Caption = "Clear all filters on this sheet" _
+        And popup.Controls(6).BeginGroup And popup.Controls(6).Parameter = "ALL", _
+        "Popup: separated clear-all item for multiple filters", passed, failed
+    mCurrentStep = "inspect popup callback bindings"
+    bindingsMatch = True
+    For controlIndex = 1 To 5
+        If popup.Controls(controlIndex).Parameter <> CStr(controlIndex) Then bindingsMatch = False
+        If popup.Controls(controlIndex).OnAction <> _
+            "'" & ThisWorkbook.Name & "'!ActiveFilters_OnClick" Then bindingsMatch = False
+    Next controlIndex
+    mCurrentStep = "assert popup callback bindings"
+    AF_CheckTest bindingsMatch, "Popup: target parameters and callback bindings", passed, failed
+    AF_DeletePopup
+    Set popup = Nothing
 
     mCurrentStep = "find T filter target"
     Set target = AF_FindTarget(targets, "", 20)
@@ -527,6 +602,41 @@ Public Sub ActiveFilters_SelfTest()
     AF_CheckTest Application.ActiveWindow.ScrollRow = scrollRow _
         And Application.ActiveWindow.ScrollColumn = scrollColumn, _
         "Scroll position preserved", passed, failed
+
+    mCurrentStep = "reapply T filter and build dispatcher snapshot"
+    ws.AutoFilter.Range.AutoFilter Field:=20, Criteria1:=valueCriteria, Operator:=xlFilterValues
+    Set popup = AF_BuildPopup(ws)
+    mCurrentStep = "dispatch valid T parameter"
+    AF_HandleClick "2"
+    Set targets = AF_GetActiveFilterTargets(ws)
+    mCurrentStep = "assert dispatcher clears exactly T"
+    AF_CheckTest targets.Count = 4 And Not ws.AutoFilter.Filters(20).On _
+        And ws.AutoFilter.Filters(3).On And ws.AutoFilter.Filters(24).On _
+        And tableA.AutoFilter.Filters(2).On And tableB.AutoFilter.Filters(2).On, _
+        "Dispatcher: valid parameter clears only T", passed, failed
+    mCurrentStep = "dispatch out-of-date parameter"
+    AF_HandleClick "9999"
+    Set targets = AF_GetActiveFilterTargets(ws)
+    mCurrentStep = "assert invalid parameter changes nothing"
+    AF_CheckTest targets.Count = 4 And ws.AutoFilter.Filters(3).On _
+        And ws.AutoFilter.Filters(24).On And tableA.AutoFilter.Filters(2).On _
+        And tableB.AutoFilter.Filters(2).On And Not ws.AutoFilter.Filters(20).On, _
+        "Dispatcher: invalid parameter changes nothing", passed, failed
+    mCurrentStep = "change popup target header and dispatch stale target"
+    ws.Cells(1, 3).Value = "Temporarily changed"
+    AF_HandleClick "1"
+    Set targets = AF_GetActiveFilterTargets(ws)
+    mCurrentStep = "assert stale dispatcher target changes nothing"
+    AF_CheckTest targets.Count = 4 And ws.AutoFilter.Filters(3).On _
+        And ws.AutoFilter.Filters(24).On And tableA.AutoFilter.Filters(2).On _
+        And tableB.AutoFilter.Filters(2).On And Not ws.AutoFilter.Filters(20).On, _
+        "Dispatcher: stale header changes nothing", passed, failed
+    ws.Cells(1, 3).Value = "Category & Type"
+    AF_DeletePopup
+    Set popup = Nothing
+    mCurrentStep = "assert popup and callback state deleted"
+    AF_CheckTest Not AF_PopupExists() And mTargets Is Nothing And mMenuSheet Is Nothing, _
+        "Popup: deleted with callback state after use", passed, failed
 
     mCurrentStep = "find TblB filter target"
     Set target = AF_FindTarget(targets, "TblB", 2)
@@ -562,6 +672,15 @@ Public Sub ActiveFilters_SelfTest()
     AF_CheckTest ws.AutoFilterMode And tableA.ShowAutoFilter And tableB.ShowAutoFilter, _
         "Filter arrows retained", passed, failed
 
+    mCurrentStep = "build popup on unfiltered sheet"
+    Set popup = AF_BuildPopup(ws)
+    mCurrentStep = "assert disabled empty-state item without clear all"
+    AF_CheckTest popup.Controls.Count = 1 And Not popup.Controls(1).Enabled _
+        And popup.Controls(1).Caption = "No active filters on this sheet", _
+        "Popup: disabled empty-state item and no clear all", passed, failed
+    AF_DeletePopup
+    Set popup = Nothing
+
     mCurrentStep = "create offset-range worksheet"
     Set shiftedSheet = testWorkbook.Worksheets.Add(After:=ws)
     mCurrentStep = "build offset-range data"
@@ -580,6 +699,16 @@ Public Sub ActiveFilters_SelfTest()
     mCurrentStep = "assert offset-range field and column"
     AF_CheckTest AF_TargetMatches(targets, 1, "E", "Offset status", "", 2, 5, shiftedSheet), _
         "Offset range: field 2 is sheet column E", passed, failed
+    mCurrentStep = "build single-filter popup"
+    Set popup = AF_BuildPopup(shiftedSheet)
+    mCurrentStep = "assert single filter has no clear-all item"
+    AF_CheckTest popup.Controls.Count = 1 And popup.Controls(1).Caption = "Col E - Offset status" _
+        And popup.Controls(1).Enabled And popup.Controls(1).Parameter = "1", _
+        "Popup: single-filter item and no clear all", passed, failed
+    AF_DeletePopup
+    Set popup = Nothing
+    mCurrentStep = "assert single-filter popup deleted"
+    AF_CheckTest Not AF_PopupExists(), "Popup: single-filter popup deleted", passed, failed
     mCurrentStep = "find offset-range target"
     Set target = AF_FindTarget(targets, "", 2)
     mCurrentStep = "clear offset-range filter"
@@ -590,6 +719,8 @@ Public Sub ActiveFilters_SelfTest()
 
 Finish:
     On Error Resume Next
+    AF_DeletePopup
+    Set popup = Nothing
     mCurrentStep = "close temporary workbook without saving"
     If Not testWorkbook Is Nothing Then
         Err.Clear
@@ -598,30 +729,46 @@ Finish:
             failureNumber = Err.Number
             failureText = Err.Description
             failed = failed + 1
-            Debug.Print "FAIL: runtime error " & CStr(failureNumber) & " (" & failureText _
+            AF_ReportLine "FAIL: runtime error " & CStr(failureNumber) & " (" & failureText _
                 & ") at step: " & mCurrentStep
         End If
     End If
     mTestMode = originalTestMode
-    Debug.Print "Summary: " & CStr(passed) & " PASS, " & CStr(failed) & " FAIL"
+    AF_ReportLine "Summary: " & CStr(passed) & " PASS, " & CStr(failed) & " FAIL"
     On Error GoTo 0
     Exit Sub
 FailedTest:
     failureNumber = Err.Number
     failureText = Err.Description
     failed = failed + 1
-    Debug.Print "FAIL: runtime error " & CStr(failureNumber) & " (" & failureText _
+    AF_ReportLine "FAIL: runtime error " & CStr(failureNumber) & " (" & failureText _
         & ") at step: " & mCurrentStep
     Resume Finish
+End Sub
+
+Public Function ActiveFilters_SelfTestReport() As String
+    On Error GoTo Failed
+    ActiveFilters_SelfTest
+    ActiveFilters_SelfTestReport = mReport
+    Exit Function
+Failed:
+    AF_ReportLine "FAIL: report error " & CStr(Err.Number) & " (" & Err.Description & ")"
+    AF_ReportLine "Summary: 0 PASS, 1 FAIL"
+    ActiveFilters_SelfTestReport = mReport
+End Function
+
+Private Sub AF_ReportLine(text As String)
+    mReport = mReport & text & vbCrLf
+    Debug.Print text
 End Sub
 
 Private Sub AF_CheckTest(condition As Boolean, label As String, passed As Long, failed As Long)
     If condition Then
         passed = passed + 1
-        Debug.Print "PASS: " & label
+        AF_ReportLine "PASS: " & label
     Else
         failed = failed + 1
-        Debug.Print "FAIL: " & label
+        AF_ReportLine "FAIL: " & label
     End If
 End Sub
 
