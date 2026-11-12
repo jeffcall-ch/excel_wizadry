@@ -14,22 +14,39 @@ panel, add-in package, Ribbon XML, or Windows API dependency.
    in: Personal Macro Workbook", stop recording, and remove that temporary macro
    if desired. Do not change your organization's macro-security policy.
 2. Press Alt+F11. Select `VBAProject (PERSONAL.XLSB)` in Project Explorer.
-3. Use File > Import File to import both `src/CFilterTarget.cls` and
+3. Before importing new ones, back up and remove old modules belonging to this
+  tool: `ActiveFilters` and its old `CFilterTarget` class (or a previously
+  imported `AF_FilterTarget` class). Choose Remove in Project Explorer and
+  export a backup when prompted. Do not remove unrelated modules, including
+  your existing `ClearAllFilters` module or similarly named classes you own.
+4. Use File > Import File to import both `src/AF_FilterTarget.cls` and
    `src/ActiveFilters.bas`. Import the files rather than pasting their export
    headers into the code editor. The files are ASCII with CRLF line endings.
-4. Use Debug > Compile VBAProject. Excel normally already references the
+5. Use Debug > Compile VBAProject. Excel normally already references the
    Microsoft Office Object Library and Microsoft Excel Object Library.
-5. Save PERSONAL.XLSB in the VBE. When Excel closes, accept its prompt to save
+6. Save PERSONAL.XLSB in the VBE. When Excel closes, accept its prompt to save
    the Personal Macro Workbook if shown.
 
-If an existing module named `ActiveFilters` or class named `CFilterTarget` is
-already present, back it up and resolve the name collision before importing.
-Other PERSONAL.XLSB modules must not define the same public procedure names,
-particularly `ClearAllFilters`. Qualify calls with `ActiveFilters` where needed.
+Only `ShowActiveFiltersMenu`, `ActiveFilters_OnClick`, and
+`ActiveFilters_SelfTest` are Public. All internal procedures are Private and
+use the `AF_` prefix, including `AF_ClearAllFilters`, `AF_ClearFilterTarget`,
+and `AF_GetActiveFilterTargets`. The class is named `AF_FilterTarget`.
+The old public `ClearAllFilters` routine is no longer defined by this tool.
+If unrelated code uses the same module, class, or one of the three public
+macro names, resolve that collision before importing; do not overwrite it.
 
 ## Self-Test
 
-In the VBE press Ctrl+G and run:
+First open the `ActiveFilters` module under `VBAProject (PERSONAL.XLSB)` so
+PERSONAL.XLSB is the active VBE project. Then press Ctrl+G and run:
+
+```vb
+ActiveFilters_SelfTest
+```
+
+If a different project's module is active, an unqualified Immediate-window
+call can report "Sub or Function not defined". Open the correct module first,
+or use the workbook-qualified call:
 
 ```vb
 Application.Run "'PERSONAL.XLSB'!ActiveFilters_SelfTest"
@@ -48,6 +65,26 @@ clearing, retained filters and arrows, unchanged scroll position, stale-header
 rejection, and an additional range starting at column D. The first sheet uses
 a value filter, a multi-value array filter, and a cell-colour filter. Error
 messages are suppressed during the self-test; unexpected errors print FAIL.
+
+All three test arrays are explicitly allocated with lower and upper bounds
+before access: `data(1 To 200, 1 To 25)`, `tableData(1 To 21, 1 To 3)`, and
+`valueCriteria(1 To 2)`. Array-driven loops use LBound/UBound; the worksheet
+writes and table source ranges use Resize with those matching bounds.
+Production filter handling uses Collections, not arrays.
+
+The current step is recorded before each setup operation and each assertion's
+arguments are evaluated. An unexpected error includes its number, description,
+and step, for example:
+
+```text
+FAIL: runtime error 9 (Subscript out of range) at step: build test data
+```
+
+Under Tools > Options > General > Error Trapping, use "Break on Unhandled
+Errors" for a complete test run. "Break on All Errors" pauses even on handled
+errors, before the cleanup handler runs. If paused, continue execution with F5
+to let it report the failure and close the temporary workbook without saving;
+do not click Reset if you expect automatic cleanup.
 
 Excel was not run during source preparation. The expected result above is not
 a recorded test result. Compile and run this test in your Excel installation.
