@@ -1,189 +1,171 @@
 # Active Filters Popup
 
-VBA macros for PERSONAL.XLSB, Excel 365 desktop on Windows (32-bit or 64-bit).
-Open a popup at the mouse cursor and click a filtered column to clear only that
-column. Normal filtered ranges and Excel Tables on the active sheet are listed,
-including off-screen columns. Table names distinguish duplicate headers.
+VBA macros for PERSONAL.XLSB and Excel 365 desktop on Windows. The popup lists
+active and remembered filters on the active worksheet, including off-screen
+columns in filtered ranges and Excel Tables. Table names distinguish duplicate
+headers. There is no persistent panel, add-in package, Ribbon XML, or Windows
+API dependency in the VBA.
 
-This replaces the earlier floating-window proposal. There is no persistent
-panel, add-in package, Ribbon XML, or Windows API dependency.
-
-## Install
+## Install or re-import
 
 1. If PERSONAL.XLSB does not exist, record a temporary macro with "Store macro
-   in: Personal Macro Workbook", stop recording, and remove that temporary macro
-   if desired. Do not change your organization's macro-security policy.
-2. Press Alt+F11. Select `VBAProject (PERSONAL.XLSB)` in Project Explorer.
-3. Before importing new ones, back up and remove old modules belonging to this
-  tool: `ActiveFilters` and its old `CFilterTarget` class (or a previously
-  imported `AF_FilterTarget` class). Choose Remove in Project Explorer and
-  export a backup when prompted. Do not remove unrelated modules, including
-  your existing `ClearAllFilters` module or similarly named classes you own.
-4. Use File > Import File to import both `src/AF_FilterTarget.cls` and
-   `src/ActiveFilters.bas`. Import the files rather than pasting their export
-   headers into the code editor. The files are ASCII with CRLF line endings.
-5. Use Debug > Compile VBAProject. Excel normally already references the
-   Microsoft Office Object Library and Microsoft Excel Object Library.
-6. Save PERSONAL.XLSB in the VBE. When Excel closes, accept its prompt to save
-   the Personal Macro Workbook if shown.
+   in: Personal Macro Workbook", stop recording, and remove it if desired.
+2. Press Alt+F11 and select `VBAProject (PERSONAL.XLSB)` in Project Explorer.
+3. Before importing or re-importing, back up and remove old modules belonging
+   to this tool: `ActiveFilters` and `AF_FilterTarget` (or its old
+   `CFilterTarget` class). Do not remove unrelated modules, including an
+   existing `ClearAllFilters` module.
+4. Use File > Import File to import `src/AF_FilterTarget.cls` and
+   `src/ActiveFilters.bas`; do not paste export headers into the editor.
+5. Use Debug > Compile VBAProject, then save PERSONAL.XLSB in the VBE. Accept
+   Excel's prompt to save the Personal Macro Workbook on exit if shown.
 
-Only `ShowActiveFiltersMenu`, `ActiveFilters_OnClick`, `ActiveFilters_SelfTest`,
-and `ActiveFilters_SelfTestReport` are Public. All internal procedures are Private and
-use the `AF_` prefix, including `AF_ClearAllFilters`, `AF_ClearFilterTarget`,
-and `AF_GetActiveFilterTargets`. The class is named `AF_FilterTarget`.
-The old public `ClearAllFilters` routine is no longer defined by this tool.
-If unrelated code uses the same module, class, or one of the four public
-macro names, resolve that collision before importing; do not overwrite it.
+The public entry points are `ShowActiveFiltersMenu`, `ActiveFilters_OnClick`,
+`ActiveFilters_SelfTest`, and `ActiveFilters_SelfTestReport`. Resolve any name
+collisions with unrelated code before importing.
 
-## Self-Test
+## Ribbon button and menu
 
-First open the `ActiveFilters` module under `VBAProject (PERSONAL.XLSB)` so
-PERSONAL.XLSB is the active VBE project. Then press Ctrl+G and run:
+In Excel, open File > Options > Customize Ribbon. Under "Choose commands from",
+select Macros, then `PERSONAL.XLSB!ShowActiveFiltersMenu`. Add it to a custom
+group, optionally rename it and choose an icon, and click OK.
+
+Click the button on a worksheet to open the popup at the cursor:
+
+- A checkmark means the filter is active; click it to clear that column.
+- `(off)` means a cleared filter can be re-applied; click it to re-apply.
+- `(cannot re-apply)` is a disabled entry for a cleared filter whose criteria
+  could not be saved or whose type is unsupported.
+- **Clear all filters on this sheet** appears for at least two active listed
+  filters. It also attempts active filters in tables with hidden headers or
+  disabled filter arrows.
+- **Re-apply all cleared filters** appears for at least two re-applicable
+  remembered entries on the sheet.
+- **Forget cleared filters** appears when the menu contains remembered
+  entries; it forgets the sheet's entries without re-applying them.
+
+When no listed column filter is active but `FilterMode` is on, **Advanced
+filter active - clear all** is available. Advanced Filter is cleared as a whole,
+not remembered for re-application. With no entries or clear-all action, a
+disabled status item appears. Escape or clicking outside dismisses the popup.
+
+## Re-application and limits
+
+The macro snapshots criteria before clearing. The following operators are
+supported when Excel exposes the needed criteria:
+
+- Single text or number conditions, and `xlAnd`/`xlOr` conditions: the
+  recorded criteria and operator can be passed back to AutoFilter.
+- Value lists/arrays (`xlFilterValues`): the exposed value criteria can be
+  passed back to AutoFilter.
+- Dynamic filters (`xlFilterDynamic`), including above/below average and date
+  periods: the exposed criteria and operator can be passed back to AutoFilter.
+
+Unsupported filters can still be cleared, but are shown as disabled afterward:
+
+- Colour and icon filters: their operators are not supported for re-application.
+- Top/bottom items and percent filters: their operators are not supported for
+  re-application.
+- Date-tree selections whose criteria Excel does not expose: there is no
+  criterion to save and pass back. Other snapshot errors also prevent re-apply.
+
+Memory is per sheet, with at most one remembered entry per sheet column. It is
+in VBA memory and is lost when Excel closes, VBA is reset, or the module is
+re-imported. Successful re-application consumes the entry; a failed attempt
+keeps it for retry. Entries are discarded when their target becomes invalid or
+the column is filtered again. **Clearing a filter by macro wipes Excel's undo
+history**; there is no custom undo.
+
+PivotTable filters and slicers are not handled. Hidden-header or filter-arrow-
+disabled tables are omitted from the column list. Targets are checked against
+their workbook, sheet, source, field, column and header; sheet ranges must also
+retain their address. Table growth can change the range address. Same-named
+replacement objects with identical metadata cannot be distinguished.
+
+Protected sheets are not unprotected; errors are reported. Clear all is not
+transactional, so a failure can leave earlier filters cleared. Scroll position
+is restored on a best-effort basis; cells are not selected or activated. Chart
+sheets and grouped sheets are rejected.
+
+## Manual self-test
+
+In the VBE, open the `ActiveFilters` module under `VBAProject (PERSONAL.XLSB)`
+so PERSONAL.XLSB is the active project. Press Ctrl+G and run:
 
 ```vb
 ActiveFilters_SelfTest
 ```
 
-If a different project's module is active, an unqualified Immediate-window
-call can report "Sub or Function not defined". Open the correct module first,
-or use the workbook-qualified call:
+Alternatively use `Application.Run "'PERSONAL.XLSB'!ActiveFilters_SelfTest"`.
+The test creates a temporary workbook, prints PASS/FAIL lines and a summary,
+and closes it without saving. It also reports cleanup failures. Other installed
+code may receive workbook-open/close events. Set VBE Tools > Options > General >
+Error Trapping to **Break on Unhandled Errors**. If execution pauses, F5 can
+continue to the cleanup handler; Reset prevents automatic cleanup.
 
-```vb
-Application.Run "'PERSONAL.XLSB'!ActiveFilters_SelfTest"
-```
+Use a disposable workbook for manual checks of cursor placement, dismissal,
+Advanced Filter, long/multiline headers, grouped/chart sheets and protection.
 
-The macro creates its own temporary workbook, prints individual `PASS:` or
-`FAIL:` lines, and closes it without saving. It does not write to existing
-workbooks. Expected final output:
+## Automated runner
 
-```text
-Summary: 26 PASS, 0 FAIL
-```
-
-Checks cover five sorted targets (C, T, X, AB/TblA, AF/TblB), single-field
-clearing, retained filters and arrows, unchanged scroll position, stale-header
-rejection, and an additional range starting at column D. The first sheet uses
-a value filter, a multi-value array filter, and a cell-colour filter. Error
-messages are suppressed during the self-test; unexpected errors print FAIL.
-
-Eleven additional checks build the popup without calling ShowPopup. They
-verify control counts, column/header/table captions, escaped ampersands,
-callback bindings, clear-all visibility for multiple versus single filters,
-the disabled empty state, deletion and callback-state cleanup, and valid,
-invalid, and stale-header click dispatch. All output is also collected in a
-module-level string. `ActiveFilters_SelfTestReport()` runs the same complete
-test and returns the report, with lines separated by vbCrLf.
-
-All three test arrays are explicitly allocated with lower and upper bounds
-before access: `data(1 To 200, 1 To 25)`, `tableData(1 To 21, 1 To 3)`, and
-`valueCriteria(1 To 2)`. Array-driven loops use LBound/UBound; the worksheet
-writes and table source ranges use Resize with those matching bounds.
-Production filter handling uses Collections, not arrays.
-
-The current step is recorded before each setup operation and each assertion's
-arguments are evaluated. An unexpected error includes its number, description,
-and step, for example:
-
-```text
-FAIL: runtime error 9 (Subscript out of range) at step: build test data
-```
-
-Under Tools > Options > General > Error Trapping, use "Break on Unhandled
-Errors" for a complete test run. "Break on All Errors" pauses even on handled
-errors, before the cleanup handler runs. If paused, continue execution with F5
-to let it report the failure and close the temporary workbook without saving;
-do not click Reset if you expect automatic cleanup.
-
-The 26-check test has been run successfully through Excel COM on Windows with
-Microsoft 365 desktop Excel. Only the installed Office bitness was exercised;
-there are no bitness-specific VBA declarations.
-If cleanup fails, a FAIL line reports it; close the temporary workbook without
-saving. Normal workbook-open/close events from other installed code may still
-run when the temporary workbook is created or closed.
-
-## Automated Runner
-
-From the repository root in Windows PowerShell, run:
+From the repository root in Windows PowerShell:
 
 ```powershell
-& .\excel-active-filters\tools\Run-SelfTest.ps1
+& .\excel-active-filters\tools\Run-SelfTest.ps1                 # Both (default)
+& .\excel-active-filters\tools\Run-SelfTest.ps1 -Mode Unsaved
+& .\excel-active-filters\tools\Run-SelfTest.ps1 -Mode Saved
 ```
 
-Enable "Trust access to the VBA project object model" in Excel File > Options
-> Trust Center > Trust Center Settings > Macro Settings before running. If
-access is blocked, the runner prints this setting and the policy caveat. It
-does not change Trust Center, registry, or macro-security settings.
+Excel's Trust Center must allow **Trust access to the VBA project object
+model** (File > Options > Trust Center > Trust Center Settings > Macro
+Settings); organization policy may block it. The runner does not change this
+setting. Set VBE Error Trapping to **Break on Unhandled Errors**. Its preflight
+checks the VBE setting and fails for a nonzero `BreakOnAllErrors` value; if
+the key or value is absent it warns that the setting could not be verified.
 
-The runner creates a new hidden Excel.Application COM instance, verifies its
-Hwnd belongs to a PID not already running, and prints that PID. It imports
-both source exports into a new unsaved workbook and calls its
-`ActiveFilters_SelfTestReport`. Automation startup does not load PERSONAL.XLSB;
-the runner never attaches to an existing Excel instance and never opens or
-saves PERSONAL.XLSB or existing work files. The self-test creates and closes
-a second temporary workbook without saving.
+The runner starts and verifies a new hidden Excel process and imports the
+source into a temporary host workbook. Unsaved mode uses an unsaved host;
+Saved mode saves it as `%TEMP%\AF_SelfTest.xlsb`, refuses to overwrite an
+existing file there, and removes its own file during cleanup. It does not
+attach to an existing Excel instance or open PERSONAL.XLSB or existing work
+files. A five-minute watchdog covers the Excel Run call and can stop only the
+runner-owned process. After cleanup, a separate 10-second exit wait can also
+stop that process. Two hangs with unchanged sources prevent another attempt.
 
-The report is printed and saved to `tools/selftest-last.txt` (gitignored).
-Exit code 0 requires all 26 PASS lines and a matching zero-FAIL summary;
-failures, missing/inconsistent summaries, and cleanup errors return 1.
-Finally, the host workbook is closed without saving, Excel is quit, and COM
-references are released. If that recorded process remains alive after a
-10-second exit wait, only that original process is stopped. Other Excel
-processes are never stopped.
+Reports are printed and saved in `tools/selftest-last-unsaved.txt` and
+`tools/selftest-last-saved.txt`; `tools/selftest-last.txt` contains the combined
+output. The runner also writes `tools/selftest-trace.txt` for diagnosing a
+hang. Success requires one zero-FAIL summary matching the number of PASS lines,
+no FAIL lines, and successful cleanup; the check count is not hardcoded.
+The existing unsaved report ends with:
 
-For diagnosing a native Excel crash, optionally pass `-TraceSteps`. This adds
-private step logging only to the temporary imported module and writes
-`tools/selftest-trace.txt` (gitignored). Normal runs import the files unchanged;
-the optional instrumentation never modifies the source files. DisplayAlerts
-does not suppress every VBA compile/debug dialog: unexpected errors can still
-pause if Error Trapping is set to "Break on All Errors". The runner's final
-10-second wait applies after the Run call returns, not to a blocked Run call.
+```text
+Summary: 101 PASS, 0 FAIL
+```
 
-## Ribbon Button
+The existing saved report ends with:
 
-1. In Excel open File > Options > Customize Ribbon.
-2. Set "Choose commands from" to "Macros".
-3. Select `PERSONAL.XLSB!ShowActiveFiltersMenu`.
-4. Select or create your custom group on the desired tab, then click Add.
-5. Click Rename to set the label (for example, "Active Filters") and pick an icon.
-6. Click OK. On a worksheet, click the button to open the menu at your cursor.
+```text
+Summary: 101 PASS, 0 FAIL
+```
 
-Choose a column row to clear that filter. With two or more active columns, a
-separated "Clear all filters on this sheet" item is available. With only an
-Advanced Filter active, its item clears the entire Advanced Filter. With no
-active filters, a disabled status item appears. Escape/click outside dismisses
-the menu. The temporary popup is deleted before creation and after dismissal.
-Chart sheets and grouped sheets are rejected without changing filters.
+For a saved host, the observed popup `OnAction` is a quoted full path followed
+by the macro name, for example
+`'C:\Users\szil\AppData\Local\Temp\AF_SelfTest.xlsb'!ActiveFilters_OnClick`.
+The unsaved report shows a quoted workbook name instead. The callback builder
+uses the workbook name; Excel can resolve the saved binding to its full path.
 
-## Behavior and Known Limits
+## VBA source encoding
 
-- Macro-based filter clearing wipes Excel's undo history. There is no custom undo.
-- PivotTable filters and slicers are not handled. Advanced Filter can only be
-  cleared as a whole, not column by column.
-- No filter criteria are inspected. Only the `On` flag is read, so colour/icon
-  criteria do not need to be decoded. Header captions replace line breaks with
-  spaces, truncate to 40 characters, and escape ampersands.
-- Tables with hidden headers or disabled filter arrows are omitted from the
-  column list. Clear all also attempts any active filters in those tables.
-- A target must still belong to the active workbook/sheet, with the same source,
-  range address, field, sheet column, and header. Otherwise nothing is cleared
-  and the user is asked to reopen the menu. Same-named replacement objects with
-  identical metadata cannot be distinguished by this name-based snapshot.
-- Protected sheets are never unprotected. Clearing is attempted and failures
-  on a protected sheet show a short message. Clear all is not transactional:
-  an error can leave earlier filters cleared and later filters unchanged.
-- Clearing does not select or activate cells. Scroll row/column are saved and
-  restored for single and all-filter clearing; restoration is best-effort if
-  another macro closes or invalidates the active window during the operation.
-- ScreenUpdating and application event/security settings are not changed.
-- The popup contains only one invocation's targets. There is no polling,
-  automatic refresh, or persistent floating window.
+The exported `.bas` and `.cls` sources must be ASCII, without a BOM, with CRLF
+line endings; the runner checks these before importing. When writing ASCII
+text from PowerShell, normalize line endings and use .NET's ASCII encoding
+instead of a cmdlet encoding that may add a BOM:
 
-## Manual UI Checks
+```powershell
+$text = $text -replace "`r`n|`r|`n", "`r`n"
+[IO.File]::WriteAllText($path, $text, [Text.Encoding]::ASCII)
+```
 
-After the self-test, use a disposable workbook to verify cursor placement,
-Escape dismissal, repeated opening, Advanced Filter clearing, and captions
-containing multi-line/long headers.
-Also verify grouped-sheet/chart-sheet rejection and protected-sheet handling.
-Test both Office bitness versions where available; no bitness-specific code
-is used. These UI and protection checks are not covered by the automated VBA
-self-test.
+Ensure `$text` contains only ASCII characters before writing; ASCII encoding
+cannot preserve non-ASCII characters.
