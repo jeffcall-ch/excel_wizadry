@@ -18,3 +18,11 @@ Public SheetColumn As Long
 Public ColumnLetter As String
 Public HeaderText As String
 Public FilterRangeAddress As String
+Public TargetSheet As Worksheet
+Public Remembered As Boolean
+Public CanReapply As Boolean
+Public FilterOperator As Long
+Public HasCriteria1 As Boolean
+Public HasCriteria2 As Boolean
+Public Criteria1 As Variant
+Public Criteria2 As Variant
