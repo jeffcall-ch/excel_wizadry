@@ -30,6 +30,7 @@ Copy-Item "C:\Windows\System32\imageres.dll" .\imageres.dll
 
 # You'll need a tool like ResourceHacker to extract icons
 # Download ResourceHacker: http://www.angusj.com/resourcehacker/
+# Alternative: Resource Cracker https://www.pelock.com/products/resource-cracker
 ```
 
 ### Common Windows Icon Locations:
@@ -106,7 +107,7 @@ Most sites provide SVG or PNG. Convert using Method 1 (online converter).
 
 Use ResourceHacker to extract icons from installed apps:
 
-1. Download ResourceHacker: http://www.angusj.com/resourcehacker/
+1. Download ResourceHacker: http://www.angusj.com/resourcehacker/ or [Resource Cracker](https://www.pelock.com/products/resource-cracker)
 2. Open an EXE with an icon you like
 3. Navigate to Icon Group
 4. Right-click > Save resource
